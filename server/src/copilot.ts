@@ -1,6 +1,10 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
-import type { BuiltInAgentConfiguration } from "@copilotkit/runtime/v2";
+import { createOpenAI } from "@ai-sdk/openai";
+import type {
+  BuiltInAgentClassicConfig,
+  BuiltInAgentConfiguration,
+} from "@copilotkit/runtime/v2";
 import {
   BuiltInAgent,
   CopilotKitIntelligence,
@@ -17,6 +21,10 @@ import {
 import type { AgentActor } from "./agents/profile-types";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
+import {
+  withConnectDefaults,
+  type LocalThreadStore,
+} from "./local-threads";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -34,10 +42,9 @@ import { grantedToolGuidance } from "./plugins/tools";
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
  * server.
  *
- * There is no SSE branch. Intelligence is a requirement of the product, not a tier: it owns
- * durable threads, memory and learning, and a deployment without it silently forgets every
- * conversation. config.ts refuses to boot without the full contract, so by the time this runs the
- * settings are present and this file has one mode.
+ * Intelligence is the product default. OPENBOT_SELF_HOSTED=true is SSE plus SqliteAgentRunner on
+ * this machine: durable threads without CopilotKit's cloud. config.ts refuses to boot without one
+ * of the two contracts.
  */
 
 /** Resolve the signed-in person for a request. Threads and memory are scoped to whoever this returns. */
@@ -50,6 +57,8 @@ type RegisteredBuiltInAgent = {
   name: string;
   type: "built_in";
   systemPrompt: string;
+  /** Package `model:` override. Absent means the tenant default. */
+  model?: string;
 };
 
 type RegisteredRemoteAgent = {
@@ -146,12 +155,15 @@ export function registeredAgentFromRow(
     const systemPrompt = configuration?.systemPrompt;
     const trimmedSystemPrompt =
       typeof systemPrompt === "string" ? systemPrompt.trim() : "";
+    const modelName = configuration?.model;
+    const trimmedModel = typeof modelName === "string" ? modelName.trim() : "";
     return trimmedSystemPrompt.length > 0
       ? {
           id: row.id,
           name: row.name,
           type: "built_in",
           systemPrompt: trimmedSystemPrompt,
+          ...(trimmedModel.length > 0 ? { model: trimmedModel } : {}),
         }
       : null;
   }
@@ -227,7 +239,11 @@ export function builtInAgentConfiguration(
   }
 
   return {
-    model: `${model.provider}/${model.defaultModel}`,
+    model: builtInModel(
+      model,
+      agent.model?.trim() || model.defaultModel,
+      apiKey,
+    ),
     /*
      * The package's role, then what this Bot actually holds, then the computer.
      *
@@ -262,6 +278,128 @@ export function builtInAgentConfiguration(
      */
     ...(tools.length > 0 ? { tools, maxSteps: TOOL_STEPS } : {}),
   };
+}
+
+/**
+ * The model a built-in Bot is handed, in either form CopilotKit accepts: a string it resolves
+ * itself, or an AI SDK model instance it uses as is (`resolveModel` returns anything that is not a
+ * string untouched).
+ *
+ * The string is what upstream does. CopilotKit turns `openai/<name>` into
+ * `createOpenAI({ baseURL })(name)`, and in @ai-sdk/openai 3 the bare provider call is the Responses
+ * API, so every run goes to `<baseURL>/responses`. Against OpenAI itself that is the right endpoint,
+ * and without a gateway nothing here changes.
+ *
+ * Behind a gateway it is the wrong one. `OPENAI_BASE_URL` is set by deployments that put LiteLLM or
+ * similar in front of local models, and a gateway serves `/responses` by translating it to chat
+ * completions on the fly. That translation is where a run died: right after a tool call the bridge
+ * streamed a text delta for an output item it had never announced, and the run ended with
+ * `text part msg_... not found`. Chat completions needs no bridge. It is the one endpoint every
+ * gateway and every local model server implements natively, so behind a gateway the Bot is given
+ * the chat-completions model of the same provider, on the same key and the same base URL. The
+ * instance goes straight to `streamText`; the prompt, the tools and the step cap are unchanged.
+ *
+ * `environment` exists for tests. The runtime reads `process.env`, which is also where CopilotKit
+ * reads the variable from, so the two cannot disagree about whether there is a gateway.
+ */
+export function builtInModel(
+  model: RuntimeModel,
+  modelName: string,
+  apiKey: string,
+  environment: Record<string, string | undefined> = process.env,
+): BuiltInAgentClassicConfig["model"] {
+  const baseURL = environment.OPENAI_BASE_URL?.trim();
+  if (!baseURL) return `${model.provider}/${modelName}`;
+  return createOpenAI({
+    baseURL,
+    apiKey,
+    // Bound late rather than captured, so a test that stubs the global fetch is honoured.
+    fetch: reindexToolCallStream((input, init) => fetch(input, init)),
+  }).chat(modelName);
+}
+
+/**
+ * The callable half of fetch, which is all the SDK uses. Bun's `typeof fetch` also declares
+ * `preconnect`, so a plain function is not assignable to it without the cast below.
+ */
+type Fetch = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+type ToolCallDelta = { index?: number; id?: string };
+type ChatChunk = { choices?: { delta?: { tool_calls?: ToolCallDelta[] } }[] };
+
+/**
+ * A fetch that repairs the tool-call indices of a streamed chat completion.
+ *
+ * Gateway bug: LiteLLM's ollama_chat streaming gives every parallel tool call `index: 0`. The ids
+ * differ and the non-streaming response is right, but the AI SDK merges streamed tool-call deltas
+ * by index, so two calls collapse into one whose arguments are both JSON documents back to back.
+ * That is not JSON, and the run retried the tool it could not parse three times.
+ *
+ * The index is reassigned from the id, in first-seen order. A delta with no id continues the call
+ * seen last, which is how the rest of a call's arguments arrive. Only `text/event-stream` bodies
+ * are touched, and in them only `data:` lines carrying tool calls; every other byte passes through
+ * as it arrived, including a line split across two chunks, which is held until its end comes.
+ */
+export function reindexToolCallStream(fetch: Fetch): typeof globalThis.fetch {
+  const wrapped: Fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    const streamed = response.headers
+      .get("content-type")
+      ?.includes("text/event-stream");
+    if (!streamed || !response.body) return response;
+
+    const indexById = new Map<string, number>();
+    let current = 0;
+    const reindex = (line: string): string => {
+      const match = /^(data: ?)(\{.*\})(\r?)$/.exec(line);
+      if (!match) return line;
+      try {
+        const chunk = JSON.parse(match[2] as string) as ChatChunk;
+        const calls = (chunk.choices ?? []).flatMap(
+          (choice) => choice.delta?.tool_calls ?? [],
+        );
+        if (calls.length === 0) return line;
+        for (const call of calls) {
+          if (typeof call.id === "string") {
+            if (!indexById.has(call.id)) indexById.set(call.id, indexById.size);
+            current = indexById.get(call.id) as number;
+          }
+          call.index = current;
+        }
+        return `${match[1]}${JSON.stringify(chunk)}${match[3]}`;
+      } catch {
+        return line;
+      }
+    };
+
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let pending = "";
+    const body = response.body.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          pending += decoder.decode(chunk, { stream: true });
+          const lines = pending.split("\n");
+          pending = lines.pop() ?? "";
+          controller.enqueue(
+            encoder.encode(lines.map((line) => `${reindex(line)}\n`).join("")),
+          );
+        },
+        flush(controller) {
+          pending += decoder.decode();
+          if (pending) controller.enqueue(encoder.encode(reindex(pending)));
+        },
+      }),
+    );
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+  return wrapped as typeof globalThis.fetch;
 }
 
 /**
@@ -1023,8 +1161,17 @@ export function mountCopilotRuntime(
    * awaited in the lock path and a failure in it never touches whether the lock was taken.
    */
   onRunBusy?: (input: { threadId: string; busy: boolean }) => void,
+  /**
+   * The SQLite thread store, when this deployment is self-hosted. Created once by the process so
+   * the runtime, hops and routines share one runner and one lock map.
+   */
+  localThreads?: LocalThreadStore,
 ) {
-  const { intelligence } = config.runtime;
+  if (config.runtime.mode === "sse" && !localThreads) {
+    throw new Error(
+      "OPENBOT_SELF_HOSTED is on, but no local thread store was handed to the runtime",
+    );
+  }
 
   /**
    * The same Bot a person's run would get, built without a request.
@@ -1069,6 +1216,59 @@ export function mountCopilotRuntime(
     return agents[input.botId] ?? null;
   };
 
+  const agents = createRequestAgents(
+    identifyActor,
+    loadAgents,
+    model,
+    resolveModelApiKey,
+    stallGuard,
+    loadToolsForActor,
+    signRunForActor,
+    /*
+     * Only when a computer exists. The tools themselves are registered by the surface, so a Bot is
+     * offered them without this and the guidance is what tells it how they go together: snapshot
+     * before acting, and ask a person to take the wheel at a sign-in rather than reporting the task
+     * as impossible. Absent computer, absent guidance: a Bot is not told about hands it has not got.
+     */
+    config.computer ? COMPUTER_GUIDANCE : undefined,
+    loadVendors,
+    selectionForActor,
+    agentFetch,
+    handoffForActor,
+  ) as never;
+  const telemetry = config.accessibility
+    ? { telemetryProperties: { accessibility_title: "OpenBot" as const } }
+    : {};
+
+  if (config.runtime.mode === "sse") {
+    const store = localThreads as LocalThreadStore;
+    const runtime = new CopilotRuntime({
+      agents,
+      runner: store.runner,
+      ...(config.runtime.licenseToken
+        ? { licenseToken: config.runtime.licenseToken }
+        : {}),
+      ...telemetry,
+    });
+    return {
+      handler: withConnectDefaults(
+        createCopilotHonoHandler({ runtime, basePath }),
+        basePath,
+      ),
+      runnerConnection: () => {
+        throw new Error(
+          "self-hosted SSE mode has no Intelligence runner websocket",
+        );
+      },
+      threadLock: store.lock,
+      agentFor,
+      history: store.history,
+      localRunner: store.runner,
+    };
+  }
+
+  const { intelligence } = config.runtime;
+
   /*
    * One client, used by the runtime and by anything reading a thread beside it, so a hop reads the
    * history a person's run would read rather than a second view of it that could disagree.
@@ -1092,9 +1292,7 @@ export function mountCopilotRuntime(
     licenseToken: intelligence.licenseToken,
     // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
-    ...(config.accessibility
-      ? { telemetryProperties: { accessibility_title: "OpenBot" } }
-      : {}),
+    ...telemetry,
     /*
      * What lets a Bot answer with an interface it wrote itself.
      *
@@ -1114,26 +1312,7 @@ export function mountCopilotRuntime(
     ...(config.generativeUi ? { openGenerativeUI: true } : {}),
     // `identifyUser` is the Intelligence projection of the same person `identifyActor` returns:
     // one resolver decides both whose threads these are and whose coworkers exist.
-    agents: createRequestAgents(
-      identifyActor,
-      loadAgents,
-      model,
-      resolveModelApiKey,
-      stallGuard,
-      loadToolsForActor,
-      signRunForActor,
-      /*
-       * Only when a computer exists. The tools themselves are registered by the surface, so a Bot is
-       * offered them without this and the guidance is what tells it how they go together: snapshot
-       * before acting, and ask a person to take the wheel at a sign-in rather than reporting the task
-       * as impossible. Absent computer, absent guidance: a Bot is not told about hands it has not got.
-       */
-      config.computer ? COMPUTER_GUIDANCE : undefined,
-      loadVendors,
-      selectionForActor,
-      agentFetch,
-      handoffForActor,
-    ) as never,
+    agents,
   });
 
   return {

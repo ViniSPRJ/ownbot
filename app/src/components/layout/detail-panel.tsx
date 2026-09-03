@@ -2,6 +2,7 @@ import { IconX } from "@tabler/icons-react";
 import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { EASE_OUT } from "@/lib/motion";
 
 /**
@@ -45,13 +46,23 @@ export function DetailPanel({
 }) {
   // Reduced motion keeps the fade, which explains the change, and drops the movement.
   const shouldReduceMotion = useReducedMotion();
+  /*
+   * On a phone there is no room beside the main pane: a 400px detail next to a 360px screen is a
+   * sliver of each. Below the mobile breakpoint the open detail takes the whole viewport instead,
+   * as a layer over the main pane, and the close button in its header is the way back.
+   */
+  const fullScreen = useIsMobile() && open;
 
   return (
     <div className="flex h-full min-h-0">
       <div className="flex flex-1 min-w-0 flex-col">{children}</div>
       <motion.div
-        animate={{ width: open ? detailWidth : 0 }}
-        className="shrink-0 overflow-hidden"
+        animate={{ width: fullScreen ? "100%" : open ? detailWidth : 0 }}
+        className={
+          fullScreen
+            ? "fixed inset-0 z-50 overflow-hidden"
+            : "shrink-0 overflow-hidden"
+        }
         // No entry animation on first paint: URL-opened panels should appear as initial state.
         initial={false}
         transition={{
@@ -61,7 +72,7 @@ export function DetailPanel({
       >
         <div
           className="flex h-full flex-col bg-sidebar border-l border-border"
-          style={{ width: detailWidth }}
+          style={{ width: fullScreen ? "100%" : detailWidth }}
         >
           {/* Rendered for the whole animation, so the way out is available immediately. */}
           <div className="h-12 shrink-0 sticky top-0 flex flex-row items-center justify-between px-2 gap-2">

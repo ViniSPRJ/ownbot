@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { Button } from "@/components/ui/button";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { useBotThread } from "@/lib/copilot/bot-thread";
@@ -86,7 +87,7 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
            * route default above was fixed for: this screen called whichever Bot you opened
            * "Browser Bot", including the one named something else two lines of state away.
            */}
-          <h1 className="text-lg font-semibold">{name}</h1>
+            <h1 className="truncate text-lg font-semibold">{name}</h1>
           {/*
            * Labelled rather than the bare icon button the sidebar uses for its own "start
            * something new" control: that one opens an empty screen, but this one throws away
@@ -134,7 +135,7 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
           {stopped}
         </p>
       ) : null}
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
         {/*
          * Keyed on the thread as well as the agent. Switching agents was already handled by
          * `agentId`, but `startNew` changes only the thread while the agent stays put, and the
@@ -147,10 +148,13 @@ function BotChat({ agentId, name }: { agentId: string; name: string }) {
         {threadId ? (
           <CopilotChat
             agentId={agentId}
+            className="h-full min-h-0"
             key={`${agentId}:${threadId}`}
             threadId={threadId}
           />
-        ) : null}
+        ) : (
+          <p className="p-6 text-muted-foreground text-sm">Abrindo o chat…</p>
+        )}
       </div>
     </div>
   );

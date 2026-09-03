@@ -28,3 +28,7 @@ app/.tanstack/
 # it is what makes that fetch reproducible, and ignoring it meant every build resolved the dependency
 # afresh, so CI and a customer install could take different subchart versions with no diff to show it.
 charts/*/charts/
+
+# Local runtime state (self-hosted SSE mode)
+.data/
+.copilotkit/

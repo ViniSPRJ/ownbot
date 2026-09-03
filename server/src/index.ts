@@ -1,8 +1,4 @@
 import { randomUUID } from "node:crypto";
-import {
-  CopilotKitIntelligence,
-  IntelligenceAgentRunner,
-} from "@copilotkit/runtime/v2";
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
@@ -32,6 +28,7 @@ import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
+import { createLocalThreadStore } from "./local-threads";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createComputerGateway } from "./computer/gateway";
@@ -702,23 +699,44 @@ const buildAgentFor = async ({
  * One runner for the process, reused across firings: it opens a socket per run and holds no idle
  * connection, but its `threads` map is per instance, and a runner per turn would fragment the
  * already-running check that keeps two turns off one thread. See `routines/run-turn.ts`.
+ *
+ * Self-hosted SSE uses the same SQLite runner as the interactive runtime. Intelligence stays the
+ * default when OPENBOT_SELF_HOSTED is off.
  */
-const routineIntelligence = new CopilotKitIntelligence({
-  apiUrl: config.runtime.intelligence.apiUrl,
-  wsUrl: config.runtime.intelligence.gatewayWsUrl,
-  apiKey: config.runtime.intelligence.apiKey,
-});
-const routineAgentRunner = new IntelligenceAgentRunner({
-  url: routineIntelligence.ɵgetRunnerWsUrl(),
-  authToken: routineIntelligence.ɵgetRunnerAuthToken(),
-});
+const localThreads =
+  config.runtime.mode === "sse"
+    ? createLocalThreadStore(config.runtime.threadsDbPath)
+    : undefined;
+
+const copilotkitRuntimeV2 =
+  config.runtime.mode === "intelligence"
+    ? await import("@copilotkit/runtime/v2")
+    : undefined;
+
+const routineIntelligence =
+  config.runtime.mode === "intelligence" && copilotkitRuntimeV2
+    ? new copilotkitRuntimeV2.CopilotKitIntelligence({
+        apiUrl: config.runtime.intelligence.apiUrl,
+        wsUrl: config.runtime.intelligence.gatewayWsUrl,
+        apiKey: config.runtime.intelligence.apiKey,
+      })
+    : undefined;
+const routineAgentRunner = routineIntelligence
+  ? new copilotkitRuntimeV2!.IntelligenceAgentRunner({
+      url: routineIntelligence.ɵgetRunnerWsUrl(),
+      authToken: routineIntelligence.ɵgetRunnerAuthToken(),
+    })
+  : undefined;
 
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
   runTurn: createTurnRunner({
-    intelligence: routineIntelligence,
-    runner: routineAgentRunner,
+    intelligence:
+      localThreads?.intelligenceLike ??
+      (routineIntelligence as NonNullable<typeof routineIntelligence>),
+    runner: (localThreads?.runner ??
+      routineAgentRunner) as NonNullable<typeof routineAgentRunner>,
     buildAgentFor,
   }),
 });
@@ -826,6 +844,7 @@ const copilotRuntime = mountCopilotRuntime(
   (input) => {
     void channelStore.signalBusy(input.threadId, input.busy).catch(() => {});
   },
+  localThreads,
 );
 
 /**
@@ -875,6 +894,7 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
         config.keyEncryptionKey,
       ),
     delivery: createHandoffDelivery({
+      deadlineMs: config.handoff.deliveryDeadlineMs,
       /*
        * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
        * delivery that then rebuilt them as an ordinary user could not find the Bot the desk had just
@@ -928,9 +948,10 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
       // The same address and the same token the runtime uses. Assembling either from configuration
       // produced a runner every join was refused for, because the thread's active run is a lock the
       // platform issues rather than something an API key can claim.
-      runner: new IntelligenceAgentRunner(
-        copilotRuntime.runnerConnection(),
-      ) as never,
+      runner: (copilotRuntime.localRunner ??
+        new copilotkitRuntimeV2!.IntelligenceAgentRunner(
+          copilotRuntime.runnerConnection(),
+        )) as never,
     }),
   });
 
@@ -1078,6 +1099,9 @@ const app = createApp(
   routineStore,
   // Where each person is in first-run onboarding, read by /api/me and written by the wizard.
   createOnboardingStore(database),
+  // Self-hosted only: the same SQLite handle the runtime writes through, so /api/threads never
+  // opens a second one on the same file.
+  localThreads?.threadReader,
 );
 
 /**
@@ -1128,6 +1152,8 @@ const asChannelSocket = (ws: { data: SocketData }) =>
 
 serve<SocketData>({
   port,
+  // SSE agent runs last minutes on local models. Bun default is 10s.
+  idleTimeout: 0,
   async fetch(request, server) {
     const url = new URL(request.url);
     const streamBotId = streamPathBotId(url.pathname);

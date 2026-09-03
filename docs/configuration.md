@@ -229,6 +229,7 @@ where `<provider>` is `google`, `microsoft` or `okta`.
 | -------------------------- | ------------------------------------------------------------------------------------------- |
 | `BOT_HANDOFF_MAX_DEPTH`    | How many Bots deep a chain may go. `0` switches the capability off entirely. Default `1`.    |
 | `BOT_HANDOFF_MAX_PER_RUN`  | How many other Bots one run may address. Default `3`.                                        |
+| `BOT_HANDOFF_DEADLINE_SECONDS` | How long one delivered hop may run before it is given up on. Default `300`.              |
 
 Both refuse rather than truncate, and both are refused at start-up if they are not whole numbers of
 zero or more: a deployment that typed `two` and silently got the default would believe it had set a

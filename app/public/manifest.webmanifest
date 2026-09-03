@@ -1,0 +1,16 @@
+{
+  "name": "Grok Bot",
+  "short_name": "Grok Bot",
+  "description": "OpenBot UI on the Beelink, tailnet only.",
+  "start_url": "/bot?agent=coord",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0B0F",
+  "theme_color": "#0B0B0F",
+  "icons": [
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}

@@ -51,7 +51,7 @@ const {
 } = baseEnvironment;
 
 describe("deployment configuration", () => {
-  test("resolves the Intelligence runtime, which is the only runtime", () => {
+  test("resolves the Intelligence runtime, which is the default runtime", () => {
     const config = loadConfig(baseEnvironment);
 
     expect(config.runtime).toEqual({
@@ -69,6 +69,24 @@ describe("deployment configuration", () => {
       token: "managed-agent-token",
     });
     expect(config.tenantPackageDirectory).toBe("../examples/fintech");
+  });
+
+  test("OPENBOT_SELF_HOSTED=true uses SSE and does not require Intelligence", () => {
+    const config = loadConfig({
+      DATABASE_URL: baseEnvironment.DATABASE_URL,
+      KEY_ENCRYPTION_KEY: baseEnvironment.KEY_ENCRYPTION_KEY,
+      OPENBOT_SINGLE_USER: "true",
+      OPENBOT_SELF_HOSTED: "true",
+      OPENBOT_THREADS_DB: "/tmp/openbot-threads.db",
+      COPILOTKIT_LICENSE_TOKEN: "license-token",
+    });
+
+    expect(config.runtime).toEqual({
+      mode: "sse",
+      durableHistory: true,
+      threadsDbPath: "/tmp/openbot-threads.db",
+      licenseToken: "license-token",
+    });
   });
 
   test("allows deployment without an authentication provider, when asked to", () => {
@@ -701,7 +719,11 @@ describe("AGENT_ENDPOINT_ALLOWED_HOSTS", () => {
 describe("how far a Bot may hand work on", () => {
   test("defaults to one level and three per run", () => {
     const config = loadConfig({ ...baseEnvironment });
-    expect(config.handoff).toEqual({ maxDepth: 1, maxPerRun: 3 });
+    expect(config.handoff).toEqual({
+      maxDepth: 1,
+      maxPerRun: 3,
+      deliveryDeadlineMs: 300_000,
+    });
   });
 
   test("a deployment can widen or switch it off", () => {
@@ -710,8 +732,9 @@ describe("how far a Bot may hand work on", () => {
         ...baseEnvironment,
         BOT_HANDOFF_MAX_DEPTH: "0",
         BOT_HANDOFF_MAX_PER_RUN: "10",
+        BOT_HANDOFF_DEADLINE_SECONDS: "900",
       }).handoff,
-    ).toEqual({ maxDepth: 0, maxPerRun: 10 });
+    ).toEqual({ maxDepth: 0, maxPerRun: 10, deliveryDeadlineMs: 900_000 });
   });
 
   test("refuses a cap that is not a whole number", () => {

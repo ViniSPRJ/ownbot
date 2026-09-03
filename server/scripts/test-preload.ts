@@ -19,3 +19,16 @@
  */
 
 import "eventsource";
+
+/**
+ * Point the suite at its own database.
+ *
+ * Every integration test reads `process.env.DATABASE_URL` and falls back to the development URL,
+ * which Bun's automatic `.env` loading also supplies, so left alone the suite runs against the same
+ * database the local `openbot-server.service` is serving: its sweepers claim the tests' work items
+ * and the tests leave rows behind. `TEST_DATABASE_URL` (see `.env.test`, which `bun test` loads
+ * because it sets NODE_ENV=test) takes precedence when set; without it, nothing changes.
+ */
+if (process.env.TEST_DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+}

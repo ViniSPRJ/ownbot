@@ -23,7 +23,10 @@ import type { IdentityProviderStore } from "./auth/identity-provider-store";
 import type { ChannelEventHub } from "./channels/events";
 import { type ChannelStore, createChannelRoutes } from "./channels/routes";
 import type { ThreadIdentity } from "./channels/thread-identity";
-import { createThreadRoutes } from "./channels/thread-routes";
+import {
+  createThreadRoutes,
+  type ThreadReader,
+} from "./channels/thread-routes";
 import { createThreadReader } from "./channels/thread-status";
 import { createComponentRoutes } from "./components/routes";
 import type { SandboxedStore } from "./components/sandboxed";
@@ -202,6 +205,13 @@ export function createApp(
    * nothing can finish.
    */
   onboardingStore?: OnboardingStore,
+  /**
+   * How a self-hosted deployment tells a known thread from an unknown one.
+   *
+   * The SQLite store's own reader, handed in so `/api/threads` shares the runtime's database handle
+   * rather than opening a second one on the same file. Unused in Intelligence mode.
+   */
+  localThreadReader?: ThreadReader,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -1057,9 +1067,11 @@ export function createApp(
         // rather than assumed, though: this is the one place besides the runtime mount itself that
         // needs to reach Intelligence, and it should keep working unmodified if that guarantee ever
         // loosens and a deployment can legitimately have no reader to build.
-        createThreadReader(
-          createIntelligenceClient(config.runtime.intelligence),
-        ),
+        config.runtime.mode === "intelligence"
+          ? createThreadReader(
+              createIntelligenceClient(config.runtime.intelligence),
+            )
+          : localThreadReader,
       ),
     );
   }

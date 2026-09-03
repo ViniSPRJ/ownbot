@@ -11,7 +11,11 @@ export function testEnvironment(
   overrides: Record<string, string | undefined> = {},
 ): Record<string, string | undefined> {
   return {
-    DATABASE_URL: "postgres://openbot:openbot@localhost:5432/openbot",
+    // Follows the suite database chosen by server/scripts/test-preload.ts, so a config built from
+    // this never reaches the deployment database when TEST_DATABASE_URL is set.
+    DATABASE_URL:
+      process.env.DATABASE_URL ??
+      "postgres://openbot:openbot@localhost:5432/openbot",
     KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     GOOGLE_OAUTH_CLIENT_ID: "google-client-id",
     GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",

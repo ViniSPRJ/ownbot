@@ -1,17 +1,23 @@
 /**
- * What the runtime can do. There is exactly one answer because CopilotKit Intelligence is required
- * for durable threads and memory. Configuration the product cannot function without belongs at the
- * boot boundary.
+ * What the runtime can do. Intelligence is the product default. OPENBOT_SELF_HOSTED=true is the
+ * on-prem path: SSE plus a SQLite thread store on this machine, no CopilotKit cloud.
  */
 import { singleUserEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
 
-export type RuntimeCapabilities = {
-  mode: "intelligence";
-  durableHistory: true;
-  intelligence: IntelligenceSettings;
-};
+export type RuntimeCapabilities =
+  | {
+      mode: "intelligence";
+      durableHistory: true;
+      intelligence: IntelligenceSettings;
+    }
+  | {
+      mode: "sse";
+      durableHistory: true;
+      threadsDbPath: string;
+      licenseToken?: string;
+    };
 
 /** The Intelligence contract. Every field is required; see runtimeCapabilities. */
 export type IntelligenceSettings = {
@@ -129,6 +135,12 @@ export type HandoffCaps = {
   maxDepth: number;
   /** How many other Bots one run may address. */
   maxPerRun: number;
+  /**
+   * How long one delivered hop may run before it is given up on, in milliseconds. A slow local
+   * model doing research with a browser can legitimately take several minutes; the default was
+   * written for hosted models and is a floor, not a ceiling.
+   */
+  deliveryDeadlineMs: number;
 };
 
 export type DeploymentConfig = {
@@ -305,6 +317,8 @@ function handoffCaps(environment: Environment): HandoffCaps {
     // One level of delegation, which is what most systems allow before anybody asks for more.
     maxDepth: read("BOT_HANDOFF_MAX_DEPTH", 1),
     maxPerRun: read("BOT_HANDOFF_MAX_PER_RUN", 3),
+    // Seconds in the environment, milliseconds in the config, like the other timeouts here.
+    deliveryDeadlineMs: read("BOT_HANDOFF_DEADLINE_SECONDS", 300) * 1000,
   };
 }
 
@@ -556,13 +570,31 @@ function oktaAuth(
 }
 
 /**
- * Resolve the Intelligence contract, or refuse to start.
+ * Resolve the runtime contract, or refuse to start.
  *
- * All four values are required together. A partial set is the more dangerous shape than none at all:
- * it means somebody intended to configure Intelligence and got it wrong, so failing on the partial
- * set alone (as this did) let a completely unconfigured deployment through as if that were a choice.
+ * Intelligence is the default: all four values are required together. A partial set is more
+ * dangerous than none at all. OPENBOT_SELF_HOSTED=true (exactly) switches to SSE + SQLite on this
+ * machine and does not talk to CopilotKit Intelligence. The license token, if present, still unlocks
+ * the packaged chat UI; it is not a cloud connection.
  */
 function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
+  if (optional(environment, "OPENBOT_SELF_HOSTED") === "true") {
+    return {
+      mode: "sse",
+      durableHistory: true,
+      threadsDbPath:
+        optional(environment, "OPENBOT_THREADS_DB") ?? ".data/threads.db",
+      ...(optional(environment, "COPILOTKIT_LICENSE_TOKEN")
+        ? {
+            licenseToken: optional(
+              environment,
+              "COPILOTKIT_LICENSE_TOKEN",
+            ) as string,
+          }
+        : {}),
+    };
+  }
+
   const settings = {
     apiUrl: url(environment, "INTELLIGENCE_API_URL"),
     gatewayWsUrl: url(environment, "INTELLIGENCE_GATEWAY_WS_URL"),

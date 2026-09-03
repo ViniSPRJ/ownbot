@@ -1,0 +1,31 @@
+channels:
+  - id: coord
+    name: Coord
+    description: Canal do coordenador.
+    permitted_agents: [coord]
+    allowed_groups: [all]
+  - id: coder
+    name: Coder
+    description: Canal de codigo.
+    permitted_agents: [coder, coord]
+    allowed_groups: [all]
+  - id: research
+    name: Research
+    description: Pesquisa com as fontes concedidas.
+    permitted_agents: [research, coord]
+    allowed_groups: [all]
+  - id: muse
+    name: Muse
+    description: Escrita e brainstorm.
+    permitted_agents: [muse, coord]
+    allowed_groups: [all]
+  - id: desk
+    name: Desk
+    description: Browser e workspace do OpenBot.
+    permitted_agents: [desk, coord]
+    allowed_groups: [all]
+  - id: codeexec
+    name: CodeExec
+    description: Execucao de codigo no workspace.
+    permitted_agents: [codeexec, coord]
+    allowed_groups: [all]

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Grok Bot" />
+  <title>Install Grok Bot</title>
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #0B0B0F; color: #f5f5f7; }
+    main { max-width: 28rem; margin: 0 auto; padding: 2.5rem 1.4rem 4rem; }
+    img.icon { width: 92px; height: 92px; border-radius: 22px; display: block; margin: 0 auto 1.25rem; }
+    h1 { text-align: center; font-size: 1.6rem; margin: 0 0 .4rem; }
+    p.lead { text-align: center; color: #a1a1aa; margin: 0 0 1.8rem; }
+    a.btn { display: block; text-align: center; background: #f5f5f7; color: #0B0B0F; text-decoration: none; font-weight: 600; padding: .95rem 1rem; border-radius: 14px; margin: .6rem 0; }
+    a.btn.secondary { background: #1c1c22; color: #f5f5f7; }
+    ol { padding-left: 1.2rem; color: #d4d4d8; line-height: 1.55; }
+    li { margin: .55rem 0; }
+    .note { font-size: .9rem; color: #a1a1aa; margin-top: 1.5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <img class="icon" src="/apple-touch-icon.png" alt="Grok Bot" />
+    <h1>Grok Bot</h1>
+    <p class="lead">OpenBot UI on the Beelink. Tailscale only.</p>
+    <a class="btn" href="/bot?agent=coord">Open the bot</a>
+    <a class="btn secondary" href="/grok-bot.mobileconfig">Add Home Screen icon</a>
+    <ol>
+      <li>Keep <b>Tailscale</b> connected on this iPhone.</li>
+      <li>Tap <b>Open the bot</b>, then Share → <b>Add to Home Screen</b>.</li>
+      <li>Or tap <b>Add Home Screen icon</b>, then Settings → Profile Downloaded → Install.</li>
+    </ol>
+    <p class="note">If the page does not load, open the Tailscale app and wait until this phone is connected to the tailnet.</p>
+  </main>
+</body>
+</html>

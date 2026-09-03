@@ -1,0 +1,13 @@
+{
+  "name": "eventsource",
+  "version": "3.0.7",
+  "main": "index.cjs",
+  "module": "index.mjs",
+  "exports": {
+    ".": {
+      "require": "./index.cjs",
+      "import": "./index.mjs",
+      "default": "./index.mjs"
+    }
+  }
+}

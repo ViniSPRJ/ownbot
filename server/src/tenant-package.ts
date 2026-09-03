@@ -379,6 +379,11 @@ export function validateTenantPackage(files: PackageFiles): TenantPackage {
                     agent.system_prompt,
                     "agent.system_prompt",
                   ),
+                  ...(agent.model === undefined || agent.model === null
+                    ? {}
+                    : {
+                        model: requiredString(agent.model, "agent.model"),
+                      }),
                 }
               : {
                   endpoint: requiredString(agent.endpoint, "agent.endpoint"),

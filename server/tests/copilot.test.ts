@@ -1,16 +1,34 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { HttpAgent } from "@ag-ui/client";
 import { BuiltInAgent } from "@copilotkit/runtime/v2";
 import { PROVENANCE_GUIDANCE } from "../../shared/bot-prompt";
 import {
   buildAgents,
   builtInAgentConfiguration,
+  builtInModel,
   createRequestAgents,
+  reindexToolCallStream,
   registeredAgentFromRow,
   resolveRuntimeAgents,
   standingRoleMessage,
 } from "../src/copilot";
 import { grantedToolGuidance } from "../src/plugins/tools";
+
+/*
+ * `bun test` loads the repository's `.env`, and a developer's copy may point OPENAI_BASE_URL at a
+ * gateway, which changes the shape of a built-in Bot's model (see `builtInModel`). The gateway path
+ * is covered on its own below; everything else asserts the upstream shape, so the variable is
+ * cleared for this file and put back afterwards.
+ */
+const configuredGateway = process.env.OPENAI_BASE_URL;
+beforeAll(() => {
+  delete process.env.OPENAI_BASE_URL;
+});
+afterAll(() => {
+  if (configuredGateway !== undefined) {
+    process.env.OPENAI_BASE_URL = configuredGateway;
+  }
+});
 
 // Every agent row now joins its profile, so the row a coworker is built from always names it.
 const assistantRow = {
@@ -105,6 +123,198 @@ describe("registered Copilot agents", () => {
       prompt: `Be helpful.\n\n${PROVENANCE_GUIDANCE}`,
       apiKey: "openai-secret",
     });
+  });
+
+  test("uses a package model override on a built-in agent", () => {
+    expect(
+      builtInAgentConfiguration(
+        {
+          id: "coord",
+          name: "Coord",
+          type: "built_in",
+          systemPrompt: "Be helpful.",
+          model: "grok-4.6",
+        },
+        { provider: "openai", defaultModel: "gpt-5.6-terra" },
+        "openai-secret",
+      ),
+    ).toMatchObject({ model: "openai/grok-4.6" });
+    expect(
+      registeredAgentFromRow({
+        id: "coord",
+        name: "Coord",
+        type: "built_in",
+        title: "Coordenador",
+        roleDescription: "Route work.",
+        configuration: {
+          systemPrompt: "Be helpful.",
+          model: " grok-4.6 ",
+        },
+      }),
+    ).toMatchObject({ model: "grok-4.6" });
+  });
+
+  /*
+   * Behind a gateway the Bot gets a chat-completions model instance rather than a string, and the
+   * string only when `OPENAI_BASE_URL` is unset. See `builtInModel` for why: a gateway's
+   * `/responses` is a translation layer, and the translation is what broke runs.
+   *
+   * The request is asserted, not only the instance's label, because a label is a string anything
+   * could carry. A generate is driven through a stubbed fetch, and the URL it reaches is the proof
+   * that the Responses API is out of the path.
+   */
+  test("hands a built-in Bot a chat-completions model behind a gateway", async () => {
+    const runtimeModel = {
+      provider: "openai" as const,
+      defaultModel: "gpt-5.6-terra",
+    };
+    expect(
+      builtInModel(runtimeModel, "qwen3.6-35b-m4", "openai-secret", {}),
+    ).toBe("openai/qwen3.6-35b-m4");
+    expect(
+      builtInModel(runtimeModel, "qwen3.6-35b-m4", "openai-secret", {
+        OPENAI_BASE_URL: "  ",
+      }),
+    ).toBe("openai/qwen3.6-35b-m4");
+
+    const model = builtInModel(
+      runtimeModel,
+      "qwen3.6-35b-m4",
+      "gateway-secret",
+      { OPENAI_BASE_URL: "http://gateway.internal:4000/v1" },
+    );
+    if (typeof model === "string") {
+      throw new Error("Expected a model instance behind a gateway");
+    }
+    expect(model).toMatchObject({
+      provider: "openai.chat",
+      modelId: "qwen3.6-35b-m4",
+    });
+
+    const requests: { url: string; authorization: string | null }[] = [];
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      async (input, init) => {
+        requests.push({
+          url: String(input),
+          authorization: new Headers(init?.headers).get("authorization"),
+        });
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-1",
+            object: "chat.completion",
+            created: 0,
+            model: "qwen3.6-35b-m4",
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: "hi" },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
+    );
+    try {
+      await model.doGenerate({
+        prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+    expect(requests).toEqual([
+      {
+        url: "http://gateway.internal:4000/v1/chat/completions",
+        authorization: "Bearer gateway-secret",
+      },
+    ]);
+
+    // A streamed response goes through the reindexing fetch, and comes out byte for byte the same
+    // when its indices are already right.
+    const streamed = await reindexToolCallStream(
+      async () =>
+        new Response("data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        }),
+    )("http://gateway.internal:4000/v1/chat/completions");
+    expect(await streamed.text()).toBe("data: [DONE]\n\n");
+
+    // The configuration reads the same variable the runtime does, and the package override still
+    // names the model.
+    process.env.OPENAI_BASE_URL = "http://gateway.internal:4000/v1";
+    try {
+      expect(
+        builtInAgentConfiguration(
+          {
+            id: "coord",
+            name: "Coord",
+            type: "built_in",
+            systemPrompt: "Be helpful.",
+            model: "qwen3.8-27b-m4",
+          },
+          runtimeModel,
+          "gateway-secret",
+        ),
+      ).toMatchObject({
+        model: { provider: "openai.chat", modelId: "qwen3.8-27b-m4" },
+      });
+    } finally {
+      delete process.env.OPENAI_BASE_URL;
+    }
+  });
+
+  /*
+   * The gateway gives every parallel tool call index 0 (see `reindexToolCallStream`). The shape is
+   * the real one, with a call's id and name in one chunk and the rest of its arguments in a later
+   * chunk with no id, and one line is cut in two across the fetch's chunks, because that is how a
+   * stream arrives and a repair that only worked on whole lines would corrupt the cut one.
+   */
+  test("reindexes parallel tool calls a gateway streams at index 0", async () => {
+    const weather =
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a1","function":{"name":"get_weather","arguments":"{\\"city\\": \\"Lisbon\\"}"}}]}}]}\n\n';
+    const time =
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"b2","function":{"name":"get_time","arguments":"{\\"zone"}}]}}]}\n\n';
+    const timeRest =
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\": \\"UTC\\"}"}}]}}]}\n\n';
+    const tail =
+      'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n';
+    const whole = weather + time + timeRest + tail;
+    const cut = weather.length + 40;
+    const chunks = [whole.slice(0, cut), whole.slice(cut)];
+
+    const fetched = await reindexToolCallStream(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const chunk of chunks) {
+                controller.enqueue(new TextEncoder().encode(chunk));
+              }
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        ),
+    )("http://gateway.internal:4000/v1/chat/completions");
+
+    expect(await fetched.text()).toBe(
+      weather +
+        time.replace('"index":0', '"index":1') +
+        timeRest.replace('"index":0', '"index":1') +
+        tail,
+    );
+
+    // Anything that is not an event stream is handed back as it came.
+    const json = new Response('{"choices":[]}', {
+      headers: { "content-type": "application/json" },
+    });
+    expect(
+      await reindexToolCallStream(async () => json)(
+        "http://gateway.internal:4000/v1/chat/completions",
+      ),
+    ).toBe(json);
   });
 
   test("fails an unavailable built-in agent through the AG-UI lifecycle", async () => {
