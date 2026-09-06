@@ -1,3 +1,4 @@
+import { recordServiceHeartbeat } from "../../server/src/operations/heartbeat";
 /**
  * The local stand-in for the routines CronJob: `server/scripts/fire-routines.ts`, looped.
  *
@@ -150,6 +151,7 @@ async function runOneTick(): Promise<void> {
   try {
     const { offered } = await offerDueRoutines(options);
     const report = await dispatchClaimedRoutines(options);
+    await recordServiceHeartbeat(database, "routine-worker");
     console.info(
       JSON.stringify({
         type: "routine-sweep",

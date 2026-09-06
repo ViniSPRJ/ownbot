@@ -4,7 +4,7 @@
  * CopilotKit's v2 barrel pulls MCP/eventsource CJS that Bun cannot load, so AgentRunner is imported
  * from the runner module directly. Events are stored in bun:sqlite on this machine.
  */
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
   EventType,
@@ -25,7 +25,11 @@ import {
 } from "../node_modules/@copilotkit/runtime/dist/v2/runtime/runner/agent-runner.mjs";
 import type { ThreadLock } from "./agents/handoff-delivery";
 import type { ThreadReader } from "./channels/thread-routes";
-import type { IntelligenceLike, RunnerLike } from "./routines/run-turn";
+import {
+  sanitizeSeededHistory,
+  type IntelligenceLike,
+  type RunnerLike,
+} from "./routines/run-turn";
 
 type Active = {
   agent: AbstractAgent;
@@ -61,6 +65,7 @@ function openDb(dbPath: string): Database {
   }
   const db = new Database(dbPath, { create: true });
   db.run("PRAGMA journal_mode = WAL");
+  if (dbPath !== ":memory:") chmodSync(dbPath, 0o600);
   db.run(`
     CREATE TABLE IF NOT EXISTS thread_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,9 +150,8 @@ function knownMessageIds(events: BaseEvent[]): Set<string> {
     const messageId = (event as { messageId?: unknown }).messageId;
     if (typeof messageId === "string") ids.add(messageId);
     if ((event as { type?: string }).type === EventType.RUN_STARTED) {
-      const messages = (
-        event as { input?: { messages?: { id?: string }[] } }
-      ).input?.messages;
+      const messages = (event as { input?: { messages?: { id?: string }[] } })
+        .input?.messages;
       if (!Array.isArray(messages)) continue;
       for (const message of messages) {
         if (typeof message.id === "string") ids.add(message.id);
@@ -173,6 +177,22 @@ function eventsForInboundMessages(
       typeof message.content === "string"
         ? message.content
         : JSON.stringify(message.content ?? "");
+    // Tool results have their own event: TEXT_MESSAGE_START loses the association on reload.
+    if (
+      role === "tool" &&
+      typeof message.toolCallId === "string" &&
+      message.toolCallId.length > 0
+    ) {
+      out.push({
+        type: EventType.TOOL_CALL_RESULT,
+        messageId: message.id,
+        toolCallId: message.toolCallId,
+        content,
+        role: "tool",
+      } as BaseEvent);
+      already.add(message.id);
+      continue;
+    }
     out.push({
       type: EventType.TEXT_MESSAGE_START,
       threadId,
@@ -200,6 +220,32 @@ function eventsForInboundMessages(
   return out;
 }
 
+function normalizedCalls(value: unknown): StoredToolCall[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((value) => {
+    if (!value || typeof value !== "object") return [];
+    const call = value as Record<string, unknown>;
+    const fn =
+      call.function && typeof call.function === "object"
+        ? (call.function as Record<string, unknown>)
+        : undefined;
+    const name = fn?.name ?? call.name;
+    const args = fn?.arguments ?? call.args;
+    if (typeof call.id !== "string" || typeof name !== "string") return [];
+    return [
+      {
+        id: call.id,
+        type: "function" as const,
+        function: {
+          name,
+          arguments:
+            typeof args === "string" ? args : JSON.stringify(args ?? {}),
+        },
+      },
+    ];
+  });
+}
+
 function messagesFromEvents(events: BaseEvent[]): StoredMessage[] {
   const byId = new Map<string, StoredMessage>();
   const order: string[] = [];
@@ -208,14 +254,25 @@ function messagesFromEvents(events: BaseEvent[]): StoredMessage[] {
     if (!byId.has(message.id)) {
       byId.set(message.id, message);
       order.push(message.id);
+    } else {
+      const previous = byId.get(message.id)!;
+      // Repair only from an explicit association for the SAME message ID in original events.
+      // Never guess from position, content, or an ID naming convention.
+      if (
+        previous.role === "tool" &&
+        message.role === "tool" &&
+        !previous.toolCallId &&
+        message.toolCallId
+      ) {
+        previous.toolCallId = message.toolCallId;
+      }
     }
   };
   for (const event of events) {
     const type = (event as { type?: string }).type;
     if (type === EventType.RUN_STARTED) {
-      const messages = (
-        event as { input?: { messages?: InboundMessage[] } }
-      ).input?.messages;
+      const messages = (event as { input?: { messages?: InboundMessage[] } })
+        .input?.messages;
       if (!Array.isArray(messages)) continue;
       for (const message of messages) {
         if (typeof message.id !== "string") continue;
@@ -227,7 +284,7 @@ function messagesFromEvents(events: BaseEvent[]): StoredMessage[] {
               ? message.content
               : JSON.stringify(message.content ?? ""),
           ...(Array.isArray(message.toolCalls)
-            ? { toolCalls: message.toolCalls as StoredToolCall[] }
+            ? { toolCalls: normalizedCalls(message.toolCalls) }
             : {}),
           ...(typeof message.toolCallId === "string"
             ? { toolCallId: message.toolCallId }
@@ -240,7 +297,15 @@ function messagesFromEvents(events: BaseEvent[]): StoredMessage[] {
       const messageId = (event as { messageId?: string }).messageId;
       const role = (event as { role?: string }).role ?? "assistant";
       if (typeof messageId !== "string") continue;
-      remember({ id: messageId, role, content: "" });
+      const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+      remember({
+        id: messageId,
+        role,
+        content: "",
+        ...(role === "tool" && typeof toolCallId === "string"
+          ? { toolCallId }
+          : {}),
+      });
       continue;
     }
     if (type === EventType.TEXT_MESSAGE_CONTENT) {
@@ -298,22 +363,22 @@ function messagesFromEvents(events: BaseEvent[]): StoredMessage[] {
         content?: string;
         role?: string;
       };
-      if (typeof messageId !== "string" || typeof toolCallId !== "string") {
+      if (typeof messageId !== "string") {
         continue;
       }
       remember({
         id: messageId,
         role: role ?? "tool",
         content: typeof content === "string" ? content : "",
-        toolCallId,
+        ...(typeof toolCallId === "string" && toolCallId.length > 0
+          ? { toolCallId }
+          : {}),
       });
     }
   }
-  return ensureToolResults(
-    order
-      .map((id) => byId.get(id))
-      .filter((row): row is StoredMessage => Boolean(row)),
-  );
+  return order
+    .map((id) => byId.get(id))
+    .filter((row): row is StoredMessage => Boolean(row));
 }
 
 /** The least a message needs to say for `ensureToolResults` to read it. */
@@ -325,37 +390,13 @@ type ToolResultCandidate = {
   toolCallId?: string;
 };
 
-/**
- * Answer every tool call that has no tool message, keeping the order.
- *
- * A render-only frontend action never produces a TOOL_CALL_RESULT, and the client resends the
- * assistant message bare on the next turn, so both stored history and a run's inbound messages can
- * carry an unanswered call — which the model API refuses outright. The answer is the empty result
- * @copilotkit/core writes for a handler-less tool, under the `<toolCallId>-result` id its
- * finalizeRunEvents uses, inserted right after the assistant message that owns the call. A call
- * with a matching tool message anywhere in the list is left alone.
- */
+/** Model input only: retain valid pairs, never manufacture results for interrupted tools. */
 export function ensureToolResults<T extends ToolResultCandidate>(
   messages: readonly T[],
 ): T[] {
-  const answered = new Set<string>();
-  for (const message of messages) {
-    if (typeof message.toolCallId === "string") answered.add(message.toolCallId);
-  }
-  const out: T[] = [];
-  for (const message of messages) {
-    out.push(message);
-    for (const call of message.toolCalls ?? []) {
-      if (typeof call?.id !== "string" || answered.has(call.id)) continue;
-      out.push({
-        id: `${call.id}-result`,
-        role: "tool",
-        content: "",
-        toolCallId: call.id,
-      } as unknown as T);
-    }
-  }
-  return out;
+  return sanitizeSeededHistory(
+    messages as unknown as Message[],
+  ) as unknown as T[];
 }
 
 /**
@@ -445,9 +486,8 @@ export class LocalAgentRunner extends AgentRunner {
           events.push(event);
           subject.next(event);
         };
-        // What the client sent, not what it should have: an unanswered call in here reaches the
-        // model API as-is. Answered here, and only here, so the persisted inbound above stays what
-        // the client actually said.
+        // Sanitize model input without rewriting the persisted inbound history. A missing tool
+        // result is unknown, not an empty success; callers can still inspect the original record.
         const input = {
           ...request.input,
           messages: ensureToolResults(
@@ -455,7 +495,7 @@ export class LocalAgentRunner extends AgentRunner {
           ),
         } as typeof request.input;
         // AG-UI's runAgent reads the agent's own `messages`, not the input's: the runtime copied
-        // the client's list onto the agent before handing it here, so answer the calls there too.
+        // the client's list onto the agent before handing it here, so sanitize that input too.
         if (Array.isArray(request.agent.messages)) {
           request.agent.messages = ensureToolResults(
             request.agent.messages as ToolResultCandidate[],
@@ -481,11 +521,7 @@ export class LocalAgentRunner extends AgentRunner {
             (event) =>
               (event as { type?: string }).type === EventType.RUN_STARTED,
           );
-          events.splice(
-            startedAt >= 0 ? startedAt + 1 : 0,
-            0,
-            ...inbound,
-          );
+          events.splice(startedAt >= 0 ? startedAt + 1 : 0, 0, ...inbound);
         }
         if (events.length > 0) {
           appendEvents(this.db, request.threadId, events);

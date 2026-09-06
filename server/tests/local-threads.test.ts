@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Database } from "bun:sqlite";
 import { EventType, type AbstractAgent } from "@ag-ui/client";
 import type { Observable } from "rxjs";
 import {
@@ -101,13 +102,13 @@ describe("local SQLite threads", () => {
     expect(live[0]?.type).toBe(EventType.RUN_STARTED);
 
     const second = new LocalAgentRunner(dbPath);
-    expect(second.hasThread("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).toBe(
-      true,
-    );
+    expect(second.hasThread("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")).toBe(true);
     const messages = second.getThreadMessages(
       "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     );
-    expect(messages.map((row) => ({ role: row.role, content: row.content }))).toEqual([
+    expect(
+      messages.map((row) => ({ role: row.role, content: row.content })),
+    ).toEqual([
       { role: "user", content: "say pong" },
       { role: "assistant", content: "pong" },
     ]);
@@ -178,8 +179,16 @@ describe("local SQLite threads", () => {
         const emit = (event: Record<string, unknown>) =>
           onEvent({ event: event as never });
         emit({ type: EventType.RUN_STARTED, threadId, runId: "r1" });
-        emit({ type: EventType.TEXT_MESSAGE_START, messageId: "a1", role: "assistant" });
-        emit({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: "a1", delta: "Checking" });
+        emit({
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: "a1",
+          role: "assistant",
+        });
+        emit({
+          type: EventType.TEXT_MESSAGE_CONTENT,
+          messageId: "a1",
+          delta: "Checking",
+        });
         emit({ type: EventType.TEXT_MESSAGE_END, messageId: "a1" });
         emit({
           type: EventType.TOOL_CALL_START,
@@ -187,8 +196,16 @@ describe("local SQLite threads", () => {
           toolCallName: "lookup",
           parentMessageId: "a1",
         });
-        emit({ type: EventType.TOOL_CALL_ARGS, toolCallId: "c1", delta: '{"q":' });
-        emit({ type: EventType.TOOL_CALL_ARGS, toolCallId: "c1", delta: '"x"}' });
+        emit({
+          type: EventType.TOOL_CALL_ARGS,
+          toolCallId: "c1",
+          delta: '{"q":',
+        });
+        emit({
+          type: EventType.TOOL_CALL_ARGS,
+          toolCallId: "c1",
+          delta: '"x"}',
+        });
         emit({ type: EventType.TOOL_CALL_END, toolCallId: "c1" });
         emit({
           type: EventType.TOOL_CALL_RESULT,
@@ -197,8 +214,12 @@ describe("local SQLite threads", () => {
           content: "found",
         });
         // No parent: the call becomes its own assistant message, named after the call. No result
-        // either, as a render-only frontend action leaves it: history must answer it.
-        emit({ type: EventType.TOOL_CALL_START, toolCallId: "c2", toolCallName: "notify" });
+        // either: history retains the call but must not invent a successful result.
+        emit({
+          type: EventType.TOOL_CALL_START,
+          toolCallId: "c2",
+          toolCallName: "notify",
+        });
         emit({ type: EventType.TOOL_CALL_END, toolCallId: "c2" });
         emit({ type: EventType.RUN_FINISHED, threadId, runId: "r1" });
       },
@@ -240,10 +261,13 @@ describe("local SQLite threads", () => {
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "c2", type: "function", function: { name: "notify", arguments: "" } },
+          {
+            id: "c2",
+            type: "function",
+            function: { name: "notify", arguments: "" },
+          },
         ],
       },
-      { id: "c2-result", role: "tool", content: "", toolCallId: "c2" },
     ] as never);
 
     // The routine runner reads the platform's flat row and re-nests it itself.
@@ -255,22 +279,11 @@ describe("local SQLite threads", () => {
       { id: "c1", name: "lookup", args: '{"q":"x"}' },
     ]);
     expect(messages[2]?.toolCallId).toBe("c1");
-    expect(messages.map((row) => row.id)).toEqual([
-      "u1",
-      "a1",
-      "tr1",
-      "c2",
-      "c2-result",
-    ]);
-    expect(messages[4]).toEqual({
-      id: "c2-result",
-      role: "tool",
-      content: "",
-      toolCallId: "c2",
-    });
+    expect(messages.map((row) => row.id)).toEqual(["u1", "a1", "tr1", "c2"]);
+    expect(messages).toHaveLength(4);
   });
 
-  test("a run's inbound messages get a result for every unanswered tool call", async () => {
+  test("model input drops unanswered calls without manufacturing tool results", async () => {
     const threadId = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
     const runner = new LocalAgentRunner(tempDb());
     let seen: { id: string }[] = [];
@@ -278,8 +291,12 @@ describe("local SQLite threads", () => {
       agentId: "coord",
       async runAgent(input, { onEvent }) {
         seen = input.messages;
-        onEvent({ event: { type: EventType.RUN_STARTED, threadId, runId: "r2" } });
-        onEvent({ event: { type: EventType.RUN_FINISHED, threadId, runId: "r2" } });
+        onEvent({
+          event: { type: EventType.RUN_STARTED, threadId, runId: "r2" },
+        });
+        onEvent({
+          event: { type: EventType.RUN_FINISHED, threadId, runId: "r2" },
+        });
       },
       abortRun() {},
     } as unknown as AbstractAgent;
@@ -292,7 +309,11 @@ describe("local SQLite threads", () => {
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "28c4a590", type: "function", function: { name: "showNotice", arguments: "{}" } },
+          {
+            id: "28c4a590",
+            type: "function",
+            function: { name: "showNotice", arguments: "{}" },
+          },
         ],
       },
       {
@@ -300,7 +321,11 @@ describe("local SQLite threads", () => {
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "c9", type: "function", function: { name: "lookup", arguments: "{}" } },
+          {
+            id: "c9",
+            type: "function",
+            function: { name: "lookup", arguments: "{}" },
+          },
         ],
       },
       { id: "t9", role: "tool", toolCallId: "c9", content: "ok" },
@@ -321,28 +346,105 @@ describe("local SQLite threads", () => {
         },
       }),
     );
-    expect(seen.map((row) => row.id)).toEqual([
-      "u1",
-      "a1",
-      "28c4a590-result",
-      "a2",
-      "t9",
-      "u2",
-    ]);
-    expect(seen[2]).toEqual({
-      id: "28c4a590-result",
-      role: "tool",
-      content: "",
-      toolCallId: "28c4a590",
-    });
+    expect(seen.map((row) => row.id)).toEqual(["u1", "a2", "t9", "u2"]);
+    expect(seen[2]).toEqual(messages[3]);
+    // Persistence retains the original tool association, not a tool-shaped text row.
+    expect(
+      runner.getThreadMessages(threadId).find((row) => row.id === "t9"),
+    ).toEqual(messages[3]);
     // The helper on its own: an already-answered list comes back unchanged.
-    expect(ensureToolResults(messages.slice(2, 4))).toEqual(messages.slice(2, 4));
+    expect(ensureToolResults(messages.slice(2, 4))).toEqual(
+      messages.slice(2, 4),
+    );
+  });
+
+  test("legacy tool links are repaired only from explicit same-message event evidence", () => {
+    const path = tempDb();
+    const runner = new LocalAgentRunner(path);
+    const db = new Database(path);
+    const events = [
+      {
+        type: EventType.TEXT_MESSAGE_START,
+        messageId: "recovered",
+        role: "tool",
+      },
+      {
+        type: EventType.TEXT_MESSAGE_CONTENT,
+        messageId: "recovered",
+        delta: "original evidence",
+      },
+      { type: EventType.TEXT_MESSAGE_START, messageId: "orphan", role: "tool" },
+      {
+        type: EventType.TEXT_MESSAGE_CONTENT,
+        messageId: "orphan",
+        delta: "unlinked evidence",
+      },
+      {
+        type: EventType.RUN_STARTED,
+        input: {
+          messages: [
+            {
+              id: "flat",
+              role: "assistant",
+              content: "lookup",
+              toolCalls: [
+                { id: "real-call", name: "lookup", args: { q: "original" } },
+              ],
+            },
+            {
+              id: "recovered",
+              role: "tool",
+              content: "original evidence",
+              toolCallId: "real-call",
+            },
+          ],
+        },
+      },
+      {
+        type: EventType.TOOL_CALL_RESULT,
+        messageId: "malformed-result",
+        content: "preserve this too",
+      },
+    ];
+    for (const event of events)
+      db.run(
+        "INSERT INTO thread_events(thread_id, created_at, event) VALUES (?, ?, ?)",
+        ["legacy", Date.now(), JSON.stringify(event)],
+      );
+    expect(runner.getThreadMessages("legacy")).toEqual([
+      {
+        id: "recovered",
+        role: "tool",
+        content: "original evidence",
+        toolCallId: "real-call",
+      },
+      { id: "orphan", role: "tool", content: "unlinked evidence" },
+      {
+        id: "flat",
+        role: "assistant",
+        content: "lookup",
+        toolCalls: [
+          {
+            id: "real-call",
+            type: "function",
+            function: { name: "lookup", arguments: '{"q":"original"}' },
+          },
+        ],
+      },
+      { id: "malformed-result", role: "tool", content: "preserve this too" },
+    ]);
+    db.close();
   });
 
   test("a thread lock left unreleased lapses after its TTL", async () => {
     let clock = 1_000;
     const store = createLocalThreadStore(":memory:", { now: () => clock });
-    const input = { threadId: "t-lock", runId: "r1", userId: "u", agentId: "coord" };
+    const input = {
+      threadId: "t-lock",
+      runId: "r1",
+      userId: "u",
+      agentId: "coord",
+    };
     expect(await store.lock.acquire(input)).toEqual({ runId: "r1" });
     expect(await store.lock.acquire({ ...input, runId: "r2" })).toBeNull();
 

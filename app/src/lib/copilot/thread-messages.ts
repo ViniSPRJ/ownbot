@@ -1,3 +1,4 @@
+import { INCOMPLETE_HISTORY_MARKER } from "../../../../shared/history-markers";
 import { type Message, MessageSchema } from "@ag-ui/core";
 import { tryClient } from "@/lib/client";
 
@@ -61,13 +62,35 @@ const NOTHING: StoredThread = { messages: [], unreadable: 0 };
 export function readableTurns(stored: readonly unknown[]): StoredThread {
   const messages: Message[] = [];
   let unreadable = 0;
+  const calls = new Set<string>();
 
   for (const turn of stored) {
-    const candidate = withNormalisedToolCalls(
-      withoutNullAssistantContent(turn),
-    );
+    let candidate = withNormalisedToolCalls(withoutNullAssistantContent(turn));
+    if (candidate && typeof candidate === "object") {
+      const record = candidate as Record<string, unknown>;
+      if (
+        record.role === "tool" &&
+        typeof record.id === "string" &&
+        (typeof record.toolCallId !== "string" || !calls.has(record.toolCallId))
+      ) {
+        // Display retained evidence as an explicitly incomplete historical record. No invented
+        // call ID, and no invalid tool-role row passed back to a model on the next user turn.
+        const content =
+          typeof record.content === "string"
+            ? record.content
+            : JSON.stringify(record.content ?? "");
+        candidate = {
+          id: record.id,
+          role: "assistant",
+          content: `${INCOMPLETE_HISTORY_MARKER}${content}`,
+        };
+      }
+    }
     if (MessageSchema.safeParse(candidate).success) {
       messages.push(candidate as Message);
+      const parsed = candidate as Message;
+      if (parsed.role === "assistant")
+        for (const call of parsed.toolCalls ?? []) calls.add(call.id);
     } else {
       unreadable += 1;
     }

@@ -89,7 +89,11 @@ skills:
       cold start. When a subtask needs the repository, pass the absolute workspace path on this
       machine; Pi works on a copy and returns a diff plus a staging path, and nothing is written to
       the original. Read every result: report ok, changed files and the diff, then review before
-      applying anything. Never claim a Pi run happened if the tool did not return.
+      applying anything. An accepted pi_run is a queued job, not a finished answer: preserve its
+      job ID and poll pi_status until terminal, collecting the result, diff and tests. Reuse the
+      existing job on retries and never repeat submission after an ambiguous timeout without
+      checking its status. Label failures and incomplete work explicitly. Never claim a Pi run
+      happened if the tool did not return.
     tools:
       - pi-m4/pi_run
       - pi-m4/pi_status

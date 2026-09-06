@@ -87,8 +87,8 @@ export function handoffTool(options: {
     ref: `bot/${HANDOFF_TOOL}`,
     description:
       "Hand a piece of work to another Bot in this workspace and let it answer for itself. " +
-      "Use this when the work needs a role you do not have. The other Bot answers in its own " +
-      "conversation with this person, so do not wait for it or repeat what it will say: tell them " +
+      "Use this when the work needs a role you do not have. Acceptance means queued, not completed. " +
+      "Its result or failure will be relayed into this conversation. Do not answer on its behalf: tell them " +
       "who you have asked and what for. If the work is yours to do, do it, and if it needs a " +
       "person's judgement rather than another Bot's, ask the person instead.",
     parameters,

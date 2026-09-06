@@ -34,3 +34,7 @@ charts/*/charts/
 .copilotkit/
 *.bak-*
 .secrets/
+
+# Python maintenance tools
+__pycache__/
+*.pyc

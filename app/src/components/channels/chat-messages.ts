@@ -1,3 +1,4 @@
+import { incompleteHistoryPayload } from "../../../../shared/history-markers";
 import type { ActivityMessage, Message, ToolCall } from "@ag-ui/core";
 
 /**
@@ -5,6 +6,7 @@ import type { ActivityMessage, Message, ToolCall } from "@ag-ui/core";
  */
 
 export type VisibleChatItem =
+  | { kind: "incomplete-history"; id: string; payload: string }
   | { kind: "text"; id: string; role: "user" | "assistant"; text: string }
   | {
       kind: "tool";
@@ -51,6 +53,8 @@ export function toVisibleChatItems(
   }
 
   return messages.flatMap((message): VisibleChatItem[] => {
+    const payload = incompleteHistoryPayload(message);
+    if (payload !== undefined) return [{ kind: "incomplete-history", id: message.id, payload }];
     if (message.role === "assistant") {
       const items: VisibleChatItem[] = [];
       if (message.content) {

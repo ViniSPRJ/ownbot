@@ -180,6 +180,16 @@ export function RoutinesList({
         <div className="flex flex-col gap-2">
           {rows.map((routine) => {
             const lastRun = lastRunLabel(routine.lastRun);
+            const overlaps =
+              routine.enabled &&
+              rows.some(
+                (other) =>
+                  other.id !== routine.id &&
+                  other.enabled &&
+                  other.agentId === routine.agentId &&
+                  other.channel.id === routine.channel.id &&
+                  other.nextRunAt === routine.nextRunAt,
+              );
             return (
               <Item key={routine.id} variant="muted">
                 {/* Paused reads at a glance: the content dims, and a chip below says the word. */}
@@ -194,6 +204,12 @@ export function RoutinesList({
                     {routine.instruction}
                   </ItemDescription>
                   {/* A set, so it wraps onto its own line rather than crowding the title. */}
+                  {overlaps ? (
+                    <p className="text-sm text-amber-700">
+                      Outra rotina deste bot está agendada para o mesmo canal e
+                      horário. Confira se os pedidos devem ser reunidos.
+                    </p>
+                  ) : null}
                   <ItemFooter>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {routine.channel.gone ? (

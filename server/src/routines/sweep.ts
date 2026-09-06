@@ -1,26 +1,6 @@
-/**
- * Turning "this routine is due" into exactly one firing, on a clock, across replicas.
- *
- * TWO HALVES, LIKE `server/src/work/culler.ts`, and separated for its reason: deciding what should
- * fire is not the same act as firing it. This half reads the ledger and puts an item on the shared
- * queue; the next one claims those items and dispatches them. So whichever replica noticed does not
- * have to be the one that carries it out, and a dispatch that dies halfway is picked up by whoever
- * claims it next rather than lost with the process that saw it was due.
- *
- * Two free functions over one options type rather than a factory, again like the culler, so the two
- * halves cannot drift about what a lease, an owner or a limit means: there is one description of the
- * things they share, and both read it.
- *
- * THE OFFER KEY IS THE WHOLE IDEMPOTENCE STORY. It carries the minute the firing was due, so three
- * replicas waking at 09:00 produce one work item and one run. That holds only while every replica
- * renders that minute identically, which is why the format is pinned in one function below and
- * asserted literally in `server/tests/routine-sweep.integration.test.ts`.
- *
- * NO CLAIM OR LEASE MACHINERY HERE, and none on the routines table. `server/src/work/queue.ts`
- * already owns `for update skip locked`, leases named on the database's clock and an attempt count.
- * A second half-right copy grown next to it is the duplicated firing mechanism #235 exists to
- * prevent.
- */
+/** Durable dispatch is separate from execution admission: queue redeliveries share an occurrence
+ * row, and only the runner winning claimed_at may execute it. Pending rows survive HTTP 202 and
+ * process restarts. Interrupted admitted turns are surfaced as unknown, never replayed blindly. */
 import { DEFAULT_MAX_ATTEMPTS, type WorkQueue } from "../work/queue";
 import { RoutineRefusedError, type RoutineStore } from "./store";
 
@@ -56,17 +36,8 @@ const DISPATCH_RETRY_DELAY_MS = 60_000;
  */
 export const DEFAULT_GRACE_MS = 10 * 60_000;
 
-/**
- * How long a run row may sit open with no outcome before a pass declares it abandoned.
- *
- * A server that dies mid-turn strands its run row for ever: the queue item was finished on the 202,
- * so no retry comes back for it, and nothing else writes that row — the routines page reads
- * "running now" for a run no process is running. Twice the server's own turn timeout
- * (`DEFAULT_TURN_TIMEOUT_MS` in `./run-turn`, five minutes), so a slow-but-alive turn is never
- * closed out from under the server still running it. A local constant rather than an import because
- * the sweep runs as a CronJob and must not drag the runtime's import graph — the Intelligence
- * client and everything behind it — into that process.
- */
+/** Longer than the five-minute turn deadline. Interrupted admitted executions require review;
+ * unclaimed accepted work is recovered separately, without conflating dispatch with execution. */
 const ABANDONED_RUN_MS = 10 * 60_000;
 
 export type RoutineSweepOptions = {
@@ -280,21 +251,11 @@ export async function dispatchClaimedRoutines(
     skipped: [],
   };
 
-  /*
-   * THE REAPER, before any firing is considered. It closes the run rows nothing in the system will
-   * ever come back for: a server that died mid-turn (the queue item was finished on the 202, so no
-   * retry returns for that row), and the rows opened by dispatch attempts that threw (the loop below
-   * deliberately does not close those itself — see the comment at the dispatch). Without it those
-   * rows read "running now" on the routines page for ever. Age-scoped rather than identity-scoped,
-   * because age is the one signal that distinguishes an abandoned row from a turn some server is
-   * still running; the cutoff sits above the turn timeout so a live turn always finishes its own row
-   * first. Best-effort with its own catch, because a reaper that cannot run must not stop this pass
-   * from firing what is due.
-   */
+  // Claimed executions past the hard turn bound have unknown effects. Surface them, never replay.
   try {
     const reaped = await options.routineStore.reapAbandonedRuns(
       ABANDONED_RUN_MS,
-      "the server never finished this run; it may have restarted mid-turn, or the run may never have been dispatched",
+      "Execution interrupted after admission; effects and result are unknown. Review before retrying manually.",
     );
     if (reaped > 0) {
       console.warn(JSON.stringify({ type: "routine-runs-reaped", reaped }));
@@ -306,6 +267,24 @@ export async function dispatchClaimedRoutines(
         reason: String(error),
       }),
     );
+  }
+
+  // A 202 is dispatch acceptance, not completion. Redispatch unclaimed durable rows even when
+  // their queue item was already finished. The runner's atomic fence makes concurrent recovery safe.
+  for (const pending of await options.routineStore.pendingRuns(
+    options.limit ?? DEFAULT_LIMIT,
+  )) {
+    try {
+      await options.dispatch(pending.runId);
+    } catch (error) {
+      console.warn(
+        JSON.stringify({
+          type: "routine-pending-recovery-failed",
+          runId: pending.runId,
+          reason: String(error),
+        }),
+      );
+    }
   }
 
   for (const item of claimed) {
@@ -356,65 +335,52 @@ export async function dispatchClaimedRoutines(
         const reason = routine
           ? "switched off between the offer and the firing"
           : "deleted between the offer and the firing";
+        if (routine) {
+          const stamp = new Date(String(item.payload.scheduledFor ?? ""));
+          const { runId } = await options.routineStore.insertRun(
+            routineId,
+            Number.isNaN(stamp.getTime()) ? undefined : stamp,
+          );
+          if (await options.routineStore.claimRun(runId))
+            await options.routineStore.finishRun(runId, "skipped", reason);
+        }
         await finishOrSay(options, item.key, routineId, reason);
         report.skipped.push({ routineId, reason });
         continue;
       }
 
-      /*
-       * AND THE WINDOW AGAIN, HERE, before any run row exists.
-       *
-       * The offer already enforced this window at offer time, and that is not enough: the queue's
-       * redelivery machinery can outlive it. A backlogged queue, or five releases at a minute each,
-       * and the item is claimed well after the occurrence it names — "here is your morning summary",
-       * in the afternoon, which is exactly what the stale-stamp policy above exists to prevent. So it
-       * is re-checked at the moment of acting, which is the culler's precedent ("Somebody came back",
-       * `culler.ts:~170`): the decision was made elsewhere and the world has moved since.
-       *
-       * BESIDE the deleted/disabled branch and before `insertRun`, so a skipped firing leaves no
-       * `routine_runs` row: a run opened with no outcome and nothing coming to give it one shows on
-       * the routines page as a firing that started and never ended.
-       *
-       * Finished, not released, for the same reason as above: re-delivery cannot make a past
-       * occurrence current. A missing or unreadable stamp is not treated as stale — the offer is the
-       * only writer of this payload and always writes one, so there is no window to enforce rather
-       * than a window that has passed, and dropping the firing on a payload this file wrote would be
-       * inventing a reason to lose it.
-       */
+      // Reject stale new occurrences; an already admitted run retains its eventual result.
       const now = options.now?.() ?? new Date();
       const stamp = item.payload.scheduledFor;
       const scheduledFor =
         typeof stamp === "string" ? new Date(stamp) : undefined;
-      if (
-        scheduledFor &&
-        !Number.isNaN(scheduledFor.getTime()) &&
-        now.getTime() - scheduledFor.getTime() > graceMs
-      ) {
+      if (!scheduledFor || Number.isNaN(scheduledFor.getTime())) {
+        const reason =
+          "invalid scheduled occurrence; refusing non-idempotent dispatch";
+        await finishOrSay(options, item.key, routineId, reason);
+        report.skipped.push({ routineId, reason });
+        continue;
+      }
+      if (now.getTime() - scheduledFor.getTime() > graceMs) {
         const reason = "claimed too long after the occurrence it was due for";
+        const { runId } = await options.routineStore.insertRun(
+          routineId,
+          scheduledFor,
+        );
+        // A timed-out dispatch may already be running. Only skip if admission has not occurred.
+        if (await options.routineStore.claimRun(runId))
+          await options.routineStore.finishRun(runId, "skipped", reason);
         await finishOrSay(options, item.key, routineId, reason);
         report.skipped.push({ routineId, reason });
         continue;
       }
 
-      /*
-       * The run row first, then the dispatch, because the dispatch is told a run id and nothing else.
-       * From the moment it resolves the run row owns the outcome: the queue's retries are for
-       * DISPATCH failures only, and a turn that failed is final for this firing — the fatigue rule
-       * owns that, not this loop.
-       */
-      const { runId } = await options.routineStore.insertRun(routineId);
-      /*
-       * A dispatch that throws leaves the row this attempt opened with no status, AND NOTHING HERE
-       * CLOSES IT — the reaper above does, once the row is older than any turn could still be
-       * running. That restraint is deliberate: a dispatch that timed out is not a dispatch that
-       * failed, because the abort tears down the sweep's side of the call while the server may
-       * already have accepted it and detached the turn — a turn that will come back minutes later
-       * and finish this very row. `finishRun` finishes once, so closing the row now would turn that
-       * turn's real outcome into a silent no-op; the earlier shape of this cleanup ("close every
-       * open run of the routine at the give-up") mislabelled exactly such in-flight runs as failed.
-       * Age is the only signal the sweep has that no server is coming back for a row, so age is the
-       * scope the closing uses.
-       */
+      // A durable occurrence row is shared by every HTTP retry for this scheduled minute.
+      const { runId } = await options.routineStore.insertRun(
+        routineId,
+        scheduledFor,
+      );
+      // A timeout is ambiguous. Preserve this ID; pending recovery or an admitted executor owns it.
       await options.dispatch(runId);
       if (
         !(await options.queue.finish({

@@ -74,6 +74,7 @@ const TOOLS: readonly McpTool[] = Object.freeze([
     name: "create_routine",
     description: [
       "Set up a standing instruction that you carry out on a schedule for the person you are talking to.",
+      "Before creating, list existing routines. If the person adds a topic or source to an existing request, use update_routine on that routine and preserve the original requirements; do not create a second schedule. Distinct tasks may share a time, so never merge or remove them without the person asking.",
       "",
       "Write the `instruction` as the work of ONE firing, in the imperative, and do not restate the schedule",
       'inside it: `Append the current UTC time to the page "Log"`, not `Every 15 minutes, append the current',

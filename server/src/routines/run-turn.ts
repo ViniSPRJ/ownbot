@@ -1,3 +1,4 @@
+import { incompleteHistoryPayload } from "../../../shared/history-markers";
 /**
  * One headless turn, run into the Intelligence thread the person will open.
  *
@@ -53,7 +54,6 @@ import type {
   BaseEvent,
   Message,
   RunAgentInput,
-  ToolCall,
 } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import { historyOrEmpty } from "../copilot";
@@ -189,7 +189,11 @@ function contentToText(content: unknown): string {
     return content
       .map((part) => {
         if (typeof part === "string") return part;
-        if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+        if (
+          part &&
+          typeof part === "object" &&
+          typeof (part as { text?: unknown }).text === "string"
+        ) {
           return (part as { text: string }).text;
         }
         return "";
@@ -197,7 +201,11 @@ function contentToText(content: unknown): string {
       .filter((text) => text.length > 0)
       .join("\n");
   }
-  if (content && typeof content === "object" && typeof (content as { text?: unknown }).text === "string") {
+  if (
+    content &&
+    typeof content === "object" &&
+    typeof (content as { text?: unknown }).text === "string"
+  ) {
     return (content as { text: string }).text;
   }
   return "";
@@ -260,8 +268,8 @@ function isSilent(message: Message): boolean {
  * one that re-persists the transcript.
  *
  * The rules, in order:
- *  1. A tool call is ANSWERED if some later message carries it as `toolCallId`. Later, not merely
- *     present: a result ahead of its call is not a pairing any provider accepts either.
+ *  1. A tool call is ANSWERED by a matching result in the immediately following tool block.
+ *     Cross-turn, earlier and duplicate results cannot establish a valid pair.
  *  2. An assistant message keeps only its answered calls. If that leaves it with no calls and
  *     nothing said, the message is dropped — an empty assistant husk is itself invalid for some
  *     providers, so stripping the call is not enough.
@@ -272,72 +280,62 @@ function isSilent(message: Message): boolean {
  * returned as the same object — a healthy thread, which is nearly all of them, goes through
  * untouched rather than through a re-normalization that could quietly differ.
  */
-/**
- * A routine firing is a standing instruction, not a continuation of the channel's tool traffic.
- * Seeding prior tool calls and tool results has failed live: canonical rows can arrive as
- * `role: "tool"` without a `toolCallId` (the platform names the tool "unknown"), which the AI SDK's
- * ModelMessage schema rejects and the whole firing dies with "messages do not match the
- * ModelMessage[] schema". Keep the conversation as text: drop tool rows and strip `toolCalls`
- * from assistant rows, keeping whatever they said.
- */
-function stripToolTraffic(history: Message[]): Message[] {
+export function sanitizeSeededHistory(history: Message[]): Message[] {
   const kept: Message[] = [];
-  for (const message of history) {
-    if (message.role === "tool") continue;
-    const { toolCalls: _calls, ...rest } = message as Message & { toolCalls?: unknown };
-    if (isSilent(rest as Message)) continue;
-    kept.push(rest as Message);
+  const consumed = new Set<number>();
+  const usedIds = new Set<string>();
+  for (const [index, message] of history.entries()) {
+    // A browser's display-only placeholder must never become an assistant conclusion in context.
+    if (incompleteHistoryPayload(message) !== undefined) continue;
+    if (message.role === "tool") {
+      if (consumed.has(index)) kept.push(message);
+      continue;
+    }
+    if (message.role !== "assistant") {
+      kept.push(message);
+      continue;
+    }
+    const calls = message.toolCalls;
+    if (!calls) {
+      kept.push(message);
+      continue;
+    }
+    // Providers require tool results immediately after their assistant call, with no intervening
+    // user/assistant turn. Do not pair a late, duplicate, or earlier result by ID alone.
+    const results = new Map<string, number>();
+    for (
+      let at = index + 1;
+      at < history.length && history[at]?.role === "tool";
+      at++
+    ) {
+      const id = (history[at] as { toolCallId?: string }).toolCallId;
+      if (typeof id === "string" && id.length > 0 && !results.has(id))
+        results.set(id, at);
+    }
+    const answered = calls.filter((call) => {
+      const valid =
+        typeof call.id === "string" &&
+        call.id.length > 0 &&
+        typeof call.function?.name === "string" &&
+        typeof call.function?.arguments === "string" &&
+        results.has(call.id) &&
+        !usedIds.has(call.id);
+      if (valid) {
+        usedIds.add(call.id);
+        consumed.add(results.get(call.id)!);
+      }
+      return valid;
+    });
+    if (answered.length === 0 && isSilent(message)) continue;
+    if (answered.length === calls.length) kept.push(message);
+    else if (answered.length > 0)
+      kept.push({ ...message, toolCalls: answered } as Message);
+    else {
+      const { toolCalls: _dropped, ...rest } = message;
+      kept.push(rest as Message);
+    }
   }
   return kept;
-}
-
-export function sanitizeSeededHistory(history: Message[]): Message[] {
-  /** For each answered call id, the earliest position that answers it. */
-  const answeredAt = new Map<string, number>();
-  for (const [index, message] of history.entries()) {
-    const { toolCallId } = message as { toolCallId?: string };
-    if (toolCallId === undefined) continue;
-    if (!answeredAt.has(toolCallId)) answeredAt.set(toolCallId, index);
-  }
-
-  const surviving = new Set<string>();
-  const kept: (Message | undefined)[] = history.map((message, index) => {
-    const { toolCalls } = message as { toolCalls?: ToolCall[] };
-    if (toolCalls === undefined) return message;
-
-    const answered = toolCalls.filter((call) => {
-      const at = answeredAt.get(call.id);
-      return at !== undefined && at > index;
-    });
-    for (const call of answered) surviving.add(call.id);
-
-    // The husk check goes FIRST so it also catches a row that arrived with no calls and nothing
-    // said — the same invalid shape, reached without a dangle.
-    if (answered.length === 0 && isSilent(message)) return undefined;
-    // The healthy path, and the only one that returns the very same object.
-    if (answered.length === toolCalls.length) return message;
-
-    /*
-     * Cast for the same reason `toAgentMessage` casts: `Message` is a union discriminated on `role`,
-     * and a spread over the union widens past every branch of it. Neither rewrite here can change
-     * the role or the shape — one narrows the `toolCalls` array, the other removes the key — so
-     * there is nothing to narrow against and nothing that could stop being a `Message`.
-     */
-    if (answered.length > 0) {
-      return { ...message, toolCalls: answered } as Message;
-    }
-    // Text it did say, minus a call it cannot complete.
-    const { toolCalls: _dropped, ...rest } = message as Message & {
-      toolCalls?: ToolCall[];
-    };
-    return rest as Message;
-  });
-
-  return kept.filter((message): message is Message => {
-    if (message === undefined) return false;
-    const { toolCallId } = message as { toolCallId?: string };
-    return toolCallId === undefined || surviving.has(toolCallId);
-  });
 }
 
 /** What a message said out loud, or nothing if it did not say anything. */
@@ -459,7 +457,7 @@ export function createTurnRunner(options: {
       { messages: [] as ThreadHistoryMessage[] },
     );
 
-    const seeded = stripToolTraffic(sanitizeSeededHistory(history.messages.map(toAgentMessage)));
+    const seeded = sanitizeSeededHistory(history.messages.map(toAgentMessage));
     /*
      * This turn's own message — and the ONLY message that is framed. See {@link frameFiring} for the
      * firing it did nothing on. The seeded history above is untouched, which is what keeps a previous
@@ -677,8 +675,11 @@ export function createTurnRunner(options: {
       );
     }
 
-    const said = agent.messages
-      .filter((message) => !before.has(message.id))
+    const replies = agent.messages.filter(
+      (message) =>
+        !before.has(message.id) && assistantText(message) !== undefined,
+    );
+    const said = replies
       .map(assistantText)
       .filter((text): text is string => text !== undefined);
     // The diff first, the streamed chunks as the fallback: the diff is what was persisted, which is
@@ -703,6 +704,7 @@ export function createTurnRunner(options: {
       throw new Error("The turn finished without saying anything.");
     }
 
-    return { replyText };
+    const resultMessageId = replies.at(-1)?.id;
+    return { replyText, ...(resultMessageId ? { resultMessageId } : {}) };
   };
 }

@@ -1,3 +1,5 @@
+import { createOperationsRoutes } from "./operations/routes";
+import type { OperationsStore } from "./operations/store";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
@@ -212,10 +214,17 @@ export function createApp(
    * rather than opening a second one on the same file. Unused in Intelligence mode.
    */
   localThreadReader?: ThreadReader,
+  operations?: OperationsStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
   app.get("/health", (context) => context.json({ status: "ok" }));
+  app.get("/ready", async (context) => {
+    const result = operations
+      ? await operations.readiness()
+      : { status: "degraded", checks: { configured: false } };
+    return context.json(result, result.status === "ready" ? 200 : 503);
+  });
   // Projected, never the raw runtime. config.runtime carries the Intelligence contract, including
   // INTELLIGENCE_API_KEY and the licence token, and this endpoint is reachable by anyone. Returning
   // the object wholesale would serve deployment secrets to the browser. Add fields here explicitly.
@@ -906,6 +915,11 @@ export function createApp(
     );
   }
 
+  if (operations)
+    app.route(
+      "/api/operations",
+      createOperationsRoutes(operations, requireUser),
+    );
   if (routineStore) {
     app.route("/api/routines", createRoutineRoutes(routineStore, requireUser));
   }

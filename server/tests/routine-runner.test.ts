@@ -65,8 +65,12 @@ function harness(options: {
   context?: RoutineRunContext | null;
   channel?: AgentChannel | null;
   failures?: number;
+  routineEnabled?: boolean;
   runTurn?: TurnRunner;
   recordActivity?: () => Promise<void>;
+  persistResult?: (
+    result: { replyText: string; resultMessageId?: string } | undefined,
+  ) => void;
 }) {
   const recorded: Recorded = {
     finished: [],
@@ -75,7 +79,20 @@ function harness(options: {
     turns: [],
   };
 
+  let claimed = false;
   const routineStore: RoutineStore = {
+    async claimRun() {
+      if (claimed) return false;
+      claimed = true;
+      return true;
+    },
+    pendingRuns: () => unreachable("pendingRuns"),
+    routineForFiring: async () => ({
+      id: CONTEXT.routineId,
+      enabled: options.routineEnabled ?? true,
+    }),
+    reapAbandonedRuns: () => unreachable("reapAbandonedRuns"),
+    markUnschedulable: () => unreachable("markUnschedulable"),
     create: () => unreachable("create"),
     listFor: () => unreachable("listFor"),
     update: () => unreachable("update"),
@@ -88,7 +105,8 @@ function harness(options: {
       expect(runId).toBe(RUN_ID);
       return options.context === undefined ? CONTEXT : options.context;
     },
-    async finishRun(runId, status, error) {
+    async finishRun(runId, status, error, result) {
+      options.persistResult?.(result);
       recorded.finished.push({ runId, status, error });
     },
     async consecutiveFailures(routineId) {
@@ -335,4 +353,38 @@ describe("createRoutineRunner", () => {
       "This routine failed: not an Error object",
     );
   });
+});
+
+test("duplicate concurrent HTTP dispatches execute one turn and persist the bound result", async () => {
+  const results: unknown[] = [];
+  const { runner, recorded } = harness({
+    runTurn: async () => ({
+      replyText: "A full result beyond the channel preview",
+      resultMessageId: "assistant-42",
+    }),
+    persistResult: (result) => results.push(result),
+  });
+  await Promise.all([runner.run(RUN_ID), runner.run(RUN_ID)]);
+  await runner.run(RUN_ID);
+  expect(recorded.turns).toHaveLength(1);
+  expect(recorded.finished).toHaveLength(1);
+  expect(results).toEqual([
+    {
+      replyText: "A full result beyond the channel preview",
+      resultMessageId: "assistant-42",
+    },
+  ]);
+});
+
+test("recovered work respects a routine disabled after acceptance", async () => {
+  const { runner, recorded } = harness({ routineEnabled: false });
+  await runner.run(RUN_ID);
+  expect(recorded.turns).toHaveLength(0);
+  expect(recorded.finished).toEqual([
+    {
+      runId: RUN_ID,
+      status: "skipped",
+      error: "routine was disabled before execution",
+    },
+  ]);
 });

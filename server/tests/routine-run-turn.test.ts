@@ -252,7 +252,10 @@ describe("a routine's headless turn", () => {
   test("returns what the Bot said, taken from the agent the runner was handed", async () => {
     const { run } = harness({});
 
-    expect(await run()).toEqual({ replyText: "Three things happened." });
+    expect(await run()).toEqual({
+      replyText: "Three things happened.",
+      resultMessageId: "assistant_1",
+    });
   });
 
   test("does not leak history into the reply: the before-set must be taken after seeding, not before", async () => {
@@ -263,7 +266,10 @@ describe("a routine's headless turn", () => {
     // one line the run actually added.
     const { run } = harness({ history: THREE_ROWS });
 
-    expect(await run()).toEqual({ replyText: "Three things happened." });
+    expect(await run()).toEqual({
+      replyText: "Three things happened.",
+      resultMessageId: "assistant_1",
+    });
   });
 
   test("seeds the thread's history and the turn onto the agent", async () => {
@@ -501,6 +507,38 @@ describe("the seeded history is sanitized of dangling tool calls", () => {
       "m3",
     ]);
     expect(seeded).toHaveLength(3);
+  });
+
+  test("missing IDs, duplicate results and cross-turn associations never reach the model", () => {
+    const call = {
+      id: "call",
+      type: "function",
+      function: { name: "lookup", arguments: "{}" },
+    };
+    const history = [
+      { id: "a", role: "assistant", content: "Looking", toolCalls: [call] },
+      { id: "bad", role: "tool", content: "missing ID" },
+      { id: "r", role: "tool", content: "verified", toolCallId: "call" },
+      {
+        id: "duplicate",
+        role: "tool",
+        content: "duplicate",
+        toolCallId: "call",
+      },
+      {
+        id: "b",
+        role: "assistant",
+        content: "Interrupted",
+        toolCalls: [{ ...call, id: "late" }],
+      },
+      { id: "u", role: "user", content: "next turn" },
+      { id: "late-r", role: "tool", content: "late", toolCallId: "late" },
+    ] as unknown as Message[];
+    const snapshot = structuredClone(history);
+    const safe = sanitizeSeededHistory(history);
+    expect(safe.map((message) => message.id)).toEqual(["a", "r", "b", "u"]);
+    expect(safe[2]).not.toHaveProperty("toolCalls");
+    expect(history).toEqual(snapshot);
   });
 
   test("a clean history passes through unchanged, object for object", () => {

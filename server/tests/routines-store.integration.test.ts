@@ -12,6 +12,7 @@ import {
   channels,
   intelligenceChannelMappings,
   routineRuns,
+  routineNotifications,
   routines,
   users,
 } from "../src/db/schema";
@@ -1048,7 +1049,10 @@ describe("reaping the runs the server never finished", () => {
   async function ageRun(runId: string, byMs: number) {
     await database
       .update(routineRuns)
-      .set({ startedAt: new Date(Date.now() - byMs) })
+      .set({
+        startedAt: new Date(Date.now() - byMs),
+        claimedAt: new Date(Date.now() - byMs),
+      })
       .where(eq(routineRuns.id, runId));
   }
 
@@ -1306,4 +1310,105 @@ describe("counting the failures at the tail", () => {
       10,
     );
   });
+});
+
+describe("durable occurrence admission and results", () => {
+  test("concurrent dispatch retries resolve one occurrence and admit one executor", async () => {
+    const { routine } = await makeRoutine();
+    const scheduled = new Date("2026-09-07T10:30:00Z");
+    const attempts = await Promise.all(
+      Array.from({ length: 8 }, () => store.insertRun(routine.id, scheduled)),
+    );
+    expect(new Set(attempts.map((r) => r.runId)).size).toBe(1);
+    const runId = attempts[0]!.runId;
+    const claims = await Promise.all(
+      Array.from({ length: 8 }, () => store.claimRun(runId)),
+    );
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    await store.finishRun(runId, "succeeded", undefined, {
+      replyText: "Independent full result",
+      resultMessageId: "msg-42",
+    });
+    await store.finishRun(runId, "failed", "late error", {
+      replyText: "wrong",
+    });
+    expect(await store.claimRun(runId)).toBe(false);
+    const [row] = await database
+      .select()
+      .from(routineRuns)
+      .where(eq(routineRuns.id, runId));
+    expect(row?.replyText).toBe("Independent full result");
+    expect(row?.resultMessageId).toBe("msg-42");
+    const notifications = await database
+      .select()
+      .from(routineNotifications)
+      .where(eq(routineNotifications.runId, runId));
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.status).toBe("pending");
+  });
+
+  test("restart preserves unclaimed work and surfaces claimed unknown outcomes without replay", async () => {
+    const { routine } = await makeRoutine();
+    const pending = await store.insertRun(routine.id);
+    const interrupted = await store.insertRun(routine.id);
+    await store.claimRun(interrupted.runId);
+    await database
+      .update(routineRuns)
+      .set({ startedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(routineRuns.id, pending.runId));
+    await database
+      .update(routineRuns)
+      .set({ claimedAt: new Date(Date.now() - 11 * 60_000) })
+      .where(eq(routineRuns.id, interrupted.runId));
+    await store.reapAbandonedRuns(
+      10 * 60_000,
+      "Unknown effects; review before retry",
+    );
+    expect((await store.pendingRuns(500)).map((r) => r.runId)).toContain(
+      pending.runId,
+    );
+    expect(await store.claimRun(interrupted.runId)).toBe(false);
+    const notifications = await database
+      .select()
+      .from(routineNotifications)
+      .where(eq(routineNotifications.runId, interrupted.runId));
+    expect(notifications).toHaveLength(1);
+    expect(await store.claimRun(pending.runId)).toBe(true);
+  });
+});
+
+test("accepted occurrence keeps its original instruction and channel after routine edits and retries", async () => {
+  const { owner, agentId, routine } = await makeRoutine();
+  const changedChannel = await createChannel(owner, [agentId]);
+  const scheduledFor = new Date("2026-09-08T10:30:00Z");
+  const accepted = await store.insertRun(routine.id, scheduledFor);
+  const manual = await store.insertRun(routine.id);
+  await store.update(owner.id, routine.id, {
+    instruction: "A changed request for future runs.",
+    channelId: changedChannel.id,
+  });
+  const retry = await store.insertRun(routine.id, scheduledFor);
+  expect(retry.runId).toBe(accepted.runId);
+  expect((await store.runContext(accepted.runId))?.channelId).toBe(
+    routine.channelId,
+  );
+  expect((await store.runContext(manual.runId))?.channelId).toBe(
+    routine.channelId,
+  );
+  expect((await store.runContext(accepted.runId))?.instruction).toBe(
+    routine.instruction,
+  );
+  expect((await store.runContext(manual.runId))?.instruction).toBe(
+    routine.instruction,
+  );
+  const next = await store.insertRun(
+    routine.id,
+    new Date("2026-09-09T10:30:00Z"),
+  );
+  expect((await store.runContext(next.runId))?.channelId).toBe(
+    changedChannel.id,
+  );
+  expect((await store.runContext(next.runId))?.instruction).toBe(
+    "A changed request for future runs.",
+  );
 });

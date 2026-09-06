@@ -31,7 +31,7 @@ export type TurnRunner = (input: {
   agentId: string;
   threadId: string; // the owner's thread for the routine's channel
   instruction: string; // the user message of this turn
-}) => Promise<{ replyText: string }>;
+}) => Promise<{ replyText: string; resultMessageId?: string }>;
 
 export type RoutineRunner = { run(routineRunId: string): Promise<void> };
 
@@ -70,6 +70,7 @@ export function createRoutineRunner(options: {
   const { routineStore, channelStore, runTurn } = options;
 
   async function runOnce(routineRunId: string): Promise<void> {
+    if (!(await routineStore.claimRun(routineRunId))) return;
     const context = await routineStore.runContext(routineRunId);
     /*
      * A deleted routine's queued run is nobody's problem. The routine is gone, its runs cascaded
@@ -79,6 +80,14 @@ export function createRoutineRunner(options: {
     if (!context) return;
 
     const { routineId, ownerUserId, agentId, channelId, instruction } = context;
+    if (!(await routineStore.routineForFiring(routineId))?.enabled) {
+      await routineStore.finishRun(
+        routineRunId,
+        "skipped",
+        "routine was disabled before execution",
+      );
+      return;
+    }
     // Everything below is done AS the owner: their channel, their thread, their grants.
     const owner: AgentActor = { id: ownerUserId, role: "user" };
 
@@ -127,8 +136,9 @@ export function createRoutineRunner(options: {
     }
 
     let replyText: string;
+    let resultMessageId: string | undefined;
     try {
-      ({ replyText } = await runTurn({
+      ({ replyText, resultMessageId } = await runTurn({
         ownerUserId,
         agentId,
         threadId: channel.threadId,
@@ -174,12 +184,14 @@ export function createRoutineRunner(options: {
     }
 
     /*
-     * The reply, then the outcome. `say` cannot throw, and `finishRun` is finish-once, so neither
-     * order can lose the run row — this one is the browser's order: what was said lands in the
-     * channel, and then the firing is closed.
+     * Persist the immutable result and outbox before updating the channel preview. A later
+     * conversation cannot replace the result used by the notifier.
      */
+    await routineStore.finishRun(routineRunId, "succeeded", undefined, {
+      replyText,
+      resultMessageId,
+    });
     await say(replyText);
-    await routineStore.finishRun(routineRunId, "succeeded");
   }
 
   return {

@@ -14,11 +14,8 @@
  * apart: only the second one has anything to do with concurrency, and only the second one needs to be
  * reasoned about as a race.
  *
- * NO CLAIM OR LEASE MACHINERY, EVER. Firing mechanics belong to the shared `work_items` queue in
- * `server/src/work/queue.ts`, which already owns `for update skip locked`, leases on the database's
- * clock, and an attempt count. A second lease grown on the routines table — a `claimed_by`, a
- * `locked_until` — is exactly the duplicated firing mechanism #235 exists to prevent: two half-right
- * implementations of the same hard thing, one of which nobody tests.
+ * Queue leases control dispatch; claimed_at is an irreversible execution admission fence.
+ * An interrupted turn has unknown effects and is surfaced for review, never automatically replayed.
  */
 import {
   and,
@@ -38,6 +35,7 @@ import {
   channelMemberships,
   channels,
   routineRuns,
+  routineNotifications,
   routines,
 } from "../db/schema";
 import { describeCron, nextOccurrence, ScheduleRefusedError } from "./schedule";
@@ -185,7 +183,11 @@ export type RoutineStore = {
    */
   advanceNextRun(id: string, from: Date, computeFrom?: Date): Promise<boolean>;
   /** Open a run row. Its status stays null until something finishes it. */
-  insertRun(routineId: string): Promise<{ runId: string }>;
+  insertRun(routineId: string, scheduledFor?: Date): Promise<{ runId: string }>;
+  /** Atomic, irreversible admission: duplicates and completed runs cannot execute again. */
+  claimRun(runId: string): Promise<boolean>;
+  /** Durable work unclaimed for at least a minute; bounds recovery redispatch frequency. */
+  pendingRuns(limit: number): Promise<{ runId: string }[]>;
   /**
    * The runner's read: an opened run row, joined to the routine it fires.
    *
@@ -209,19 +211,10 @@ export type RoutineStore = {
     runId: string,
     status: RoutineRunOutcome,
     error?: string,
+    result?: { replyText: string; resultMessageId?: string },
   ): Promise<void>;
-  /**
-   * Close every run row that has sat open (`status is null`) longer than `olderThanMs` as
-   * "skipped", with the same reason on all of them. Returns how many rows it closed.
-   *
-   * The sweep's reaper, and deliberately NOT scoped to one routine or one firing: it exists for the
-   * rows nothing else can reach — a server that died mid-turn after the queue item was already
-   * finished on the 202, or a dispatch-failure close that itself failed. The age bound is what keeps
-   * it away from live work: a run younger than the cutoff may be a turn some server is still
-   * running, and closing that row would make the real `finishRun` a silent no-op. "skipped" rather
-   * than "failed" so an infrastructure death is not counted by the fatigue rule as the routine's own
-   * failure.
-   */
+  /** Close admitted runs older than the execution deadline as unknown/skipped, atomically
+   * enqueueing their notification. Unclaimed pending work remains recoverable. */
   reapAbandonedRuns(olderThanMs: number, error: string): Promise<number>;
   /**
    * Switch a routine off because its own schedule refuses to advance, and record why.
@@ -721,16 +714,66 @@ export function createRoutineStore(database: Database): RoutineStore {
       return moved.length > 0;
     },
 
-    async insertRun(routineId) {
+    async insertRun(routineId, scheduledFor) {
       const runId = `routine_run_${crypto.randomUUID()}`;
-      // `startedAt` defaults to the database's now, and `status` stays null: null is the in-flight
-      // state, which is the reason that column is nullable rather than defaulted to something.
-      const [row] = await database
+      const [inserted] = await database
         .insert(routineRuns)
-        .values({ id: runId, routineId })
+        .values({
+          id: runId,
+          routineId,
+          scheduledFor,
+          // Capture from the same database statement as occurrence creation. A retry retains
+          // the original snapshot through onConflictDoNothing even after routine edits.
+          instructionSnapshot: sql`(select instruction from routines where id = ${routineId})`,
+          channelIdSnapshot: sql`(select channel_id from routines where id = ${routineId})`,
+        })
+        .onConflictDoNothing()
         .returning({ id: routineRuns.id });
-      if (!row) throw new Error("inserting a routine run returned no row");
-      return { runId: row.id };
+      if (inserted) return { runId: inserted.id };
+      if (!scheduledFor)
+        throw new Error("inserting a routine run returned no row");
+      const [existing] = await database
+        .select({ id: routineRuns.id })
+        .from(routineRuns)
+        .where(
+          and(
+            eq(routineRuns.routineId, routineId),
+            eq(routineRuns.scheduledFor, scheduledFor),
+          ),
+        );
+      if (!existing)
+        throw new Error("routine occurrence disappeared during dispatch");
+      return { runId: existing.id };
+    },
+
+    async claimRun(runId) {
+      const claimed = await database
+        .update(routineRuns)
+        .set({ claimedAt: sql`now()` })
+        .where(
+          and(
+            eq(routineRuns.id, runId),
+            isNull(routineRuns.status),
+            isNull(routineRuns.claimedAt),
+          ),
+        )
+        .returning({ id: routineRuns.id });
+      return claimed.length === 1;
+    },
+
+    async pendingRuns(limit) {
+      return database
+        .select({ runId: routineRuns.id })
+        .from(routineRuns)
+        .where(
+          and(
+            isNull(routineRuns.status),
+            isNull(routineRuns.claimedAt),
+            lte(routineRuns.startedAt, sql`now() - interval '1 minute'`),
+          ),
+        )
+        .orderBy(asc(routineRuns.startedAt), asc(routineRuns.id))
+        .limit(limit);
     },
 
     async runContext(runId) {
@@ -744,8 +787,8 @@ export function createRoutineStore(database: Database): RoutineStore {
           routineId: routines.id,
           ownerUserId: routines.ownerUserId,
           agentId: routines.agentId,
-          channelId: routines.channelId,
-          instruction: routines.instruction,
+          channelId: sql<string>`coalesce(${routineRuns.channelIdSnapshot}, ${routines.channelId})`,
+          instruction: sql<string>`coalesce(${routineRuns.instructionSnapshot}, ${routines.instruction})`,
         })
         .from(routineRuns)
         .innerJoin(routines, eq(routines.id, routineRuns.routineId))
@@ -765,76 +808,81 @@ export function createRoutineStore(database: Database): RoutineStore {
       return row ?? null;
     },
 
-    async finishRun(runId, status, error) {
-      await database
-        .update(routineRuns)
-        .set({
-          status,
-          // The database's clock closes the row, the same as it opened it.
-          finishedAt: sql`now()`,
-          // Left alone rather than nulled when there was no error, so finishing a run twice cannot
-          // erase what the first finish recorded — and the `status is null` guard below is what
-          // makes that true.
-          ...(error === undefined
-            ? {}
-            : {
-                // Measured in code points, like `validInstruction`, so an emoji-bearing error
-                // cannot be cut mid-surrogate-pair.
-                error: Array.from(error).slice(0, MAX_RUN_ERROR).join(""),
-              }),
-        })
-        // A run finishes once. The second call — succeeded, then a downstream throw whose catch
-        // calls finishRun("failed") — matches no row here and is a silent no-op, rather than
-        // relabeling what the first finish already recorded.
-        .where(and(eq(routineRuns.id, runId), isNull(routineRuns.status)));
+    async finishRun(runId, status, error, result) {
+      await database.transaction(async (tx) => {
+        const finished = await tx
+          .update(routineRuns)
+          .set({
+            status,
+            finishedAt: sql`now()`,
+            ...(error === undefined
+              ? {}
+              : { error: Array.from(error).slice(0, MAX_RUN_ERROR).join("") }),
+            ...(result
+              ? {
+                  replyText: result.replyText,
+                  resultMessageId: result.resultMessageId,
+                }
+              : {}),
+          })
+          .where(and(eq(routineRuns.id, runId), isNull(routineRuns.status)))
+          .returning({ id: routineRuns.id });
+        if (finished.length)
+          await tx
+            .insert(routineNotifications)
+            .values({ runId })
+            .onConflictDoNothing();
+      });
     },
 
     async reapAbandonedRuns(olderThanMs, error) {
-      /*
-       * One UPDATE, not a select-then-loop: every row this WHERE matches is abandoned, and there is
-       * nothing to decide per row that the age bound does not already decide. Both sides of the age
-       * comparison are the database's clock — `started_at` was written by its `now()`, so measuring
-       * it against a replica's `Date.now()` would let ninety seconds of skew reap a run some server
-       * is still running, which is this file's standing clock discipline.
-       */
-      const closed = await database
-        .update(routineRuns)
-        .set({
-          status: "skipped",
-          finishedAt: sql`now()`,
-          // Same code-point cap as `finishRun`, so a reap reason cannot be cut mid-surrogate-pair.
-          error: Array.from(error).slice(0, MAX_RUN_ERROR).join(""),
-        })
-        .where(
-          and(
-            isNull(routineRuns.status),
-            lte(
-              routineRuns.startedAt,
-              sql`now() - (${olderThanMs} * interval '1 millisecond')`,
+      return database.transaction(async (tx) => {
+        const closed = await tx
+          .update(routineRuns)
+          .set({
+            status: "skipped",
+            finishedAt: sql`now()`,
+            error: Array.from(error).slice(0, MAX_RUN_ERROR).join(""),
+          })
+          .where(
+            and(
+              isNull(routineRuns.status),
+              isNotNull(routineRuns.claimedAt),
+              lte(
+                routineRuns.claimedAt,
+                sql`now() - (${olderThanMs} * interval '1 millisecond')`,
+              ),
             ),
-          ),
-        )
-        .returning({ id: routineRuns.id });
-      return closed.length;
+          )
+          .returning({ id: routineRuns.id });
+        if (closed.length)
+          await tx
+            .insert(routineNotifications)
+            .values(closed.map(({ id }) => ({ runId: id })))
+            .onConflictDoNothing();
+        return closed.length;
+      });
     },
 
     async markUnschedulable(id, reason) {
-      const disabled = await database
-        .update(routines)
-        .set({ enabled: false, updatedAt: sql`now()` })
-        .where(eq(routines.id, id))
-        .returning({ id: routines.id });
-      // Deleted between the sweep's read and this write: gone is gone, and a run row inserted here
-      // would only violate the foreign key of a routine nobody can see any more.
-      if (disabled.length === 0) return;
-      // A finished "skipped" row rather than "failed": no turn ran, so the fatigue rule must not
-      // count this, and skipped is exactly the vocabulary for a firing that never became a turn.
-      await database.insert(routineRuns).values({
-        id: `routine_run_${crypto.randomUUID()}`,
-        routineId: id,
-        status: "skipped",
-        finishedAt: sql`now()`,
-        error: Array.from(reason).slice(0, MAX_RUN_ERROR).join(""),
+      await database.transaction(async (tx) => {
+        const disabled = await tx
+          .update(routines)
+          .set({ enabled: false, updatedAt: sql`now()` })
+          .where(eq(routines.id, id))
+          .returning({ id: routines.id });
+        if (!disabled.length) return;
+        const runId = `routine_run_${crypto.randomUUID()}`;
+        await tx.insert(routineRuns).values({
+          id: runId,
+          routineId: id,
+          instructionSnapshot: sql`(select instruction from routines where id = ${id})`,
+          channelIdSnapshot: sql`(select channel_id from routines where id = ${id})`,
+          status: "skipped",
+          finishedAt: sql`now()`,
+          error: Array.from(reason).slice(0, MAX_RUN_ERROR).join(""),
+        });
+        await tx.insert(routineNotifications).values({ runId });
       });
     },
 

@@ -6,3 +6,5 @@ export * from "./core";
 export * from "./coworker";
 export * from "./plugins";
 export * from "./work";
+
+export * from "./health";

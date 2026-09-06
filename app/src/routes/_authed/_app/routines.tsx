@@ -1,3 +1,4 @@
+import { Executions } from "@/components/routines/executions";
 import { createFileRoute } from "@tanstack/react-router";
 import { PageShell } from "@/components/layout/page-shell";
 import { RoutinesList } from "@/components/routines/routines-list";
@@ -25,6 +26,7 @@ function RoutinesPage() {
       title="Routines"
     >
       <RoutinesList />
+      <Executions />
     </PageShell>
   );
 }

@@ -697,7 +697,9 @@ describe("consuming a claimed firing", () => {
     expect(report.fired).toEqual([]);
     expect(report.skipped[0]?.routineId).toBe(routine.id);
     expect(dispatched).toEqual([]);
-    expect(await runsFor(routine.id)).toHaveLength(0);
+    expect((await runsFor(routine.id)).map((run) => run.status)).toEqual([
+      "skipped",
+    ]);
     // Finished rather than released: re-running cannot make a switched-off routine want to fire.
     const [row] = await firingsFor(routine.id);
     expect(row?.finishedAt).not.toBeNull();
@@ -755,7 +757,9 @@ describe("consuming a claimed firing", () => {
      * firing leaves nothing in `routine_runs` — a run row with no outcome and nothing coming to give
      * it one would show on the routines page as a firing that started and never ended.
      */
-    expect(await runsFor(routine.id)).toHaveLength(0);
+    expect((await runsFor(routine.id)).map((run) => run.status)).toEqual([
+      "skipped",
+    ]);
     // Finished rather than released: re-delivery cannot make a past occurrence current.
     const [row] = await firingsFor(routine.id);
     expect(row?.finishedAt).not.toBeNull();
@@ -943,7 +947,10 @@ describe("consuming a claimed firing", () => {
       const [leaked] = await runsFor(routine.id);
       await database
         .update(routineRuns)
-        .set({ startedAt: new Date(Date.now() - 11 * 60_000) })
+        .set({
+          startedAt: new Date(Date.now() - 11 * 60_000),
+          claimedAt: new Date(Date.now() - 11 * 60_000),
+        })
         .where(eq(routineRuns.id, leaked?.id as string));
 
       await dispatchClaimedRoutines(
@@ -1019,7 +1026,10 @@ describe("consuming a claimed firing", () => {
     const attempt = runs.find((run) => run.id !== inFlight.runId);
     await database
       .update(routineRuns)
-      .set({ startedAt: new Date(Date.now() - 11 * 60_000) })
+      .set({
+        startedAt: new Date(Date.now() - 11 * 60_000),
+        claimedAt: new Date(Date.now() - 11 * 60_000),
+      })
       .where(eq(routineRuns.id, attempt?.id as string));
     const warnAgain = spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -1069,7 +1079,10 @@ describe("consuming a claimed firing", () => {
     const [leaked] = await runsFor(routine.id);
     await database
       .update(routineRuns)
-      .set({ startedAt: new Date(Date.now() - 11 * 60_000) })
+      .set({
+        startedAt: new Date(Date.now() - 11 * 60_000),
+        claimedAt: new Date(Date.now() - 11 * 60_000),
+      })
       .where(eq(routineRuns.id, leaked?.id as string));
 
     // Attempt two, claimed twenty minutes after the occurrence: outside the window, so the firing
@@ -1109,7 +1122,10 @@ describe("consuming a claimed firing", () => {
     // was opened by a server that died eleven minutes ago.
     await database
       .update(routineRuns)
-      .set({ startedAt: new Date(Date.now() - 11 * 60_000) })
+      .set({
+        startedAt: new Date(Date.now() - 11 * 60_000),
+        claimedAt: new Date(Date.now() - 11 * 60_000),
+      })
       .where(eq(routineRuns.id, runId));
 
     // Nothing is claimed in this pass; the reaper alone does the work.
@@ -1124,7 +1140,7 @@ describe("consuming a claimed firing", () => {
 
     const runs = await runsFor(routine.id);
     expect(runs[0]?.status).toBe("skipped");
-    expect(runs[0]?.error).toContain("never finished this run");
+    expect(runs[0]?.error).toContain("effects and result are unknown");
     const [summary] = await store.listFor(owner.id);
     expect(summary?.lastRun?.status).toBe("skipped");
     expect(summary?.lastRun?.finishedAt).toBeInstanceOf(Date);
@@ -1262,5 +1278,73 @@ describe("consuming a claimed firing", () => {
         leaseMs: 30_000,
       }),
     ).toEqual([]);
+  });
+});
+
+test("accepted dispatch survives a restart before execution admission", async () => {
+  const { routine } = await makeRoutine();
+  const scheduled = new Date("2001-01-01T09:25:00Z");
+  await offerFiring(routine.id, scheduled, new Date("2001-01-01T09:26:00Z"));
+  await dispatchClaimedRoutines(
+    sweepOptions({ now: () => new Date("2001-01-01T09:26:00Z") }),
+  );
+  const [run] = await runsFor(routine.id);
+  expect((await firingsFor(routine.id))[0]?.finishedAt).not.toBeNull();
+  await database
+    .update(routineRuns)
+    .set({ startedAt: new Date(Date.now() - 2 * 60_000) })
+    .where(eq(routineRuns.id, run!.id));
+  const recovered: string[] = [];
+  await dispatchClaimedRoutines(
+    sweepOptions({
+      dispatch: async (id: string) => {
+        recovered.push(id);
+        if (await store.claimRun(id))
+          await store.finishRun(id, "succeeded", undefined, {
+            replyText: "Recovered",
+          });
+      },
+    }),
+  );
+  expect(recovered).toContain(run!.id);
+  expect(await runsFor(routine.id)).toHaveLength(1);
+  expect((await runsFor(routine.id))[0]?.status).toBe("succeeded");
+});
+
+test("HTTP timeout after admission redelivers the same run without repeating its turn", async () => {
+  const { routine } = await makeRoutine();
+  await offerFiring(
+    routine.id,
+    new Date("2001-01-01T09:25:00Z"),
+    new Date("2001-01-01T09:26:00Z"),
+  );
+  const ids: string[] = [];
+  let admitted = 0;
+  const ambiguousDispatch = async (id: string) => {
+    ids.push(id);
+    if (await store.claimRun(id)) admitted++;
+    if (ids.length === 1)
+      throw new Error("HTTP response timed out after admission");
+  };
+  await dispatchClaimedRoutines(
+    sweepOptions({
+      now: () => new Date("2001-01-01T09:26:00Z"),
+      dispatch: ambiguousDispatch,
+    }),
+  );
+  const [item] = await firingsFor(routine.id);
+  await backdate(item!.key, { runAt: new Date("2001-01-01T09:27:00Z") });
+  await dispatchClaimedRoutines(
+    sweepOptions({
+      now: () => new Date("2001-01-01T09:28:00Z"),
+      dispatch: ambiguousDispatch,
+    }),
+  );
+  expect(ids).toHaveLength(2);
+  expect(new Set(ids).size).toBe(1);
+  expect(admitted).toBe(1);
+  expect(await runsFor(routine.id)).toHaveLength(1);
+  await store.finishRun(ids[0]!, "succeeded", undefined, {
+    replyText: "Original executor completed",
   });
 });

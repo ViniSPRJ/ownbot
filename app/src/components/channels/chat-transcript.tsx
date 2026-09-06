@@ -702,6 +702,14 @@ export function ChatTranscript({
                     toolCallId={item.toolCall.id}
                   />
                 </MessageScrollerItem>
+              ) : item.kind === "incomplete-history" ? (
+                <MessageScrollerItem key={item.id} messageId={item.id}>
+                  <details className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+                    <summary className="cursor-pointer">Registro antigo incompleto · Expandir conteúdo salvo</summary>
+                    <p className="mt-3">Este resultado de ferramenta não pôde ser associado à chamada original. O conteúdo foi preservado e não é uma conclusão verificada do bot.</p>
+                    <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{item.payload}</pre>
+                  </details>
+                </MessageScrollerItem>
               ) : item.kind === "activity" ? (
                 <MessageScrollerItem key={item.id} messageId={item.id}>
                   <TranscriptActivity

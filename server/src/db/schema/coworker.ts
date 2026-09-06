@@ -7,6 +7,9 @@
 import {
   boolean,
   index,
+  integer,
+  jsonb,
+  uniqueIndex,
   pgEnum,
   pgTable,
   primaryKey,
@@ -141,6 +144,12 @@ export const routineRuns = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    instructionSnapshot: text("instruction_snapshot"),
+    channelIdSnapshot: text("channel_id_snapshot"),
+    replyText: text("reply_text"),
+    resultMessageId: text("result_message_id"),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     /** Null means the firing is still in flight; only a finished run has succeeded/failed/skipped. */
     status: routineRunStatus("status"),
@@ -149,5 +158,38 @@ export const routineRuns = pgTable(
   },
   (table) => [
     index("routine_runs_by_routine_idx").on(table.routineId, table.startedAt),
+    uniqueIndex("routine_runs_occurrence_idx").on(
+      table.routineId,
+      table.scheduledFor,
+    ),
+  ],
+);
+
+/** Transactional delivery ledger. Delivery leases never grant permission to rerun a turn. */
+export const routineNotifications = pgTable(
+  "routine_notifications",
+  {
+    runId: text("run_id")
+      .primaryKey()
+      .references(() => routineRuns.id, { onDelete: "cascade" }),
+    status: text("status")
+      .$type<"pending" | "sending" | "sent" | "failed">()
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    receipt: jsonb("receipt"),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("routine_notifications_due_idx").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
   ],
 );

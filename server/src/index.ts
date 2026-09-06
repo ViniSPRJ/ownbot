@@ -1,3 +1,4 @@
+import { createOperationsStore } from "./operations/store";
 import { randomUUID } from "node:crypto";
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
@@ -735,8 +736,9 @@ const routineRunner = createRoutineRunner({
     intelligence:
       localThreads?.intelligenceLike ??
       (routineIntelligence as NonNullable<typeof routineIntelligence>),
-    runner: (localThreads?.runner ??
-      routineAgentRunner) as NonNullable<typeof routineAgentRunner>,
+    runner: (localThreads?.runner ?? routineAgentRunner) as NonNullable<
+      typeof routineAgentRunner
+    >,
     buildAgentFor,
   }),
 });
@@ -1102,6 +1104,17 @@ const app = createApp(
   // Self-hosted only: the same SQLite handle the runtime writes through, so /api/threads never
   // opens a second one on the same file.
   localThreads?.threadReader,
+  createOperationsStore(
+    database,
+    localThreads
+      ? async () => {
+          await localThreads.threadReader(
+            "__readiness_probe__",
+            "__readiness_probe__",
+          );
+        }
+      : undefined,
+  ),
 );
 
 /**
