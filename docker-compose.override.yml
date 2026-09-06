@@ -1,0 +1,23 @@
+# Beelink override (2026-09-06): Bot browser headed under Xvfb (no HeadlessChrome UA) + noVNC so the owner
+# can sign in to sites from any device. VNC is bound to the Tailscale IP only; password in .env (VNC_PASSWORD).
+services:
+  agent-computer:
+    build:
+      context: .
+      dockerfile: agent-computer/Dockerfile.beelink
+    environment:
+      COMPUTER_HEADED: "on"
+      DISPLAY: ":99"
+      VNC_PASSWORD: ${VNC_PASSWORD}
+    command:
+      - sh
+      - -c
+      - >
+        Xvfb :99 -screen 0 1440x900x24 -nolisten tcp >/dev/null 2>&1 &
+        sleep 1;
+        x11vnc -display :99 -passwd "$$VNC_PASSWORD" -forever -shared -localhost -rfbport 5900 -quiet >/dev/null 2>&1 &
+        websockify --web /usr/share/novnc 0.0.0.0:6080 localhost:5900 >/dev/null 2>&1 &
+        exec bun src/index.ts
+    ports:
+      - "100.122.56.122:6080:6080"
+    shm_size: "1g"

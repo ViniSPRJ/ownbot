@@ -381,6 +381,11 @@ export function createProfiles(root: string, onClosed: BrowserClosed) {
         const proxy = egressFor(botId, process.env);
         const context = await chromium.launchPersistentContext(dir, {
           args: LAUNCH_ARGS,
+          // COMPUTER_HEADED=on runs the full Chromium under the container's virtual display (Xvfb,
+          // started by the compose command) instead of chrome-headless-shell. This removes the
+          // `HeadlessChrome` user agent, the tell that sign-in walls (Cloudflare on ft.com, Valor)
+          // key on. Same governed path; only the binary and the user agent change.
+          headless: process.env.COMPUTER_HEADED !== "on",
           // Playwright launches with `--enable-automation`, which sets `navigator.webdriver` and the
           // "controlled by automated software" banner. Dropped for the same reason as the flag above:
           // a person who takes the wheel should be able to sign in. Named explicitly so the sandbox

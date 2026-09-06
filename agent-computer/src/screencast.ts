@@ -208,6 +208,27 @@ export async function startScreencast(
       // A block of text at once: a paste, or a one-time code the person did not type character by
       // character. `Input.insertText` bypasses key events entirely, which is correct here, it is not
       // pretending to be a keyboard.
+      // Sign-in walls (Apple, some banks) ignore `Input.insertText`, which fires no key events at
+      // all; a person typing from a phone or tablet arrives here as text blocks, not keys, and the
+      // field never fills. Short text is therefore replayed as real keystrokes, one character at a
+      // time, the way `page.keyboard.type` does it. Long text keeps the insert path: that is a paste
+      // or a code the person did not type, and replaying a paragraph key by key helps nobody.
+      if (message.text.length <= 64) {
+        for (const character of message.text) {
+          const code = virtualKeyCode(character);
+          const shared = {
+            key: character,
+            text: character,
+            unmodifiedText: character,
+            windowsVirtualKeyCode: code,
+            nativeVirtualKeyCode: code,
+            modifiers: 0,
+          };
+          await client.send("Input.dispatchKeyEvent", { type: "keyDown", ...shared });
+          await client.send("Input.dispatchKeyEvent", { type: "keyUp", ...shared });
+        }
+        return;
+      }
       await client.send("Input.insertText", { text: message.text });
     },
   };
