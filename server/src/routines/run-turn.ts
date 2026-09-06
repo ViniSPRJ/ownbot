@@ -177,11 +177,37 @@ export type RunnerLike = {
  * `Message` is a union discriminated on `role`. There is nothing to narrow against at this boundary:
  * the platform is the authority on its own history.
  */
+/**
+ * Flatten a platform content value to the string the AI SDK's ModelMessage schema accepts for
+ * seeded history. Canonical rows may carry content as an array of parts ({ type, text }) or as
+ * objects without a `type`; anything that is not text is dropped rather than sent as-is, because one
+ * malformed part fails the whole routine turn with "messages do not match the ModelMessage[] schema".
+ */
+function contentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") {
+          return (part as { text: string }).text;
+        }
+        return "";
+      })
+      .filter((text) => text.length > 0)
+      .join("\n");
+  }
+  if (content && typeof content === "object" && typeof (content as { text?: unknown }).text === "string") {
+    return (content as { text: string }).text;
+  }
+  return "";
+}
+
 function toAgentMessage(message: ThreadHistoryMessage): Message {
   return {
     id: message.id,
     role: message.role,
-    content: message.content ?? "",
+    content: contentToText(message.content),
     ...(message.activityType ? { activityType: message.activityType } : {}),
     ...(message.toolCalls
       ? {
@@ -246,6 +272,25 @@ function isSilent(message: Message): boolean {
  * returned as the same object — a healthy thread, which is nearly all of them, goes through
  * untouched rather than through a re-normalization that could quietly differ.
  */
+/**
+ * A routine firing is a standing instruction, not a continuation of the channel's tool traffic.
+ * Seeding prior tool calls and tool results has failed live: canonical rows can arrive as
+ * `role: "tool"` without a `toolCallId` (the platform names the tool "unknown"), which the AI SDK's
+ * ModelMessage schema rejects and the whole firing dies with "messages do not match the
+ * ModelMessage[] schema". Keep the conversation as text: drop tool rows and strip `toolCalls`
+ * from assistant rows, keeping whatever they said.
+ */
+function stripToolTraffic(history: Message[]): Message[] {
+  const kept: Message[] = [];
+  for (const message of history) {
+    if (message.role === "tool") continue;
+    const { toolCalls: _calls, ...rest } = message as Message & { toolCalls?: unknown };
+    if (isSilent(rest as Message)) continue;
+    kept.push(rest as Message);
+  }
+  return kept;
+}
+
 export function sanitizeSeededHistory(history: Message[]): Message[] {
   /** For each answered call id, the earliest position that answers it. */
   const answeredAt = new Map<string, number>();
@@ -414,7 +459,7 @@ export function createTurnRunner(options: {
       { messages: [] as ThreadHistoryMessage[] },
     );
 
-    const seeded = sanitizeSeededHistory(history.messages.map(toAgentMessage));
+    const seeded = stripToolTraffic(sanitizeSeededHistory(history.messages.map(toAgentMessage)));
     /*
      * This turn's own message — and the ONLY message that is framed. See {@link frameFiring} for the
      * firing it did nothing on. The seeded history above is untouched, which is what keeps a previous
