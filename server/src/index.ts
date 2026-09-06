@@ -66,6 +66,7 @@ import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { grantedSkills, grantedTools } from "./plugins/tools";
 import { createTurnRunner } from "./routines/run-turn";
+import { createHeadlessComputer } from "./routines/headless-computer";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
@@ -740,6 +741,22 @@ const routineRunner = createRoutineRunner({
       typeof routineAgentRunner
     >,
     buildAgentFor,
+    // The Bot's computer for a headless turn: without it a routine cannot open a page, read a file
+    // or run a script, because the computer tools are otherwise registered only by the browser.
+    ...(computerGateway
+      ? {
+          computer: createHeadlessComputer({
+            gateway: computerGateway,
+            actorFor: (ownerUserId) => ({
+              id: ownerUserId,
+              ...(ownerUserId === DEV_ACTOR.id ? {} : { userId: ownerUserId }),
+            }),
+          }),
+        }
+      : {}),
+    ...(process.env.ROUTINE_TURN_TIMEOUT_MS
+      ? { turnTimeoutMs: Number(process.env.ROUTINE_TURN_TIMEOUT_MS) }
+      : {}),
   }),
 });
 

@@ -6,7 +6,9 @@ import {
   createTurnRunner,
   frameFiring,
   sanitizeSeededHistory,
+  unansweredToolCalls,
 } from "../src/routines/run-turn";
+import type { HeadlessComputer } from "../src/routines/headless-computer";
 
 /**
  * A headless turn, asserted without a gateway, without a database and without a model.
@@ -106,6 +108,7 @@ function harness(options: {
   abortGraceMs?: number;
   heartbeatMs?: number;
   lockTtlSeconds?: number;
+  computer?: HeadlessComputer;
 }) {
   const order: string[] = [];
   const calls = {
@@ -213,6 +216,7 @@ function harness(options: {
     ...(options.lockTtlSeconds === undefined
       ? {}
       : { lockTtlSeconds: options.lockTtlSeconds }),
+    ...(options.computer === undefined ? {} : { computer: options.computer }),
   });
 
   const run = () =>
@@ -916,5 +920,121 @@ describe("a RUN_ERROR through next", () => {
 
     await expect(run()).rejects.toThrow("the model refused");
     expect(calls.cleaned).toHaveLength(1);
+  });
+});
+
+describe("the computer loop", () => {
+  const fakeComputer = (): HeadlessComputer & {
+    called: { name: string; args: unknown; botId: string; ownerUserId: string }[];
+  } => {
+    const called: { name: string; args: unknown; botId: string; ownerUserId: string }[] = [];
+    return {
+      called,
+      tools: [
+        {
+          name: "computer_run_command",
+          description: "run",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
+      async call({ name, args, botId, ownerUserId }) {
+        called.push({ name, args, botId, ownerUserId });
+        return { ok: true, exitCode: 0, stdout: "curve\n" };
+      },
+    };
+  };
+
+  const asksThenAnswers: Driver = ({ agent, observer, request }) => {
+    const answeredCalls = agent.messages.filter((m) => m.role === "tool");
+    if (answeredCalls.length === 0) {
+      agent.messages = [
+        ...agent.messages,
+        {
+          id: "assistant_call",
+          role: "assistant",
+          content: "Vou rodar o script.",
+          toolCalls: [
+            {
+              id: "call_1",
+              type: "function",
+              function: {
+                name: "computer_run_command",
+                arguments: JSON.stringify({ command: "python3 curve.py" }),
+              },
+            },
+          ],
+        },
+      ] as typeof agent.messages;
+    } else {
+      agent.messages = [
+        ...agent.messages,
+        {
+          id: `assistant_final_${request.input.runId}`,
+          role: "assistant",
+          content: "Curva postada.",
+        },
+      ] as typeof agent.messages;
+    }
+    observer.complete();
+  };
+
+  test("offers the computer tools on the run", async () => {
+    const computer = fakeComputer();
+    const { run, calls } = harness({ computer });
+    await run();
+    expect(
+      (calls.runs[0]?.input as { tools?: { name: string }[] }).tools?.map(
+        (t) => t.name,
+      ),
+    ).toEqual(["computer_run_command"]);
+  });
+
+  test("answers an unanswered call, persists the answer, runs again, and reports only the final round", async () => {
+    const computer = fakeComputer();
+    const { run, calls } = harness({ computer, drive: asksThenAnswers });
+    const result = await run();
+
+    expect(computer.called).toEqual([
+      {
+        name: "computer_run_command",
+        args: { command: "python3 curve.py" },
+        botId: AGENT_ID,
+        ownerUserId: OWNER,
+      },
+    ]);
+    expect(calls.runs).toHaveLength(2);
+    expect(calls.runs[0]?.input.runId).not.toBe(calls.runs[1]?.input.runId);
+    const persisted = calls.runs[1]?.persistedInputMessages ?? [];
+    expect(persisted).toHaveLength(1);
+    expect((persisted[0] as { toolCallId?: string }).toolCallId).toBe("call_1");
+    expect(JSON.parse(String(persisted[0]?.content))).toMatchObject({ ok: true, exitCode: 0 });
+    expect(result.replyText).toBe("Curva postada.");
+    // The lock is one lock for the whole turn, cleaned once.
+    expect(calls.cleaned).toHaveLength(1);
+  });
+
+  test("without a computer, offers no tools and does not loop", async () => {
+    const { run, calls } = harness({ drive: asksThenAnswers });
+    // The call goes unanswered and the turn ends on what was said before it, as before this loop.
+    const result = await run();
+    expect(result.replyText).toBe("Vou rodar o script.");
+    expect(calls.runs).toHaveLength(1);
+    expect((calls.runs[0]?.input as { tools?: unknown[] }).tools).toEqual([]);
+  });
+
+  test("unansweredToolCalls ignores calls a tool message answers", () => {
+    const pending = unansweredToolCalls([
+      {
+        id: "a",
+        role: "assistant",
+        content: "",
+        toolCalls: [
+          { id: "c1", type: "function", function: { name: "x", arguments: "{}" } },
+          { id: "c2", type: "function", function: { name: "y", arguments: "" } },
+        ],
+      },
+      { id: "t", role: "tool", toolCallId: "c1", content: "{}" },
+    ] as unknown as Message[]);
+    expect(pending).toEqual([{ id: "c2", name: "y", args: "" }]);
   });
 });

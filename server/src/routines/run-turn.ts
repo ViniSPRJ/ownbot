@@ -57,6 +57,7 @@ import type {
 } from "@ag-ui/client";
 import { EventType } from "@ag-ui/client";
 import { historyOrEmpty } from "../copilot";
+import type { HeadlessComputer } from "./headless-computer";
 import type { TurnRunner } from "./runner";
 
 /**
@@ -73,6 +74,12 @@ const DEFAULT_ABORT_GRACE_MS = 5_000;
 
 /** How long one headless turn may take before it is stopped. */
 const DEFAULT_TURN_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * How many times one turn may come back with computer calls to answer before it is stopped. A Bot
+ * reading a few pages and running a script needs a handful; sixty is a loop, not a task.
+ */
+const DEFAULT_MAX_TOOL_ROUNDS = 60;
 
 /**
  * The lock TTL and how often it is renewed.
@@ -377,6 +384,47 @@ function assistantText(message: Message): string | undefined {
  * converted and seeded exactly as the platform handed it over and nothing re-frames it; a test holds
  * that, because the alternative is a message that grows a fresh paragraph of frame every night.
  */
+/**
+ * The tool calls in these messages that no tool message answers. After a run these are the frontend
+ * calls the model is waiting on; the agent process answers its own backend tools before the run ends.
+ */
+export function unansweredToolCalls(
+  messages: Message[],
+): { id: string; name: string; args: string }[] {
+  const answered = new Set(
+    messages
+      .filter((message) => message.role === "tool")
+      .map((message) => (message as { toolCallId?: string }).toolCallId),
+  );
+  const pending: { id: string; name: string; args: string }[] = [];
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    const calls = (
+      message as {
+        toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+      }
+    ).toolCalls;
+    for (const call of calls ?? []) {
+      if (answered.has(call.id)) continue;
+      pending.push({
+        id: call.id,
+        name: call.function.name,
+        args: call.function.arguments,
+      });
+    }
+  }
+  return pending;
+}
+
+function parseToolArgs(raw: string): unknown {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
 export function frameFiring(instruction: string): string {
   return [
     "One of your routines is firing right now, on its schedule, and this is that firing.",
@@ -395,6 +443,13 @@ export function createTurnRunner(options: {
     ownerUserId: string;
     agentId: string;
   }) => Promise<AbstractAgent>;
+  /**
+   * The computer tools to offer and answer during the turn. Without it the turn offers no tools,
+   * which is what the headless runtime engine this file mirrors does, and what left every routine
+   * Bot without a browser, a workspace or a shell.
+   */
+  computer?: HeadlessComputer;
+  maxToolRounds?: number;
   /** How long one headless turn may take before it is stopped. */
   turnTimeoutMs?: number;
   lockTtlSeconds?: number;
@@ -406,6 +461,8 @@ export function createTurnRunner(options: {
     intelligence,
     runner,
     buildAgentFor,
+    computer,
+    maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS,
     turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
     lockTtlSeconds = DEFAULT_LOCK_TTL_SECONDS,
     heartbeatMs = DEFAULT_HEARTBEAT_MS,
@@ -505,9 +562,9 @@ export function createTurnRunner(options: {
       runId,
       messages,
       state: agent.state,
-      // Empty because a headless turn has no browser to register frontend tools. What the Bot itself
-      // may call is decided where it is built, not here.
-      tools: [],
+      // A headless turn has no browser to register frontend tools, so the computer tools are offered
+      // here and answered below by `computer`, the server-side stand-in for the browser's handlers.
+      tools: computer?.tools ?? [],
       context: [],
       forwardedProps: undefined,
     };
@@ -518,6 +575,8 @@ export function createTurnRunner(options: {
      * is unreachable from out here. This is the before-picture.
      */
     const before = new Set(agent.messages.map((message) => message.id));
+    /** Where the final round's messages start, so narration between computer calls is not the reply. */
+    let lastRoundFrom = agent.messages.length;
     const chunks: string[] = [];
     const spoken = agent.subscribe({
       onTextMessageEndEvent: ({ textMessageBuffer }) => {
@@ -555,6 +614,9 @@ export function createTurnRunner(options: {
       heartbeat = undefined;
     };
 
+    /** The run currently on the wire: the first, or a follow-up carrying answered computer calls. */
+    let currentRunId = runId;
+
     /** Stop this exact run, both ends: the agent's own abort and the runner's stop flag. */
     const stopTurn = () => {
       try {
@@ -565,7 +627,9 @@ export function createTurnRunner(options: {
         // it sets `stopRequested`, which is what makes `finalizeRunEvents` close the run as
         // stopped rather than leaving it open for ever on the platform.
       }
-      stopPromise ??= runner.stop({ threadId, runId }).catch(() => undefined);
+      stopPromise ??= runner
+        .stop({ threadId, runId: currentRunId })
+        .catch(() => undefined);
     };
 
     heartbeat = setInterval(() => {
@@ -587,34 +651,41 @@ export function createTurnRunner(options: {
     heartbeat.unref?.();
 
     try {
-      const completed = new Promise<void>((resolve, reject) => {
-        let terminal: Error | undefined;
-        runner
-          .run({ threadId, agent, input, persistedInputMessages })
-          .subscribe({
-            /*
-             * RUN_ERROR THROUGH `next` IS TERMINAL. The Intelligence runner reports a failed run by
-             * emitting RUN_ERROR and then COMPLETING the observable (`intelligence.mjs:317-340`) —
-             * `error` is only for a socket or durability failure. A RUN_ERROR not caught here would
-             * therefore arrive as a successful completion, and the turn would look like a Bot that
-             * answered with nothing.
-             */
-            next: (event) => {
-              if (event.type !== EventType.RUN_ERROR || terminal) return;
-              const message =
-                "message" in event && typeof event.message === "string"
-                  ? event.message
-                  : "The routine's turn failed.";
-              terminal = new Error(message);
-              terminal.name = "RoutineTurnRunError";
-            },
-            error: reject,
-            complete: () => {
-              if (terminal) reject(terminal);
-              else resolve();
-            },
-          });
-      });
+      /** One run of the agent, as the reference engine does it. Called once per round below. */
+      const runOnce = (request: RunAgentInput, persisted: Message[]) =>
+        new Promise<void>((resolve, reject) => {
+          let terminal: Error | undefined;
+          runner
+            .run({
+              threadId,
+              agent,
+              input: request,
+              persistedInputMessages: persisted,
+            })
+            .subscribe({
+              /*
+               * RUN_ERROR THROUGH `next` IS TERMINAL. The Intelligence runner reports a failed run by
+               * emitting RUN_ERROR and then COMPLETING the observable (`intelligence.mjs:317-340`) —
+               * `error` is only for a socket or durability failure. A RUN_ERROR not caught here would
+               * therefore arrive as a successful completion, and the turn would look like a Bot that
+               * answered with nothing.
+               */
+              next: (event) => {
+                if (event.type !== EventType.RUN_ERROR || terminal) return;
+                const message =
+                  "message" in event && typeof event.message === "string"
+                    ? event.message
+                    : "The routine's turn failed.";
+                terminal = new Error(message);
+                terminal.name = "RoutineTurnRunError";
+              },
+              error: reject,
+              complete: () => {
+                if (terminal) reject(terminal);
+                else resolve();
+              },
+            });
+        });
 
       const timeout = new Promise<never>((_resolve, reject) => {
         deadline = setTimeout(() => {
@@ -632,7 +703,57 @@ export function createTurnRunner(options: {
         backstop.unref?.();
       });
 
-      await Promise.race([completed, timeout]);
+      /*
+       * THE COMPUTER LOOP. A frontend tool call ends the run: the model asked for something the
+       * agent process cannot do, and expects whoever offered the tool to do it and run the agent
+       * again with the result. In the browser that is CopilotKit core; here it is this loop. Each
+       * round answers every call the last run left unanswered, appends the results as tool messages
+       * (persisted, so the channel shows what the Bot did) and runs again under a fresh run id. The
+       * deadline and the lock span all rounds: one firing is one turn, however many pages it read.
+       */
+      let request = input;
+      let persisted = persistedInputMessages;
+      let rounds = 0;
+      for (;;) {
+        lastRoundFrom = agent.messages.length;
+        await Promise.race([runOnce(request, persisted), timeout]);
+        if (stopped || heartbeatError !== undefined || computer === undefined) break;
+        const pending = unansweredToolCalls(agent.messages.slice(lastRoundFrom));
+        if (pending.length === 0) break;
+        rounds += 1;
+        if (rounds > maxToolRounds) {
+          throw new Error(
+            `The turn made more than ${maxToolRounds} rounds of computer calls without finishing.`,
+          );
+        }
+        const answers: Message[] = [];
+        for (const call of pending) {
+          if (stopped || heartbeatError !== undefined) break;
+          const outcome = await computer.call({
+            botId: agentId,
+            ownerUserId,
+            name: call.name,
+            args: parseToolArgs(call.args),
+            toolCallId: call.id,
+          });
+          answers.push({
+            id: crypto.randomUUID(),
+            role: "tool",
+            toolCallId: call.id,
+            content: JSON.stringify(outcome),
+          } as Message);
+        }
+        if (stopped || heartbeatError !== undefined) break;
+        agent.setMessages([...agent.messages, ...answers]);
+        currentRunId = crypto.randomUUID();
+        request = {
+          ...input,
+          runId: currentRunId,
+          messages: agent.messages,
+          state: agent.state,
+        };
+        persisted = answers;
+      }
     } finally {
       /*
        * THE SINGLE MOST IMPORTANT LINES IN THIS FILE, on every exit path — success, a thrown run, the
@@ -675,9 +796,19 @@ export function createTurnRunner(options: {
       );
     }
 
-    const replies = agent.messages.filter(
-      (message) =>
-        !before.has(message.id) && assistantText(message) !== undefined,
+    const fresh = agent.messages.filter((message) => !before.has(message.id));
+    // What the Bot said after its last computer call is the answer. Anything before it was said
+    // between calls ("let me run that"): the channel keeps it, the run row and the report do not.
+    const finalRound = agent.messages
+      .slice(lastRoundFrom)
+      .filter((message) => !before.has(message.id));
+    const candidates = finalRound.some(
+      (message) => assistantText(message) !== undefined,
+    )
+      ? finalRound
+      : fresh;
+    const replies = candidates.filter(
+      (message) => assistantText(message) !== undefined,
     );
     const said = replies
       .map(assistantText)
