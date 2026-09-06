@@ -33,3 +33,4 @@ charts/*/charts/
 .data/
 .copilotkit/
 *.bak-*
+.secrets/
