@@ -171,3 +171,23 @@ skills:
       not a recommendation: say so, and never turn them into an order.
     tools:
       - quantbrasil/quantbrasil_market_price
+
+  - slug: bcb-trabalhos-discussao
+    title: Trabalhos para Discussão do BCB
+    summary: Localizar e resumir Trabalhos para Discussão (working papers) do Banco Central do Brasil por tema ou período.
+    instructions: >-
+      Lista: abra https://www.bcb.gov.br/publicacoes/trabalhosdiscussao no seu computador. Ela vem em
+      ordem decrescente de número (mais recentes primeiro) com número, título, autores, mês/ano e um
+      "Resumo" por trabalho; não há filtro por tema, então selecione pelo título e pelo resumo, rolando
+      a página (computer_scroll + computer_read) até cobrir o período pedido. Sem período, cubra os
+      últimos 12 meses. PDF: cada trabalho está em
+      https://www.bcb.gov.br/content/publicacoes/WorkingPaperSeries/WP<numero>.pdf (sem login). Para
+      aprofundar, baixe com `curl -sA "Mozilla/5.0" -o /workspace/wp<numero>.pdf <url>` e leia só o
+      necessário com `pdftotext -l 6 /workspace/wp<numero>.pdf -` (resumo, introdução) e, se precisar
+      da conclusão, `pdftotext -f <ultima-6> ...`; nunca cole o PDF inteiro. Saída, por trabalho:
+      número, título, autores, mês/ano, URL do PDF; pergunta de pesquisa; método e dados; resultado
+      principal; implicação para política monetária, crédito, câmbio ou o que foi pedido. Separe o que
+      é achado dos autores do que é sua interpretação. Se nada no período casar com o tema, diga isso em
+      uma linha com o intervalo de números que você verificou. Trabalhos para Discussão não representam
+      a opinião do BCB; diga isso quando citar conclusões.
+    tools: []
