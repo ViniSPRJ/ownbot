@@ -161,14 +161,28 @@ export function ChannelChat({
           channel.threadId,
           runtimeAgentId,
         );
-        // Never overwrite local messages that arrived while history was loading.
-        if (
-          current &&
-          stored.messages.length > 0 &&
-          agent.messages.length === 0
-        ) {
-          agent.setMessages(stored.messages);
-        }
+        /*
+         * MERGED BY ID, NOT GATED ON AN EMPTY TRANSCRIPT. The earlier guard applied history only
+         * when nothing local existed yet, and a join that resolved after the deadline could still
+         * land a snapshot on the transcript — observed in Safari: the footer counted the unreadable
+         * turns, so the read had run, and the readable ones were not on screen after leaving the
+         * channel and coming back. History is prepended to whatever is local, minus ids already
+         * shown, and re-applied a few times so a late snapshot cannot erase it.
+         */
+        const restore = () => {
+          if (!current || stored.messages.length === 0) return;
+          const seen = new Set(agent.messages.map((message) => message.id));
+          const missing = stored.messages.filter((message) => !seen.has(message.id));
+          if (missing.length === 0) return;
+          agent.setMessages([...missing, ...agent.messages]);
+        };
+        restore();
+        void (async () => {
+          for (const delayMs of [1500, 3000, 6000]) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+            restore();
+          }
+        })();
         /*
          * Said on screen rather than only counted. A turn the history store holds and this app cannot
          * parse is left out of the transcript, and a record people read back must not have a hole in
