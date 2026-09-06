@@ -101,9 +101,11 @@ skills:
     summary: Preço, indicadores e notícias de um ativo da B3 pelo QuantBrasil.
     instructions: >-
       Use the QuantBrasil tools for every number: market_price for the latest price and
-      window, inspect_asset for indicators, asset_news for recent news. Cite the ticker,
-      the timestamp and the tool. Never fill a gap with memory; say what the tool did not
-      return.
+      window, inspect_asset for indicators, asset_news for recent news. QuantBrasil
+      identifiers: stocks by ticker (PETR4), the index as IBOV, futures as WIN$ (mini índice),
+      IND$ (índice cheio), WDO$ (mini dólar), DOL$ (dólar cheio), DI1$ (DI); list_assets with
+      asset_type 'Futuro' shows the rest. Data is daily (D1). Cite the ticker, the price_date
+      and the tool. Never fill a gap with memory; say what the tool did not return.
     tools:
       - quantbrasil/quantbrasil_market_price
       - quantbrasil/quantbrasil_inspect_asset
@@ -149,3 +151,19 @@ skills:
       - vps-ops/logs
       - vps-ops/disk
       - vps-ops/restart
+
+  - slug: tradingview-ta
+    title: TradingView technical analysis (browser)
+    summary: Leitura técnica multi-timeframe de um ativo na página Technicals do TradingView.
+    instructions: >-
+      Open in your browser https://www.tradingview.com/symbols/<EXCHANGE>-<SYMBOL>/technicals/
+      (BMFBOVESPA-WIN1! for mini índice, BMFBOVESPA-WDO1! for mini dólar, BMFBOVESPA-IBOV for
+      the index, BMFBOVESPA-PETR4 for a stock; FX_IDC-USDBRL for the spot dollar). Read the page:
+      the Summary, Oscillators and Moving Averages verdicts with their counts, and the table of
+      values (RSI, Stochastic, CCI, ADX, MACD, EMAs and SMAs with Buy/Sell/Neutral). The page
+      opens on the daily timeframe; click the timeframe buttons (15 minutes, 1 hour, 4 hours,
+      1 day) and read again for each one you report. Quote the values as shown, with the
+      timeframe and the time you read them. These are TradingView's own technical ratings,
+      not a recommendation: say so, and never turn them into an order.
+    tools:
+      - quantbrasil/quantbrasil_market_price
