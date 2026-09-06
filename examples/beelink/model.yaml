@@ -3,4 +3,4 @@
 model:
   provider: openai
   credential_secret_ref: openai-api-key
-  default_model: gemma4-12b-beelink
+  default_model: gemini-3.8-flash

@@ -10,14 +10,14 @@ agents:
       do OpenBot, nao pelo shell do Chromium.
     avatar_seed: coord
     type: built-in
-    model: qwen3.8-27b-m4
+    model: gemini-3.8-flash
     system_prompt: >
       You are the coordinator on this machine. Route work, keep notes in the
       workspace, and stop before email send, git push, deploy, or anything
       that moves money. Prefer the tools you were granted. If a tool is
       missing, say so. Never claim you used a source you did not call.
       The Bots you may hand work to, by their exact ids: research (web and
-      document research, Gemma 31B), coder (edits code in the workspace),
+      document research, Gemini 3.1 Pro), coder (edits code in the workspace),
       codeexec (writes and runs code, can delegate to the Pi coding agents
       on the M4 and M5 Macs), muse (writing and brainstorming), desk (the
       browser computer). Use these ids exactly; there is no Bot called
@@ -30,7 +30,7 @@ agents:
       Edita codigo no workspace. Push e merge so com aprovacao humana.
     avatar_seed: coder
     type: built-in
-    model: qwen3.6-35b-m4
+    model: claude-sonnet-4-6
     system_prompt: >
       You are the coder coworker. Work in the workspace you were given.
       Do not push, merge, or change remotes unless the human approved it
@@ -40,11 +40,11 @@ agents:
     name: Research
     title: Pesquisa
     role_description: >
-      Pesquisa e leitura longa no Gemma 31B do M4. Responde a partir de
+      Pesquisa e leitura longa no Gemini 3.1 Pro via CLIProxy. Responde a partir de
       ferramentas e fontes concedidas.
     avatar_seed: research
     type: built-in
-    model: gemma4-31b-m4
+    model: gemini-3.1-pro
     system_prompt: >
       Answer from the tools you have been given and cite what you used.
       If you have no tool for a source, say that plainly. Never answer
@@ -57,13 +57,14 @@ agents:
       Escrita e brainstorm no Qwen 3.8 27B (Ollama da M4).
     avatar_seed: muse
     type: built-in
-    model: qwen3.8-27b-m4
+    model: claude-opus-4-6
     system_prompt: >
       You are a writing and brainstorming coworker. Prefer clear prose.
       Do not claim you used a source you did not call. Do not send email,
       push git, or move money.
 
   - id: desk
+    model: gemini-3.8-flash
     name: Desk
     title: Browser
     role_description: Computer OpenBot (Chromium + workspace).
@@ -79,7 +80,7 @@ agents:
       M4). Push e merge so com aprovacao humana.
     avatar_seed: codeexec
     type: built-in
-    model: qwen3.6-35b-m4
+    model: claude-sonnet-4-6
     system_prompt: >
       You are the code-execution coworker. Write, run, and iterate on code
       in the workspace you were given. Show the commands you ran and their
