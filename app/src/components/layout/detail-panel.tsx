@@ -51,7 +51,14 @@ export function DetailPanel({
    * sliver of each. Below the mobile breakpoint the open detail takes the whole viewport instead,
    * as a layer over the main pane, and the close button in its header is the way back.
    */
-  const fullScreen = useIsMobile() && open;
+  /*
+   * Full screen is for phones and tablets (a coarse pointer), not for a narrow window on a desktop:
+   * there the overlay covers the transcript the person is reading beside the screen. Observed on the
+   * M4 with the app in a half-width window: the live screen sat over the chat with no way beside it.
+   */
+  const coarsePointer =
+    typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  const fullScreen = useIsMobile() && coarsePointer && open;
 
   return (
     <div className="flex h-full min-h-0">
