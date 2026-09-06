@@ -11,6 +11,45 @@ import sys
 import urllib.request
 
 API = "https://cotacao.b3.com.br/mds/api/v1/DerivativeQuotation/{}"
+
+# Dias sem pregao na B3 (feriados nacionais e fechamentos da bolsa). Atualizar a cada virada de ano
+# com o calendario oficial da B3.
+B3_FECHADA = {
+    "2026-01-01": "Confraternizacao Universal",
+    "2026-02-16": "Carnaval",
+    "2026-02-17": "Carnaval",
+    "2026-04-03": "Sexta-feira Santa",
+    "2026-04-21": "Tiradentes",
+    "2026-05-01": "Dia do Trabalho",
+    "2026-06-04": "Corpus Christi",
+    "2026-09-07": "Independencia do Brasil",
+    "2026-10-12": "Nossa Senhora Aparecida",
+    "2026-11-02": "Finados",
+    "2026-11-15": "Proclamacao da Republica",
+    "2026-11-20": "Consciencia Negra",
+    "2026-12-24": "Vespera de Natal (B3 fechada)",
+    "2026-12-25": "Natal",
+    "2026-12-31": "Vespera de Ano Novo (B3 fechada)",
+    "2027-01-01": "Confraternizacao Universal",
+    "2027-02-08": "Carnaval",
+    "2027-02-09": "Carnaval",
+    "2027-03-26": "Sexta-feira Santa",
+    "2027-04-21": "Tiradentes",
+    "2027-05-27": "Corpus Christi",
+    "2027-09-07": "Independencia do Brasil",
+    "2027-10-12": "Nossa Senhora Aparecida",
+    "2027-11-02": "Finados",
+    "2027-11-15": "Proclamacao da Republica",
+    "2027-12-24": "Vespera de Natal (B3 fechada)",
+    "2027-12-31": "Vespera de Ano Novo (B3 fechada)",
+}
+
+
+def pregao_fechado(today):
+    """Retorna o motivo se nao ha pregao hoje (fim de semana ou feriado), senao None."""
+    if today.weekday() >= 5:
+        return "fim de semana"
+    return B3_FECHADA.get(today.isoformat())
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 
 
@@ -51,6 +90,11 @@ def table(title, data, ts):
 
 
 def main():
+    hoje = datetime.date.today()
+    motivo = pregao_fechado(hoje)
+    if motivo and "--force" not in sys.argv:
+        print(f"B3 FECHADA hoje ({hoje.isoformat()}: {motivo}). Sem curva; proxima leitura no proximo dia util.")
+        sys.exit(2)
     parts = []
     ok = True
     for code, title in (("DI1", "DI futuro (DI1), % a.a."), ("FRC", "FRA de cupom cambial (FRC), % a.a.")):
