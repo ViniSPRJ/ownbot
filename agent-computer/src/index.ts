@@ -94,6 +94,21 @@ const ACTION_TIMEOUT_MS = numberFromEnv("ACTION_TIMEOUT_MS", 10000);
 const TEXT_EXTRACT_LIMIT = 6000;
 
 /**
+ * Below this many characters a page has not really rendered: a single-page application answers
+ * `domcontentloaded` with an empty shell and paints from scripts afterwards (the Banco Central's
+ * site is one). The reader then waits briefly for the network to go quiet and looks again.
+ */
+const RENDERED_TEXT_MIN = 200;
+const RENDER_WAIT_MS = 6000;
+
+/**
+ * A main content region this long is what the page is about; the rest of the body is chrome. Above
+ * it the extract comes from that region alone, so a government portal's site-wide menu (ten thousand
+ * characters on gov.br before the first headline) does not use up the whole limit.
+ */
+const MAIN_REGION_MIN = 400;
+
+/**
  * Which snapshot the caller's refs came from.
  *
  * Kept as a caller-facing guard even though Playwright enforces the real thing underneath. The
@@ -244,6 +259,23 @@ async function currentPage(botId: string): Promise<Page> {
 }
 
 /**
+ * The page as text once it has rendered: the extract, and a second look after the network goes
+ * quiet when the first one was an empty shell. Bounded by RENDER_WAIT_MS, so a page that never
+ * settles still answers, with whatever it had.
+ */
+async function renderedPageText(
+  target: Page,
+): Promise<{ text: string; truncated: boolean }> {
+  const first = await readablePageText(target);
+  if (first.text.length >= RENDERED_TEXT_MIN) return first;
+  await target
+    .waitForLoadState("networkidle", { timeout: RENDER_WAIT_MS })
+    .catch(() => undefined);
+  const second = await readablePageText(target);
+  return second.text.length > first.text.length ? second : first;
+}
+
+/**
  * The page as text, the way a reader sees it.
  *
  * Script and style bodies are dropped rather than included: they are the bulk of a modern page and
@@ -253,16 +285,24 @@ async function currentPage(botId: string): Promise<Page> {
 async function readablePageText(
   target: Page,
 ): Promise<{ text: string; truncated: boolean }> {
-  const raw = await target.evaluate(() => {
-    const clone = document.body?.cloneNode(true) as HTMLElement | undefined;
-    if (!clone) return "";
-    for (const node of clone.querySelectorAll("script, style, noscript, svg")) {
-      node.remove();
-    }
-    return clone.innerText ?? "";
-  });
+  const raw = await target.evaluate((mainRegionMin: number) => {
+    // Live innerText, not a detached clone's: it is layout-aware, so it keeps the page's line
+    // structure and leaves out what is not rendered (scripts, styles, collapsed menus). A clone's
+    // innerText has no layout and degrades to textContent, which is one run-on line of the page's
+    // every character, indentation included.
+    const region = document.querySelector(
+      "main, [role='main'], article",
+    ) as HTMLElement | null;
+    const regionText = region?.innerText?.trim() ?? "";
+    if (regionText.length >= mainRegionMin) return regionText;
+    return document.body?.innerText ?? "";
+  }, MAIN_REGION_MIN);
 
-  const collapsed = raw.replace(/\n{3,}/g, "\n\n").trim();
+  const collapsed = raw
+    .replace(/[ \t\u00a0]+\n/g, "\n")
+    .replace(/\n[ \t\u00a0]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return {
     text: collapsed.slice(0, TEXT_EXTRACT_LIMIT),
     truncated: collapsed.length > TEXT_EXTRACT_LIMIT,
@@ -808,7 +848,7 @@ serve<StreamData>({
         // Bumping the generation makes an action carrying one fail with "take a new snapshot" rather
         // than fall through to a selector that matches nothing and read as a missing element.
         session.snapshotId += 1;
-        const extract = await readablePageText(target);
+        const extract = await renderedPageText(target);
         return json({
           url: target.url(),
           title: await target.title(),
@@ -955,7 +995,7 @@ serve<StreamData>({
     if (url.pathname === "/read" && request.method === "GET") {
       try {
         const target = await currentPage(botId);
-        const extract = await readablePageText(target);
+        const extract = await renderedPageText(target);
         return json({
           url: target.url(),
           title: await target.title(),
