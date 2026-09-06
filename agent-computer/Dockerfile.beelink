@@ -4,7 +4,7 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 RUN apt-get update && apt-get install -y --no-install-recommends unzip x11vnc novnc websockify poppler-utils python3-pip && rm -rf /var/lib/apt/lists/*
 # PDF reading for the analysts (research downloads bank reports). Baked into the image because
 # anything a Bot pip-installs at runtime lives in the container layer and is lost on recreate.
-RUN pip3 install --no-cache-dir --break-system-packages pypdf pdfplumber
+RUN pip3 install --no-cache-dir --break-system-packages pypdf pdfplumber pandas numpy statsmodels matplotlib
 RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 WORKDIR /app

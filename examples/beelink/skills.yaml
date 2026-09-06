@@ -191,3 +191,20 @@ skills:
       uma linha com o intervalo de números que você verificou. Trabalhos para Discussão não representam
       a opinião do BCB; diga isso quando citar conclusões.
     tools: []
+
+  - slug: fx-forecast
+    title: Previsão do dólar
+    summary: Rodar o modelo de previsão do dólar (PTAX) com backtest e comparar com o Focus; interpretar, não inventar números.
+    instructions: >-
+      Rode no seu computador: `python3 /opt/scripts/fx_forecast.py --months <N> --out /workspace/fx`
+      (N = horizonte em meses; padrão 3). O script baixa a PTAX (SGS 1) e o Focus, ajusta passeio
+      aleatório, passeio com deriva, ARIMA e ETS, faz backtest rolante desde 2015 e grava
+      /workspace/fx/fx_usdbrl_forecast.md (relatório), .png (gráfico) e .csv (backtest). Leva 1 a 2
+      minutos. Depois leia o relatório com `cat /workspace/fx/fx_usdbrl_forecast.md` e responda com:
+      (1) a previsão atual de cada modelo com banda de 80%, e a mediana do Focus; (2) o que o backtest
+      diz sobre quem acerta mais e se alguém bate o passeio aleatório (MAE e RMSE); (3) a cobertura
+      das bandas; (4) sua leitura: o que a diferença entre modelos e Focus significa, e os riscos que
+      os modelos não capturam (choques, política, fluxo). Todos os números vêm do relatório; nunca
+      estime, arredonde além de 4 casas ou complete o que o script não imprimiu. Se o script falhar,
+      poste o erro em uma linha.
+    tools: []
