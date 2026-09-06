@@ -1,31 +1,41 @@
 channels:
   - id: coord
     name: Coord
-    description: Canal do coordenador.
+    description: Canal do coordenador. Avisos e roteamento.
     permitted_agents: [coord]
-    allowed_groups: [all]
-  - id: coder
-    name: Coder
-    description: Canal de codigo.
-    permitted_agents: [coder, coord]
     allowed_groups: [all]
   - id: research
     name: Research
     description: Pesquisa com as fontes concedidas.
     permitted_agents: [research, coord]
     allowed_groups: [all]
-  - id: muse
-    name: Muse
-    description: Escrita e brainstorm.
-    permitted_agents: [muse, coord]
-    allowed_groups: [all]
   - id: desk
     name: Desk
     description: Browser e workspace do OpenBot.
     permitted_agents: [desk, coord]
     allowed_groups: [all]
-  - id: codeexec
-    name: CodeExec
-    description: Execucao de codigo no workspace.
+  - id: code
+    name: Code
+    description: Código e execução no workspace.
     permitted_agents: [codeexec, coord]
+    allowed_groups: [all]
+  - id: news
+    name: News
+    description: Notícias filtradas e resumidas, com fontes.
+    permitted_agents: [news, coord]
+    allowed_groups: [all]
+  - id: mercado
+    name: Mercado
+    description: Preços, indicadores, anomalias.
+    permitted_agents: [mercado, coord]
+    allowed_groups: [all]
+  - id: quant
+    name: Quant
+    description: Backtests, screening, cointegração.
+    permitted_agents: [quant, coord]
+    allowed_groups: [all]
+  - id: credito
+    name: Crédito
+    description: Crédito e securitização.
+    permitted_agents: [credito, coord]
     allowed_groups: [all]

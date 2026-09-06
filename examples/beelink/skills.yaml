@@ -95,3 +95,57 @@ skills:
       - pi-m4/pi_status
       - pi-m5/pi_run
       - pi-m5/pi_status
+
+  - slug: market-snapshot
+    title: Market snapshot (QuantBrasil)
+    summary: Preço, indicadores e notícias de um ativo da B3 pelo QuantBrasil.
+    instructions: >-
+      Use the QuantBrasil tools for every number: market_price for the latest price and
+      window, inspect_asset for indicators, asset_news for recent news. Cite the ticker,
+      the timestamp and the tool. Never fill a gap with memory; say what the tool did not
+      return.
+    tools:
+      - quantbrasil/quantbrasil_market_price
+      - quantbrasil/quantbrasil_inspect_asset
+      - quantbrasil/quantbrasil_asset_news
+      - quantbrasil/quantbrasil_list_assets
+
+  - slug: quant-research
+    title: Backtest and screening (QuantBrasil)
+    summary: Backtests, screening e cointegração com dados reais da B3.
+    instructions: >-
+      Use list_strategies and strategy_info before run_backtest; screen_candidates with a
+      real universe and indicators; cointegration_pair for pairs. Report period, metrics
+      and number of trades from the tool output only.
+    tools:
+      - quantbrasil/quantbrasil_list_strategies
+      - quantbrasil/quantbrasil_strategy_info
+      - quantbrasil/quantbrasil_run_backtest
+      - quantbrasil/quantbrasil_list_screening_indicators
+      - quantbrasil/quantbrasil_list_screening_universes
+      - quantbrasil/quantbrasil_screen_candidates
+      - quantbrasil/quantbrasil_cointegration_pair
+
+  - slug: notify-owner
+    title: Page the owner
+    summary: Aviso curto ao dono fora da UI (só o coordenador, só evento importante).
+    instructions: >-
+      Only after the finding is posted in its channel, send one message under 400 characters
+      saying what happened and which channel to open. Never page for routine output; at most
+      a few times a day.
+    tools:
+      - notify/send
+
+  - slug: vps-health
+    title: VPS health (vps-ops)
+    summary: Estado dos serviços da VPS pelo servidor de operações com allowlist.
+    instructions: >-
+      Use the vps-ops tools to read container status, health and disk, and tail logs with a
+      small line count. Report only what the tools returned. Restart a service only when the
+      owner asked for it in this turn.
+    tools:
+      - vps-ops/status
+      - vps-ops/health
+      - vps-ops/logs
+      - vps-ops/disk
+      - vps-ops/restart
