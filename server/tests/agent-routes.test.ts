@@ -345,6 +345,7 @@ describe("agent lifecycle routes", () => {
           canManage: true,
           mine: true,
           builtIn: false,
+          runtime: { kind: "api", label: "Modelo via API" },
         },
         {
           id: "agent-2",
@@ -358,6 +359,7 @@ describe("agent lifecycle routes", () => {
           canManage: false,
           mine: false,
           builtIn: false,
+          runtime: { kind: "api", label: "Modelo via API" },
         },
         {
           id: "system-agent",
@@ -371,6 +373,7 @@ describe("agent lifecycle routes", () => {
           canManage: false,
           mine: false,
           builtIn: false,
+          runtime: { kind: "api", label: "Modelo via API" },
         },
       ],
     });

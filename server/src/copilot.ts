@@ -248,28 +248,7 @@ export function builtInAgentConfiguration(
       agent.model?.trim() || model.defaultModel,
       apiKey,
     ),
-    /*
-     * The package's role, then what this Bot actually holds, then the computer.
-     *
-     * The grants go BEFORE the computer prose on purpose. That prose is long and emphatic about the
-     * browser and mentions connectors nowhere, so a Bot that read it last reached for the browser
-     * even when it held a tool for the exact system being asked about.
-     */
-    prompt: [
-      agent.systemPrompt,
-      /*
-       * Unconditional, unlike the two below it.
-       *
-       * Those describe things a deployment may or may not have. This describes how to answer at all,
-       * and a Bot with no tools and no computer needs it most: it has nothing to read, so everything
-       * it says comes from its own knowledge, and saying so is the only honest move available.
-       */
-      PROVENANCE_GUIDANCE,
-      ...(grantedToolGuidance(tools, connectedVendors)
-        ? [grantedToolGuidance(tools, connectedVendors)]
-        : []),
-      ...(computerGuidance ? [computerGuidance] : []),
-    ].join("\n\n"),
+    prompt: builtInAgentPrompt(agent, tools, computerGuidance, connectedVendors),
     apiKey,
     /*
      * A run stops after one step unless told otherwise, which for a Bot with tools means it calls
@@ -282,6 +261,47 @@ export function builtInAgentConfiguration(
      */
     ...(tools.length > 0 ? { tools, maxSteps: TOOL_STEPS } : {}),
   };
+}
+
+/**
+ * The standing instructions of a built-in Bot, whichever runtime executes it.
+ *
+ * One function for the API path and the ACP path on purpose. The ACP runtime first shipped with the
+ * package role alone, so a Bot behind a CLI lost the provenance rule, the description of what it
+ * holds and the computer guidance the same Bot would have been given on the API. Those are facts
+ * about the Bot and the deployment, not about the model provider, and a rule that lives in one
+ * runtime's prompt is a rule the other runtime will be missing.
+ *
+ * The package's role, then what this Bot actually holds, then the computer.
+ *
+ * The grants go BEFORE the computer prose on purpose. That prose is long and emphatic about the
+ * browser and mentions connectors nowhere, so a Bot that read it last reached for the browser
+ * even when it held a tool for the exact system being asked about.
+ *
+ * Memory is not appended here: the loader already folds it into `agent.systemPrompt` per person,
+ * so both runtimes carry it through this first line.
+ */
+export function builtInAgentPrompt(
+  agent: Pick<RegisteredBuiltInAgent, "systemPrompt">,
+  /** What this run is offered, so a Bot is never told it holds something it was not given. */
+  tools: readonly GrantedTool[] = [],
+  computerGuidance?: string,
+  connectedVendors: readonly string[] = [],
+): string {
+  const holdings = grantedToolGuidance([...tools], connectedVendors);
+  return [
+    agent.systemPrompt,
+    /*
+     * Unconditional, unlike the two below it.
+     *
+     * Those describe things a deployment may or may not have. This describes how to answer at all,
+     * and a Bot with no tools and no computer needs it most: it has nothing to read, so everything
+     * it says comes from its own knowledge, and saying so is the only honest move available.
+     */
+    PROVENANCE_GUIDANCE,
+    ...(holdings ? [holdings] : []),
+    ...(computerGuidance ? [computerGuidance] : []),
+  ].join("\n\n");
 }
 
 /**
@@ -507,10 +527,38 @@ async function buildAgent(
   const acp = acpProfileFor(agent.id);
   if (acp && agent.type === "built_in") {
     if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
-    return new AcpAgent({agentId:agent.id,name:agent.name,ownerId:agent.acpOwnerId,
-      prompt:agent.systemPrompt,profile:acp,
-      tools: async input => [...await loadTools(agent.id), ...await (handoff?.(agent.id,input) ?? Promise.resolve([]))],
-    });
+    /*
+     * The same instructions the API path composes, with the tools the CLI is actually bridged.
+     *
+     * Grants are loaded once per request, as for the API path. The handoff tool is the only per-run
+     * part, so the prompt describing it is composed when the run arrives: an `AcpAgent` takes its
+     * prompt at construction, which is why the run builds one rather than rewriting a shared prompt
+     * from inside the tools callback, where concurrent runs on the same instance could swap them.
+     * No model or key is resolved here; ACP is authenticated by the CLI's own credentials.
+     */
+    const ownerId = agent.acpOwnerId;
+    const granted = await loadTools(agent.id);
+    const acpAgentFor = (tools: readonly GrantedTool[]) =>
+      new AcpAgent({
+        agentId: agent.id,
+        name: agent.name,
+        ownerId,
+        prompt: builtInAgentPrompt(agent, tools, computerGuidance, connectedVendors),
+        profile: acp,
+        tools: async () => tools,
+      });
+    const whole = acpAgentFor(granted);
+    if (!handoff) return whole;
+    return new RunBuiltAgent(
+      { agentId: agent.id, description: agent.name },
+      whole,
+      async (input) => {
+        const passing = await handoff(agent.id, input);
+        // A fresh agent per run either way: the ACP agent keeps its stop handle on the instance,
+        // so sharing one across runs would let aborting this run cancel another.
+        return acpAgentFor(passing.length > 0 ? [...granted, ...passing] : granted);
+      },
+    );
   }
   const granted = await loadTools(agent.id);
 

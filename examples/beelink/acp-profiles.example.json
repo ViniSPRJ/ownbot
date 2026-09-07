@@ -1,0 +1,51 @@
+{
+  "profiles": {
+    "codex": {
+      "command": "/home/viniciuspinho/ownbot-acp-runtime/node_modules/.bin/codex-acp",
+      "args": [],
+      "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
+      "env": {
+        "PATH": "/home/viniciuspinho/.local/bin:/usr/bin:/bin",
+        "INITIAL_AGENT_MODE": "read-only",
+        "CODEX_PATH": "/home/viniciuspinho/.local/bin/codex"
+      },
+      "timeoutMs": 600000
+    },
+    "claude": {
+      "provider": "claude",
+      "command": "/home/viniciuspinho/ownbot-acp-runtime/node_modules/.bin/claude-agent-acp",
+      "args": [],
+      "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
+      "env": {
+        "PATH": "/home/viniciuspinho/.local/bin:/usr/bin:/bin",
+        "CLAUDE_CODE_EXECUTABLE": "/home/viniciuspinho/.local/bin/claude"
+      },
+      "timeoutMs": 600000
+    },
+    "grok": {
+      "provider": "grok",
+      "command": "/home/viniciuspinho/ownbot-acp-runtime/bin/grok",
+      "args": [
+        "agent",
+        "--no-leader",
+        "stdio"
+      ],
+      "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
+      "env": {
+        "PATH": "/home/viniciuspinho/.local/bin:/usr/bin:/bin"
+      },
+      "timeoutMs": 600000
+    }
+  },
+  "agents": {
+    "coord": "codex",
+    "codeexec": "codex",
+    "desk": "codex",
+    "quant": "codex",
+    "infra": "codex",
+    "research": "claude",
+    "onyx": "claude",
+    "news": "grok",
+    "mercado": "grok"
+  }
+}

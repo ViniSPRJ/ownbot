@@ -653,6 +653,21 @@ function ConnectionSection({
    * setup. Showing it the endpoint and the callback-token panel told the person the opposite —
    * an internal address they never typed, and a credential they were never supposed to need.
    */
+  if (profile.runtime?.kind === "acp" || profile.runtime?.kind === "private_local" || profile.runtime?.kind === "unavailable") {
+    return (
+      <section className="grid gap-2">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Execução</h2>
+        <p className="text-sm font-medium">{profile.runtime.label}</p>
+        <p className="text-sm text-muted-foreground">
+          {profile.runtime.kind === "acp"
+            ? "A CLI executa as tarefas deste agente, mantendo seu perfil, memória e ferramentas. A conta da CLI é configurada pelo administrador."
+            : profile.runtime.kind === "private_local"
+              ? "As tarefas deste agente usam o modelo local dedicado aos dados privados."
+              : "O administrador precisa revisar a configuração de execução deste agente."}
+        </p>
+      </section>
+    );
+  }
   if (!profile.endpoint || profile.builtIn) {
     return (
       <p className="text-sm text-muted-foreground">

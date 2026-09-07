@@ -119,6 +119,7 @@ function RouteComponent() {
                     <h3 className="min-w-0 flex-1 break-words font-semibold">{agent.name}</h3>
                     <span aria-hidden="true" className="text-muted-foreground group-hover:text-foreground">↗</span>
                   </div>
+                  {agent.runtime && <p className="mt-2 text-xs text-muted-foreground">{agent.runtime.label}</p>}
                   <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{agent.roleDescription}</p>
                   <span className="mt-4 block text-xs font-medium">Conversar →</span>
                 </Link>

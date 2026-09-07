@@ -39,11 +39,12 @@ the same namespace is refused. Stop cancels and closes the process transport.
 
 The loopback MCP bridge exposes current granted tools, handoff tools and computer tools routed through the existing gateway. It
 uses a random per-run bearer and validates parameters before execution. Existing
-ownbot grant checks and audit remain authoritative. Codex adapter MCP permission
-requests can be allowed once only when correlated to a current ownbot granted tool
-call; unrelated native file/terminal/permission requests are rejected. There is no
-blanket approval or permission bypass. Claude/Grok permission dialects must pass a
-real granted-tool probe before being activated for role delegation.
+ownbot grant checks and audit remain authoritative. Provider-specific MCP permission requests can be allowed once only when correlated
+to a current ownbot granted tool call; unrelated native file/terminal/permission requests are rejected. There is no
+blanket approval or permission bypass. Codex, Claude and Grok have explicit permission dialects (`provider` in the profile);
+no tool is trusted based only on a display title. The Claude dialect was verified
+with a real granted-tool call on the authenticated Mac. Grok protocol/MCP HTTP
+capabilities were verified, but its granted-tool probe still requires login.
 
 CLIs can have their own native tools, global configuration and sandbox behavior;
 ACP client capability flags are not OS sandboxing. Run trusted operator-controlled
@@ -70,3 +71,35 @@ are installed.
 Validation includes a real Codex MCP echo call on two consecutive turns across
 process restarts, plus tests for session isolation, cancellation, permission replay,
 malformed configuration, routing authorization, private boundaries and handoffs.
+
+
+## Phase 1: preserve the role, replace execution
+
+`examples/beelink/acp-profiles.example.json` is the proposed complete phase-1 map.
+It is an operator template, not an automatic migration or an authentication claim.
+Activate each provider only after a real tool roundtrip on its target machine.
+
+| Roles | CLI |
+| --- | --- |
+| coord, codeexec, desk, quant, infra | Codex |
+| research, onyx | Claude Code |
+| news, mercado | Grok Build |
+| credito | Existing private local route; Pi integration is a later phase |
+
+No standing profile, grant, memory shard or routine is rewritten by this map.
+The shared prompt composer includes the role and memory, source/provenance rules,
+granted-tool descriptions and computer guidance for both API and ACP execution.
+Per-run handoff guidance is included in the same composition.
+
+The `model` fields in the tenant YAML describe API routing and are not copied into
+CLI profiles. CLI model identifiers belong to their own provider. Leaving the ACP
+profile model unset retains the CLI's model selection. An explicit model failure
+must not silently select another provider or fall back to API.
+
+The roster and Connection page show the configured execution engine. This is not
+an assertion that a CLI is authenticated, alive or has remaining quota. Executable
+paths, environments and secrets are never exposed by that DTO.
+
+Pi and the two local models, permanent worker pools and expanded event coordination
+are intentionally the next phase. Phase 1 does not install a Buzz relay or replace
+the existing ownbot channels, queue, authentication or notification system.

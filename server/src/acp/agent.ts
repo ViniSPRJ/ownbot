@@ -1,3 +1,4 @@
+import { AcpPermissionGate } from "./permissions";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
 import { createHash } from "node:crypto";
@@ -28,8 +29,6 @@ export class AcpAgent extends AbstractAgent {
       let ownsLock = false;
       let phase = "lock";
       let stopReason: string | undefined;
-      const grantedCalls = new Set<string>();
-      const consumedCalls = new Set<string>();
       let cancelled = false, finished = false, textStarted = false, accepting = false;
       const messageId = crypto.randomUUID();
       const emit = (event: Record<string, unknown>) => { if (!subscriber.closed) subscriber.next(event as BaseEvent); };
@@ -52,7 +51,7 @@ export class AcpAgent extends AbstractAgent {
           try { saved = JSON.parse(await readFile(stateFile,"utf8")); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
           phase = "tools";
           const tools = await o.tools(input);
-          const toolNames = new Set(tools.map(tool=>tool.name));
+          const permissions = new AcpPermissionGate(o.profile.provider ?? "codex", new Set(tools.map(tool=>tool.name)));
           bridge = await createToolBridge(tools);
           if (cancelled) return;
           const env: NodeJS.ProcessEnv = {};
@@ -63,14 +62,7 @@ export class AcpAgent extends AbstractAgent {
             onRequest: (method, params) => {
               // Native CLI permissions are never blanket-approved by ownbot.
               if (method === "session/request_permission") {
-                const request = params as {sessionId?:string;toolCall?:{toolCallId?:string};_meta?:{is_mcp_tool_approval?:boolean};options?:{optionId:string;kind:string}[]};
-                const callId = request.toolCall?.toolCallId;
-                const option = request.options?.find(option=>option.kind==="allow_once");
-                if (request.sessionId === sessionId && request._meta?.is_mcp_tool_approval === true && callId && !consumedCalls.has(callId) && grantedCalls.delete(callId) && option) {
-                  consumedCalls.add(callId);
-                  return {outcome:{outcome:"selected",optionId:option.optionId}};
-                }
-                return { outcome:{outcome:"cancelled"} };
+                return permissions.decide(params, accepting ? sessionId : undefined);
               }
               throw new Error("Unsupported ACP client operation");
             },
@@ -78,8 +70,7 @@ export class AcpAgent extends AbstractAgent {
               if (!accepting || method !== "session/update") return;
               const event = value as {sessionId?:string;update?:{toolCallId?:string;rawInput?:{server?:string;tool?:string};_meta?:{is_mcp_tool_call?:boolean};sessionUpdate?:string;content?:{type?:string;text?:string}}};
               if (event.sessionId !== sessionId) return;
-              const update = event.update;
-              if (update?.sessionUpdate === "tool_call" && update.toolCallId && !consumedCalls.has(update.toolCallId) && update._meta?.is_mcp_tool_call === true && update.rawInput?.server === "ownbot" && update.rawInput.tool && toolNames.has(update.rawInput.tool)) grantedCalls.add(update.toolCallId);
+              permissions.observe(event.update);
               if (event.update?.sessionUpdate === "agent_message_chunk" && event.update.content?.type === "text" && event.update.content.text) {
                 if (!textStarted) { emit({type:"TEXT_MESSAGE_START",messageId,role:"assistant"}); textStarted=true; }
                 emit({type:"TEXT_MESSAGE_CONTENT",messageId,delta:event.update.content.text});

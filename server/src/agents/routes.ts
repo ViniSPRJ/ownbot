@@ -1,3 +1,4 @@
+import { agentRuntimeInfo } from "../acp/runtime-info";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditEventType, AuditStore } from "../audit";
@@ -187,6 +188,7 @@ export function createAgentRoutes(
   /** The dto with the one fact only this closure knows: whether the coworker runs on our own Bot. */
   const dto = (actor: AgentActor, agent: AgentProfile) => ({
     ...agentDto(actor, agent),
+    runtime: agentRuntimeInfo(agent.id, !agent.endpoint || agent.endpoint === managedEndpoint),
     // A string comparison on purpose: two absent values must not read as "runs on our Bot".
     builtIn:
       typeof agent.endpoint === "string" && agent.endpoint === managedEndpoint,

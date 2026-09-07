@@ -10,6 +10,8 @@ export type AgentVisibility = "public" | "private";
  * returned flags rather than recomputing ownership rules.
  */
 export type AgentProfile = {
+  /** Execution configuration only; does not claim CLI authentication or liveness. */
+  runtime?: { kind: "acp" | "api" | "private_local" | "remote" | "unavailable"; label: string; provider?: "codex" | "claude" | "grok" };
   id: string;
   name: string;
   title: string;
