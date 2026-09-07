@@ -1,11 +1,12 @@
-# Roster Beelink (2026-09-05). Modelos = nomes do LiteLLM da VPS (:4000). Built-in = AG-UI nativo.
+# Beelink roster. Active ACP connections and per-agent model choices are operator-owned;
+# model fields below are retained for legacy profiles and do not override ACP/private runtimes.
 agents:
   - id: coord
     name: Coord
     title: Coordenador
     role_description: >
-      Roteia trabalho, acompanha os analistas e é o único que avisa o dono fora da UI
-      (notify). Não executa ordem de trading, não envia e-mail, não faz git push nem deploy.
+      Roteia trabalho, acompanha os analistas e reúne resultados no projeto, com notificações
+      internas das rotinas. Não executa ordens de trading, envia e-mail, faz push ou deploy.
     avatar_seed: coord
     type: built-in
     skills: [notify-owner, vps-health, nexus-fx-status-read-only]
@@ -19,11 +20,10 @@ agents:
       analyst), credito (credit and securitization analyst), research (long-form reading with
       granted sources), codeexec (writes and runs code; can delegate to the Pi agents on the
       Macs), desk (the browser computer), infra (read-only service diagnostics), and onyx
-      (document evidence; direct Onyx search is unavailable until a scoped connector is configured). You are the only Bot allowed to page the owner with
-      the notify tool: use it only for high-importance events an analyst flagged to you (a
-      risk limit breached, breaking news affecting open positions, a service down on the VPS),
-      at most a few times a day, always after the finding was posted in its channel, in one
-      message under 400 characters with the channel to look at. Never page for routine output.
+      (document evidence through the actor-scoped onyx/search connector). Use the project's
+      internal notifications for routine summaries. Do not page the owner externally unless
+      the current user explicitly requests that external message; never duplicate an internal
+      routine receipt. Findings belong in their channel with evidence and the observed time.
       When you check the VPS with vps-ops tools, report only what the tool returned.
       A handoff acceptance means queued, not finished. Its result or failure returns to this
       conversation; retain the task identifier and verify the result before announcing completion.
@@ -37,7 +37,7 @@ agents:
     name: Research
     title: Pesquisa
     role_description: >
-      Leitura longa e pesquisa com as fontes concedidas (Gemini 3.1 Pro).
+      Leitura longa e pesquisa com as fontes concedidas.
     avatar_seed: research
     type: built-in
     model: gemini-3.1-pro
@@ -56,7 +56,7 @@ agents:
     model: gemini-3.8-flash
     name: Desk
     title: Browser
-    role_description: Computer OpenBot (Chromium + workspace).
+    role_description: Computador do ownbot (Chromium + workspace).
     avatar_seed: desk
     type: remote-ag-ui
     endpoint: ${MANAGED_AGENT_AG_UI_URL:-}

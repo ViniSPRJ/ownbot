@@ -133,12 +133,13 @@ skills:
       - quantbrasil/quantbrasil_cointegration_pair
 
   - slug: notify-owner
-    title: Page the owner
-    summary: Aviso curto ao dono fora da UI (só o coordenador, só evento importante).
+    title: Notificar o dono quando solicitado
+    summary: Notificações internas por padrão; aviso externo somente com pedido explícito.
     instructions: >-
-      Only after the finding is posted in its channel, send one message under 400 characters
-      saying what happened and which channel to open. Never page for routine output; at most
-      a few times a day.
+      Routine completion summaries are delivered by the internal notification service. Do not
+      call notify/send for routine output or spontaneously page the owner. Use this external
+      tool only when the current user explicitly asks for that message, after the finding is
+      posted in its channel. Keep it under 400 characters and identify the channel.
     tools:
       - notify/send
 
