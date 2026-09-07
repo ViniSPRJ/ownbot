@@ -26,6 +26,8 @@ export class AcpAgent extends AbstractAgent {
       let bridge: Awaited<ReturnType<typeof createToolBridge>> | undefined;
       let sessionId: string | undefined;
       let ownsLock = false;
+      let phase = "lock";
+      let stopReason: string | undefined;
       const grantedCalls = new Set<string>();
       const consumedCalls = new Set<string>();
       let cancelled = false, finished = false, textStarted = false, accepting = false;
@@ -48,6 +50,7 @@ export class AcpAgent extends AbstractAgent {
           const stateFile = join(cwd, ".ownbot-session.json");
           let saved: SessionRecord | undefined;
           try { saved = JSON.parse(await readFile(stateFile,"utf8")); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+          phase = "tools";
           const tools = await o.tools(input);
           const toolNames = new Set(tools.map(tool=>tool.name));
           bridge = await createToolBridge(tools);
@@ -83,9 +86,11 @@ export class AcpAgent extends AbstractAgent {
               }
             },
           });
+          phase = "initialize";
           const init = await transport.request<{protocolVersion:number;agentCapabilities?:{loadSession?:boolean;mcpCapabilities?:{http?:boolean}}}>("initialize",{protocolVersion:1,clientCapabilities:{},clientInfo:{name:"ownbot",version:"0.1.0"}});
           if (init.protocolVersion !== 1) throw new Error("Versão ACP não suportada");
           if (!init.agentCapabilities?.mcpCapabilities?.http) throw new Error("Este agente ACP não oferece MCP HTTP para as ferramentas do ownbot.");
+          phase = "session";
           let fromIndex = 0;
           const previous = saved ? input.messages.findIndex(m=>m.id===saved.lastMessageId) : -1;
           if (saved && previous >= 0 && init.agentCapabilities?.loadSession) {
@@ -104,12 +109,15 @@ export class AcpAgent extends AbstractAgent {
           const messages=input.messages.slice(fromIndex).filter(m=>m.role!=="system" && !(fromIndex > 0 && m.id === saved?.replyMessageId));
           const context=messages.map(m=>`${m.role}: ${typeof m.content==="string"?m.content:JSON.stringify(m.content??"")}`).join("\n\n");
           accepting=true;
-          const result = await transport.request<{stopReason:string}>("session/prompt",{sessionId,prompt:[{type:"text",text:o.prompt+"\n\nUse as ferramentas MCP ownbot para delegar e acessar os recursos concedidos. Permissões nativas adicionais podem ser recusadas.\n\n"+context}]});
+          phase = "prompt";
+          const result = await transport.request<{stopReason:string}>("session/prompt",{sessionId,prompt:[{type:"text",text:o.prompt+"\n\nUse as ferramentas MCP ownbot para delegar e acessar os recursos concedidos. Permissões nativas adicionais podem ser recusadas. Quando message_bot aceitar uma delegação, informe o ID e encerre o turno; o ownbot entregará o resultado depois. Não mantenha o turno aberto consultando status repetidamente.\n\n"+context}]});
           accepting=false;
+          stopReason = ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"].includes(result.stopReason) ? result.stopReason : "unknown";
           if (result.stopReason !== "end_turn") throw new Error("A CLI não concluiu o turno.");
           if (cancelled) return;
           if (!textStarted) throw new Error("A CLI terminou sem retornar uma resposta de texto.");
           emit({type:"TEXT_MESSAGE_END",messageId});
+          phase = "persist";
           const temporary=stateFile+".tmp";
           await writeFile(temporary,JSON.stringify({sessionId,lastMessageId:input.messages.at(-1)?.id??null,replyMessageId:messageId}),{mode:0o600});
           await rename(temporary,stateFile);
@@ -124,6 +132,7 @@ export class AcpAgent extends AbstractAgent {
           if(this.stop===stop)this.stop=undefined;
         }
       })().catch(() => {
+        console.warn(JSON.stringify({type:"acp-run-failed",agentId:o.agentId,runId:input.runId,phase,stopReason}));
         if (!cancelled) subscriber.error(new Error("A execução ACP não foi concluída. Verifique autenticação, perfil e disponibilidade da CLI; não houve fallback para API."));
       });
       return stop;
