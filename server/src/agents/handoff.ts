@@ -40,6 +40,8 @@ export const HANDOFF_GRANT = "bot";
  * model a little more effort and removes most of that.
  */
 export type HandoffEnvelope = {
+  /** Urgent work gets a bounded head start; it never cancels another run. */
+  priority?: "normal" | "urgent";
   /** What the other Bot is being asked to do. */
   task: string;
   /** Anything that bounds it: a date range, a system, a rule it must not break. */
@@ -319,6 +321,7 @@ export function createHandoffDesk(options: {
         atMost: { keyPrefix: runPrefix, max: caps.maxPerRun },
         payload: {
           fromBotId: from.botId,
+          ...(envelope.priority === "urgent" ? { priority: "urgent" } : {}),
           toBotId: found.id,
           actorId: from.actorId,
           threadId: from.threadId,
@@ -401,6 +404,7 @@ export function createHandoffDesk(options: {
           to: found.id,
           run: from.runId,
           workKey: key,
+          priority: envelope.priority === "urgent" ? "urgent" : "normal",
           depth: depth + 1,
           // What was asked, so the trail says what one Bot sent another rather than merely that it
           // did. The task is the Bot's own words about the work, not a person's private content.

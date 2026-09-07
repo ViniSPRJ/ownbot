@@ -59,6 +59,7 @@ import { EventType } from "@ag-ui/client";
 import { historyOrEmpty } from "../copilot";
 import type { HeadlessComputer } from "./headless-computer";
 import type { TurnRunner } from "./runner";
+import { createRoutineResearchBudget, RESEARCH_BUDGET_MARKER, type RoutineResearchBudget } from "./research-budget";
 
 /**
  * The gap between stopping a turn and giving up on it.
@@ -428,11 +429,12 @@ function parseToolArgs(raw: string): unknown {
   }
 }
 
-export function frameFiring(instruction: string): string {
+export function frameFiring(instruction: string, researchGuidance?: string): string {
   return [
     "One of your routines is firing right now, on its schedule, and this is that firing.",
     "Carry out the instruction below in this turn: do the work now, then say what happened.",
     "Do not create, list or change any routine unless the instruction itself asks you to.",
+    ...(researchGuidance ? [researchGuidance] : []),
     "",
     instruction,
   ].join("\n");
@@ -445,6 +447,7 @@ export function createTurnRunner(options: {
   buildAgentFor: (input: {
     ownerUserId: string;
     agentId: string;
+    researchBudget?: RoutineResearchBudget;
   }) => Promise<AbstractAgent>;
   /**
    * The computer tools to offer and answer during the turn. Without it the turn offers no tools,
@@ -473,6 +476,9 @@ export function createTurnRunner(options: {
   } = options;
 
   return async ({ ownerUserId, agentId, threadId, instruction }) => {
+    const researchBudget = instruction.includes(RESEARCH_BUDGET_MARKER)
+      ? createRoutineResearchBudget(turnTimeoutMs)
+      : undefined;
     /*
      * One id for this turn, minted once.
      *
@@ -526,7 +532,7 @@ export function createTurnRunner(options: {
     const turn = {
       id: crypto.randomUUID(),
       role: "user",
-      content: frameFiring(instruction),
+      content: frameFiring(instruction, researchBudget?.guidance()),
     } as Message;
     const messages = [...seeded, turn];
 
@@ -556,7 +562,7 @@ export function createTurnRunner(options: {
      * ownership on every event and pushes them to the gateway, which is the whole reason this file
      * exists rather than a bare `runAgent`.
      */
-    const agent = await buildAgentFor({ ownerUserId, agentId });
+    const agent = await buildAgentFor({ ownerUserId, agentId, ...(researchBudget ? { researchBudget } : {}) });
     agent.threadId = threadId;
     agent.setMessages(messages);
 

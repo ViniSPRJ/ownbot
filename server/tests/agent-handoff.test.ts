@@ -136,6 +136,20 @@ describe("handing work to another Bot", () => {
     });
   });
 
+  test("urgent priority is audited but cannot duplicate a normal request or bypass grants", async () => {
+    const accepted = desk();
+    const first = await accepted.desk.send({from: FROM, target: "researcher", envelope: {task: "urgent evidence", priority: "urgent"}});
+    expect(first.ok).toBe(true);
+    expect(accepted.rows[0]?.payload).toMatchObject({priority: "urgent"});
+    expect(accepted.events[0]?.payload).toMatchObject({priority: "urgent"});
+    const duplicate = await accepted.desk.send({from: FROM, target: "researcher", envelope: {task: "urgent evidence", priority: "normal"}});
+    expect(duplicate.ok).toBe(false);
+    expect(accepted.rows).toHaveLength(1);
+    const denied = desk({granted: false});
+    expect((await denied.desk.send({from: FROM, target: "researcher", envelope: {task: "urgent evidence", priority: "urgent"}})).ok).toBe(false);
+    expect(denied.rows).toHaveLength(0);
+  });
+
   /*
    * The key is what stops a retried delivery running the other Bot twice, so the same envelope sent
    * twice in one run has to land on the same key. A fresh id per attempt is at-least-once with no

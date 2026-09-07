@@ -109,6 +109,7 @@ function harness(options: {
   heartbeatMs?: number;
   lockTtlSeconds?: number;
   computer?: HeadlessComputer;
+  instruction?: string;
 }) {
   const order: string[] = [];
   const calls = {
@@ -128,6 +129,7 @@ function harness(options: {
       persistedInputMessages?: { id: string; content?: unknown }[];
     }[],
     stops: [] as { threadId: string; runId?: string }[],
+    built: [] as { researchBudget?: import("../src/routines/research-budget").RoutineResearchBudget }[],
   };
 
   const agent = new FakeAgent({ agentId: AGENT_ID });
@@ -203,7 +205,7 @@ function harness(options: {
     intelligence: intelligence as any,
     // biome-ignore lint/suspicious/noExplicitAny: narrow structural fakes, on purpose.
     runner: runner as any,
-    buildAgentFor: async () => agent,
+    buildAgentFor: async input => { calls.built.push(input); return agent; },
     ...(options.turnTimeoutMs === undefined
       ? {}
       : { turnTimeoutMs: options.turnTimeoutMs }),
@@ -224,13 +226,27 @@ function harness(options: {
       ownerUserId: OWNER,
       agentId: AGENT_ID,
       threadId: THREAD_ID,
-      instruction: INSTRUCTION,
+      instruction: options.instruction ?? INSTRUCTION,
     });
 
   return { run, agent, calls, order };
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("a saved research marker installs a fresh budget and preserves the complete instruction", async () => {
+  const instruction = INSTRUCTION + "\n[OWNBOT_RESEARCH_BUDGET_V1]";
+  const configured = harness({ instruction });
+  await configured.run();
+  expect(configured.calls.built[0]?.researchBudget).toBeDefined();
+  const text = String(configured.calls.runs[0]?.persistedInputMessages?.[0]?.content);
+  expect(text).toContain(instruction);
+  expect(text).toContain("browser calls remain");
+  const ordinary = harness({});
+  await ordinary.run();
+  expect(ordinary.calls.built[0]?.researchBudget).toBeUndefined();
+  expect(String(ordinary.calls.runs[0]?.persistedInputMessages?.[0]?.content)).toBe(frameFiring(INSTRUCTION));
+});
 
 const THREE_ROWS: HistoryRow[] = [
   { id: "m1", role: "user", content: "Hello." },

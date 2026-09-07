@@ -90,6 +90,15 @@ def read_object(path):
     return decode(read_bytes(path, 65536))
 
 
+def legacy_pre_gateway_block(row):
+    # Older runner guards wrote valid negative events before a decision was loaded: no
+    # decision_id or ok field exists in that schema branch. These are readable failures,
+    # not corrupt history. Only recognize the exact fail-closed shape observed in the runner.
+    return ("decision_id" not in row and "ok" not in row
+            and row.get("decision") == "blocked_before_gateway"
+            and row.get("carrier_emitted") is False and code(row.get("reason")) is not None)
+
+
 def latest_receipts(path):
     found = {}
     incomplete = False
@@ -107,7 +116,7 @@ def latest_receipts(path):
         if row.get("source") != SOURCE or row.get("symbol") not in SYMBOLS:
             continue
         timestamp = stamp(row.get("recorded_at_utc"))
-        if timestamp is None or code(row.get("decision_id")) is None:
+        if timestamp is None or (code(row.get("decision_id")) is None and not legacy_pre_gateway_block(row)):
             incomplete = True
             continue
         prior = found.get(row["symbol"])
@@ -151,6 +160,8 @@ def build_snapshot(now=None, audit=AUDIT, decisions=DECISIONS, quotes=QUOTES):
             issues.append("receipt_unavailable")
         elif code(row.get("decision")) is None or type(row.get("carrier_emitted")) is not bool:
             issues.append("receipt_state_unknown")
+        if legacy_pre_gateway_block(row):
+            issues.append("blocked_before_gateway:" + row["reason"])
         if issued is None:
             issues.append("decision_timestamp_unknown")
         if recorded is not None and (now - recorded).total_seconds() > 3600:

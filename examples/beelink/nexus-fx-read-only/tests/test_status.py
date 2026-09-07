@@ -115,6 +115,46 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(value["receipts"][0]["id"], "receipt-EURUSD")
         self.assertIn("receipt_history_contains_unreadable_records", value["warnings"])
 
+    def legacy_block(self, timestamp="2026-09-01T19:40:04Z"):
+        return {"schema_version": "tch.isolated_fx_runner_audit.v1", "source": "codex-fx",
+                "symbol": "EURUSD", "recorded_at_utc": timestamp,
+                "decision": "blocked_before_gateway", "carrier_emitted": False,
+                "reason": "isolated_fx_decision_stale"}
+
+    def test_valid_legacy_block_does_not_mark_readable_history_corrupt(self):
+        self.rows.insert(0, self.legacy_block())
+        self.write_rows()
+        before = self.audit.read_bytes()
+        value = self.build()
+        self.assertEqual(value["status"], "ok")
+        self.assertEqual(value["warnings"], [])
+        self.assertEqual(value["receipts"][0]["id"], "receipt-EURUSD")
+        self.assertEqual(self.audit.read_bytes(), before)
+
+    def test_newest_legacy_block_remains_explicit_failure_with_unknown_id(self):
+        self.rows.append(self.legacy_block("2026-09-07T20:59:50Z"))
+        self.write_rows()
+        value = self.build()
+        receipt = value["receipts"][0]
+        self.assertEqual(value["status"], "degraded")
+        self.assertEqual(value["warnings"], [])
+        self.assertIsNone(receipt["id"])
+        self.assertEqual(receipt["state"], "blocked_before_gateway")
+        self.assertFalse(receipt["carrierEmitted"])
+        self.assertIn("receipt_reported_failure", receipt["warnings"])
+        self.assertIn("blocked_before_gateway:isolated_fx_decision_stale", receipt["warnings"])
+        self.assertIn("latest_decision_receipt_not_confirmed", receipt["warnings"])
+
+    def test_malformed_lookalike_legacy_events_still_report_history_gap(self):
+        for change in ({"carrier_emitted": True}, {"reason": "freeform private details"},
+                       {"decision_id": None}, {"ok": True}, {"recorded_at_utc": "invalid"}):
+            with self.subTest(change=change):
+                bad = {**self.legacy_block(), **change}
+                self.audit.write_text(json.dumps(bad) + "\n" + "".join(json.dumps(r) + "\n" for r in self.rows))
+                value = self.build()
+                self.assertIn("receipt_history_contains_unreadable_records", value["warnings"])
+                self.assertEqual(value["status"], "degraded")
+
     def test_ssh_reader_rejects_arbitrary_commands_and_marks_stale_snapshot(self):
         p = self.root / "status.json"
         p.write_bytes(fx.encoded(self.build()))

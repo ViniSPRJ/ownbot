@@ -17,6 +17,7 @@ import { HANDOFF_KIND } from "./handoff";
 
 /** What a hop carries, as `handoff.ts` wrote it. */
 export type HandoffWork = {
+  priority?: "normal" | "urgent";
   fromBotId: string;
   toBotId: string;
   actorId: string;
@@ -164,6 +165,7 @@ export function createHandoffRunner(options: {
     key: `relay:${key}`,
     payload: {
       fromBotId: work.toBotId,
+      ...(work.priority === "urgent" ? { priority: "urgent" } : {}),
       toBotId: work.fromBotId,
       actorId: work.actorId,
       threadId: work.threadId,

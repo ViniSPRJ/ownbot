@@ -289,7 +289,12 @@ export function createWorkQueue(database: Database): WorkQueue {
             and "attempts" < ${maxAttempts}
             and "run_at" <= now()
             and ("lease_until" is null or "lease_until" <= now())
-          order by "run_at" asc
+          -- A finite head start preserves FIFO for old work even under sustained urgent traffic.
+          -- Due-time eligibility above is unchanged; future or leased work cannot be rushed.
+          order by ("run_at" - case
+            when "kind" = 'bot.message' and "payload"->>'priority' = 'urgent'
+              then interval '30 seconds'
+            else interval '0 seconds' end) asc, "run_at" asc, "key" asc
           limit ${limit}
           for update skip locked
         `);

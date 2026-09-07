@@ -22,6 +22,9 @@ import type { HandoffDesk } from "./handoff";
 export const HANDOFF_TOOL = "message_bot";
 
 const parameters = z.object({
+  priority: z.enum(["normal", "urgent"]).optional().describe(
+    "Use urgent only for time-sensitive work. It advances queued work by at most 30 seconds, without interrupting active agents.",
+  ),
   bot: z
     .string()
     .describe(
@@ -102,6 +105,7 @@ export function handoffTool(options: {
         target: parsed.data.bot,
         envelope: {
           task: parsed.data.task,
+          ...(parsed.data.priority ? { priority: parsed.data.priority } : {}),
           ...(parsed.data.constraints
             ? { constraints: parsed.data.constraints }
             : {}),

@@ -74,6 +74,7 @@ import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { grantedSkills, grantedTools } from "./plugins/tools";
 import { createTurnRunner } from "./routines/run-turn";
+import type { RoutineResearchBudget } from "./routines/research-budget";
 import { createHeadlessComputer } from "./routines/headless-computer";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
@@ -735,9 +736,11 @@ const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
 const buildAgentFor = async ({
   ownerUserId,
   agentId,
+  researchBudget,
 }: {
   ownerUserId: string;
   agentId: string;
+  researchBudget?: RoutineResearchBudget;
 }) => {
   const actor = await actorFor(ownerUserId);
   const agents = await resolveRuntimeAgents(
@@ -745,7 +748,10 @@ const buildAgentFor = async ({
     tenantPackage.model,
     resolveRuntimeModelApiKey,
     stallGuard,
-    loadToolsForActor(actor.id),
+    async (botId) => {
+      const tools = await loadToolsForActor(actor.id)(botId);
+      return researchBudget ? researchBudget.wrap(tools) : tools;
+    },
     signRunForActor(actor.id),
     config.computer ? COMPUTER_GUIDANCE : undefined,
     loadVendors,
@@ -917,6 +923,8 @@ let workOfferedListener: WorkOfferedListener | undefined;
 
 if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
   const runner = createHandoffRunner({
+    // Reconsider priority between deliveries rather than pre-leasing five waiting agents.
+    limit: 1,
     queue: createWorkQueue(database),
     owner: `handoff/${process.env.HOSTNAME ?? randomUUID().slice(0, 8)}`,
     auditStore: bootAuditStore,

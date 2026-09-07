@@ -55,6 +55,14 @@ than the latest receipt is explicitly unconfirmed. Receipts older than one hour
 are marked old, never fabricated or refreshed. A snapshot older than 120 seconds
 is returned as `unknown` with `snapshot_stale`, preserving its original timestamp.
 
+The runner's older `blocked_before_gateway` audit branch has no `decision_id` or
+`ok` field: it records a guard failure before loading a decision. A valid timestamp,
+`carrier_emitted:false` and bounded reason code identify this readable negative event.
+An older block does not label the whole history corrupt when newer receipts exist;
+if it is the newest event for a symbol, its null ID, blocked state and failure reason
+remain explicit and degraded. Unknown/malformed shapes still produce a history-gap
+warning. The exporter never rewrites or removes audit history.
+
 ## Operator provisioning
 
 Nexus port 22 is **Tailscale SSH**, not ordinary OpenSSH. Its policy would bypass
