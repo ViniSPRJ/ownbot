@@ -401,7 +401,10 @@ export function unansweredToolCalls(
     if (message.role !== "assistant") continue;
     const calls = (
       message as {
-        toolCalls?: { id: string; function: { name: string; arguments: string } }[];
+        toolCalls?: {
+          id: string;
+          function: { name: string; arguments: string };
+        }[];
       }
     ).toolCalls;
     for (const call of calls ?? []) {
@@ -598,6 +601,7 @@ export function createTurnRunner(options: {
     let heartbeatError: unknown;
     /** Whether the deadline stopped this turn. See the throw below the `finally`. */
     let stopped = false;
+    let abortBackstopExpired = false;
     /**
      * `stopCanonicalRun`'s shape (`channel-manager.mjs:222-229`): one promise for the whole turn,
      * not one per caller. Both the heartbeat-reject path and the deadline path call `stopTurn`, and
@@ -694,6 +698,7 @@ export function createTurnRunner(options: {
         }, turnTimeoutMs);
         deadline.unref?.();
         backstop = setTimeout(() => {
+          abortBackstopExpired = true;
           reject(
             new Error(
               `The routine's turn did not finish within ${Math.round(turnTimeoutMs / 1000)}s and could not be stopped.`,
@@ -717,8 +722,11 @@ export function createTurnRunner(options: {
       for (;;) {
         lastRoundFrom = agent.messages.length;
         await Promise.race([runOnce(request, persisted), timeout]);
-        if (stopped || heartbeatError !== undefined || computer === undefined) break;
-        const pending = unansweredToolCalls(agent.messages.slice(lastRoundFrom));
+        if (stopped || heartbeatError !== undefined || computer === undefined)
+          break;
+        const pending = unansweredToolCalls(
+          agent.messages.slice(lastRoundFrom),
+        );
         if (pending.length === 0) break;
         rounds += 1;
         if (rounds > maxToolRounds) {
@@ -754,6 +762,18 @@ export function createTurnRunner(options: {
         };
         persisted = answers;
       }
+    } catch (error) {
+      // ACP reports cancellation as RUN_ERROR (or a rejected stream). That rejection must not
+      // hide the deadline/lock failure that initiated it. The finally below still releases the
+      // lock before this error reaches the durable routine receipt. Keep an unresponsive abort's
+      // backstop error distinct, and do not await a possibly hung stop promise on that path.
+      if (heartbeatError !== undefined) throw heartbeatError;
+      if (stopped && !abortBackstopExpired) {
+        throw new Error(
+          `The routine's turn was stopped after ${Math.round(turnTimeoutMs / 1000)}s.`,
+        );
+      }
+      throw error;
     } finally {
       /*
        * THE SINGLE MOST IMPORTANT LINES IN THIS FILE, on every exit path — success, a thrown run, the

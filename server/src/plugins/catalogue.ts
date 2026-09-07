@@ -38,8 +38,8 @@ export type CatalogueAuth =
   /** One token, held by the deployment, used for everybody. */
   | { kind: "deployment-bearer" }
   /**
-   * First-party and in-process. There is no credential, because there is nothing to authenticate
-   * to: the call runs against this deployment's own tables, as the person whose turn it is.
+   * First-party local adapter, reached as the authenticated actor. Routines uses local tables;
+   * Onyx resolves an explicit operator-owned actor mapping instead of a shared catalogue token.
    */
   | { kind: "builtin" }
   /**
@@ -265,6 +265,34 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
       "notion-update-view",
     ]),
     docsUrl: "https://developers.notion.com/guides/mcp/build-mcp-client",
+  },
+  {
+    key: "nexus-fx",
+    title: "Nexus FX — recibos",
+    vendor: "ownbot",
+    summary:
+      "Snapshot de recibos e cotações FX, somente leitura, pela identidade autorizada.",
+    host: "builtin://nexus-fx",
+    path: "/",
+    transport: "nexus-fx",
+    auth: Object.freeze({ kind: "builtin" }),
+    writeTools: Object.freeze([]),
+    docsUrl:
+      "https://github.com/ViniSPRJ/ownbot/blob/beelink-local/docs/nexus-fx-integration.md",
+  },
+  {
+    key: "onyx",
+    title: "Onyx",
+    vendor: "Onyx",
+    summary:
+      "Busca documental somente leitura, vinculada à identidade Onyx da pessoa autenticada.",
+    host: "builtin://onyx",
+    path: "/",
+    transport: "onyx-rest",
+    // The local adapter resolves a protected actor mapping; no deployment-wide token is accepted.
+    auth: Object.freeze({ kind: "builtin" }),
+    writeTools: Object.freeze([]),
+    docsUrl: "https://docs.onyx.app/",
   },
   {
     key: "routines",

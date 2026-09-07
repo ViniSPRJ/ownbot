@@ -8,7 +8,7 @@ export function WorkerHealth() {
     if (![200,503].includes(response.status) || !value || typeof value.checks !== "object") throw new Error("Health unavailable");
     return value;
   } });
-  const labels: Record<string,string> = {database:"Banco de dados",scheduler:"Worker de rotinas",notifications:"Notificações",history:"Histórico local",runs:"Execuções sem atraso"};
+  const labels: Record<string,string> = {database:"Banco de dados",scheduler:"Worker de rotinas",notifications:"Notificações",history:"Histórico local",runs:"Execuções sem atraso",handoffs:"Delegações sem atraso ou tentativas esgotadas"};
   return <section className="rounded-lg border p-4 space-y-2" aria-label="Saúde da operação">
     <h2 className="font-semibold">Saúde da operação</h2>
     {query.isPending ? <p>Verificando…</p> : query.error ? <p role="alert">Não foi possível verificar os serviços. A conexão ou a API pode estar indisponível.</p> : <>

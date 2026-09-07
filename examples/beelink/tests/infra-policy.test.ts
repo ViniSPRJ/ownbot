@@ -14,7 +14,10 @@ test("infra exact reads pass while restart, cron and arbitrary servers are block
   expect(decide("infra", {server:"evil",tool:"status",effect:"read"}).forward).toBe(false);
   expect(decide("infra").forward).toBe(false);
 });
-test("onyx has no computer or MCP exception until a scoped connector exists", () => {
+test("onyx permits only its scoped read connector and refuses computer or other MCP", () => {
+  expect(decide("onyx", {server:"onyx",tool:"search",effect:"read"}).forward).toBe(true);
+  expect(decide("onyx", {server:"onyx",tool:"search",effect:"write"}).forward).toBe(false);
+  expect(decide("onyx", {server:"onyx",tool:"delete",effect:"write"}).forward).toBe(false);
   expect(decide("onyx").forward).toBe(false);
   expect(decide("onyx", {server:"vps-ops",tool:"status",effect:"read"}).forward).toBe(false);
 });

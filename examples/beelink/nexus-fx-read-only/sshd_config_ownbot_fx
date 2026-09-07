@@ -1,0 +1,29 @@
+# Separate from port 22, which is managed by Tailscale SSH on Nexus.
+ListenAddress 100.93.82.41:22224
+HostKey /etc/ssh/ssh_host_ed25519_key
+PidFile /run/ownbot-fx-status-sshd.pid
+AllowUsers ownbot-fx-reader
+UsePAM yes
+AuthenticationMethods publickey
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+AuthorizedKeysFile /var/lib/ownbot-fx-reader/.ssh/authorized_keys
+AuthorizedKeysCommand none
+TrustedUserCAKeys none
+ForceCommand /usr/bin/python3 -I -B /usr/local/lib/ownbot-fx-status/ownbot_fx_status.py --read
+DisableForwarding yes
+PermitTTY no
+PermitTunnel no
+PermitUserRC no
+PermitUserEnvironment no
+X11Forwarding no
+PrintMotd no
+PrintLastLog no
+LoginGraceTime 15
+MaxAuthTries 2
+MaxSessions 1
+ClientAliveInterval 15
+ClientAliveCountMax 1
+LogLevel INFO

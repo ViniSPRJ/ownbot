@@ -93,10 +93,16 @@ describe("which servers this deployment will talk to", () => {
         expect(entry.hostPattern?.startsWith("^")).toBe(true);
         expect(entry.hostPattern?.endsWith("$")).toBe(true);
       } else if (entry.auth.kind === "builtin") {
-        // First-party and in-process: there is no host outside this process to reach, so the
-        // https requirement below does not apply. Asserted positively instead, so this branch
-        // cannot quietly become a loophole for a future entry that DOES dial a real host.
-        expect(entry.host).toBe("builtin://routines");
+        // Exact local adapters only. Onyx separately validates its operator-owned Tailnet
+        // endpoint and actor mapping; a new builtin entry must not bypass URL review silently.
+        const local = {
+          routines: ["builtin://routines", "builtin-routines"],
+          onyx: ["builtin://onyx", "onyx-rest"],
+          "nexus-fx": ["builtin://nexus-fx", "nexus-fx"],
+        };
+        expect([entry.host, entry.transport]).toEqual(
+          local[entry.key as keyof typeof local],
+        );
       } else {
         expect(entry.host.startsWith("https://")).toBe(true);
       }

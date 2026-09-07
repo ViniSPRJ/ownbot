@@ -86,7 +86,7 @@ export function saveAcpAgentModel(
   const id = typeof mapping === "string" ? mapping : mapping.profile;
   const value = model === null ? id : { profile: id, model };
   // Preserve the operator's original fields and other agents byte-for-value; never accept
-  // executable paths, environments or provider choices from the browser.
+  // executable paths or environments from the browser.
   const original = JSON.parse(loaded.source);
   original.agents[agentId] = value;
   schema.parse(original);
@@ -104,4 +104,68 @@ export function saveAcpAgentModel(
 /** Operator-owned configuration, never command text supplied by a chat or agent. */
 export function acpProfileFor(agentId: string): AcpProfile | undefined {
   return acpModelSelectionFor(agentId)?.profile;
+}
+
+/** Public catalogue contains only operator-defined connection IDs and provider names. */
+export function acpProviderSelectionFor(agentId: string) {
+  const loaded = readConfig();
+  if (!loaded || !Object.hasOwn(loaded.config.agents, agentId)) return;
+  const mapping = loaded.config.agents[agentId]!;
+  const profileId = typeof mapping === "string" ? mapping : mapping.profile;
+  if (!Object.hasOwn(loaded.config.profiles, profileId))
+    throw new Error("ACP profile is missing");
+  return {
+    profileId,
+    profiles: Object.entries(loaded.config.profiles).map(([id, value]) => ({
+      id,
+      provider: value.provider ?? "codex",
+    })),
+    revision: createHash("sha256").update(loaded.source).digest("hex"),
+  };
+}
+
+/** Resolve only installed operator profiles. Browser input never becomes process configuration. */
+export function configuredAcpProfile(
+  profileId: string,
+): AcpProfile | undefined {
+  const loaded = readConfig();
+  if (!loaded || !Object.hasOwn(loaded.config.profiles, profileId)) return;
+  return { ...loaded.config.profiles[profileId]!, profileId };
+}
+
+/** Synchronous read/revision-check/rename prevents an intervening in-process save. */
+export function saveAcpAgentProvider(
+  agentId: string,
+  profileId: string,
+  revision: string,
+) {
+  const loaded = readConfig();
+  if (
+    !loaded ||
+    createHash("sha256").update(loaded.source).digest("hex") !== revision
+  )
+    throw new Error("ACP configuration changed");
+  if (
+    !Object.hasOwn(loaded.config.agents, agentId) ||
+    !Object.hasOwn(loaded.config.profiles, profileId)
+  )
+    throw new Error("ACP agent or profile not configured");
+  const mapping = loaded.config.agents[agentId]!;
+  const previous = typeof mapping === "string" ? mapping : mapping.profile;
+  // An unchanged provider must preserve the user's model override.
+  if (previous === profileId) return;
+  const original = JSON.parse(loaded.source);
+  // A different connection may use an unrelated model catalogue; use its own default.
+  original.agents[agentId] = profileId;
+  schema.parse(original);
+  const temporary = `${loaded.file}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(original, null, 2) + "\n", {
+      mode: 0o600,
+      flag: "wx",
+    });
+    renameSync(temporary, loaded.file);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }

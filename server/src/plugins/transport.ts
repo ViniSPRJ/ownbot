@@ -3,6 +3,8 @@ import type { CatalogueEntry } from "./catalogue";
 import * as driveRest from "./google-drive-rest";
 import type { McpCallResult, McpTool } from "./mcp";
 import * as mcp from "./mcp";
+import * as onyxRest from "./onyx-rest";
+import * as nexusFx from "./nexus-fx";
 
 /**
  * How this deployment reaches one vendor: which protocol, chosen per catalogue entry.
@@ -79,12 +81,19 @@ export type VendorTransport = {
  * A closed union rather than a string, so adding one is a change to this file and to the registry
  * below together. An entry naming a transport that does not exist should not typecheck.
  */
-export type TransportKind = "mcp" | "google-drive-rest" | "builtin-routines";
+export type TransportKind =
+  | "mcp"
+  | "google-drive-rest"
+  | "builtin-routines"
+  | "onyx-rest"
+  | "nexus-fx";
 
 const TRANSPORTS: Record<TransportKind, VendorTransport> = {
   mcp,
   "google-drive-rest": driveRest,
   "builtin-routines": builtinRoutines,
+  "onyx-rest": onyxRest,
+  "nexus-fx": nexusFx,
 };
 
 /**

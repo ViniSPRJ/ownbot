@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { and, eq, sql } from "drizzle-orm";
 import { startRetentionSweeps } from "../src/audit-retention";
 import {
   createPageFrameStore,
@@ -39,7 +39,25 @@ async function frame(daysAgo: number, index: number): Promise<void> {
   await database
     .update(computerPageFrame)
     .set({ capturedAt: sql`now() - make_interval(days => ${daysAgo})` })
-    .where(eq(computerPageFrame.toolCallId, `turn-${index}`));
+    .where(and(
+      eq(computerPageFrame.computerId, COMPUTER),
+      eq(computerPageFrame.toolCallId, `turn-${index}`),
+    ));
+}
+
+// Large retention fixtures should cost one database round-trip, not two per row.
+// Keep the same batch boundaries and five-second test deadline for the actual purge.
+async function expiredFrames(count: number): Promise<void> {
+  await database.insert(computerPageFrame).values(
+    Array.from({ length: count }, (_, index) => ({
+      computerId: COMPUTER,
+      toolCallId: `turn-${index + 1}`,
+      url: `https://example.com/${index + 1}`,
+      title: `page ${index + 1}`,
+      frame: "iVBORw0KGgo=",
+      capturedAt: sql`now() - interval '45 days'`,
+    })),
+  );
 }
 
 const kept = () =>
@@ -52,6 +70,10 @@ afterEach(async () => {
   await database
     .delete(computerPageFrame)
     .where(eq(computerPageFrame.computerId, COMPUTER));
+});
+
+afterAll(async () => {
+  await database.$client.close();
 });
 
 describe("page frame retention", () => {
@@ -90,7 +112,7 @@ describe("page frame retention", () => {
   });
 
   test("purge past its batch size removes every eligible row", async () => {
-    for (let index = 1; index <= 205; index += 1) await frame(45, index);
+    await expiredFrames(205);
 
     await store.purge(FRAME_RETENTION_MS);
     expect(await kept()).toHaveLength(0);
@@ -112,7 +134,7 @@ describe("page frame retention", () => {
    * not to have is double-counting or deadlocking on the same `ctid`s.
    */
   test("two sweeps at once remove each row once and neither stalls", async () => {
-    for (let index = 1; index <= 400; index += 1) await frame(45, index);
+    await expiredFrames(400);
 
     await Promise.all([
       store.purge(FRAME_RETENTION_MS),

@@ -1,4 +1,11 @@
 {
-  "deny": "bot.id == 'onyx' || (bot.id == 'infra' && !(has(mcp.server) && mcp.server == 'vps-ops' && mcp.tool in ['status', 'health', 'disk']))",
-  "grants": ["vps-ops/status", "vps-ops/health", "vps-ops/disk"]
+  "deny": "(bot.id == 'onyx' && !(has(mcp.server) && mcp.server == 'onyx' && mcp.tool == 'search' && mcp.effect == 'read')) || (bot.id == 'infra' && !(has(mcp.server) && mcp.server == 'vps-ops' && mcp.tool in ['status', 'health', 'disk']))",
+  "grants": [
+    "vps-ops/status",
+    "vps-ops/health",
+    "vps-ops/disk"
+  ],
+  "previousDeny": [
+    "bot.id == 'onyx' || (bot.id == 'infra' && !(has(mcp.server) && mcp.server == 'vps-ops' && mcp.tool in ['status', 'health', 'disk']))"
+  ]
 }

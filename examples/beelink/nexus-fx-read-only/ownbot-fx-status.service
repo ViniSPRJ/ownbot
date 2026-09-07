@@ -1,0 +1,22 @@
+[Unit]
+Description=Read-only FX receipt projection for Ownbot
+
+[Service]
+Type=oneshot
+User=root
+Group=ownbot-fx-reader
+ExecStart=/usr/bin/python3 -I -B /usr/local/lib/ownbot-fx-status/ownbot_fx_status.py --export
+UMask=0027
+NoNewPrivileges=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/ownbot-fx-status
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+TimeoutStartSec=10

@@ -1,0 +1,106 @@
+--- work/pi-runner-durable/baseline/server.ts	2026-09-07 17:46:47
++++ work/pi-runner-durable/src/server.ts	2026-09-07 18:02:35
+@@ -1,3 +1,4 @@
++import { DurableJobs } from "./durable-jobs";
+ // pi-runner: a small MCP server that runs the Pi coding agent (Ollama-backed) on this Mac.
+ // Transport: @modelcontextprotocol/sdk WebStandardStreamableHTTPServerTransport (stateless) under Bun.serve.
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+@@ -79,6 +80,7 @@
+ }
+ const sem = new Semaphore(LIMIT);
+ const activeRuns = new Set<string>();
++process.umask(0o077);
+ 
+ // ---------- work dir pruning ----------
+ // Removes ~/pi-work/<runId> dirs older than RETENTION_DAYS that are not running. Never leaves WORK_ROOT.
+@@ -189,8 +191,8 @@
+   exitCode: number | null; timedOut: boolean; error?: string;
+ }
+ 
+-async function piRun(args: RunArgs, progress?: (msg: string) => void): Promise<RunResult> {
+-  const runId = shortId();
++async function piRun(args: RunArgs, progress?: (msg: string) => void, durableRunId?: string): Promise<RunResult> {
++  const runId = durableRunId ?? shortId();
+   try { return await piRunInner(runId, args, progress); } finally { activeRuns.delete(runId); }
+ }
+ async function piRunInner(runId: string, args: RunArgs, progress?: (msg: string) => void): Promise<RunResult> {
+@@ -308,7 +310,7 @@
+   if (workspace && result.changedFiles.length) {
+     const staging = `${BEELINK_STAGING}/${runId}`;
+     try {
+-      const mk = await exec(["ssh", "-o", "BatchMode=yes", BEELINK_SSH, `mkdir -p ${staging}`], { timeoutMs: 60_000 });
++      const mk = await exec(["ssh", "-o", "BatchMode=yes", BEELINK_SSH, `mkdir -p -m 700 ${staging}`], { timeoutMs: 60_000 });
+       if (mk.code !== 0) throw new Error(`mkdir staging failed: ${mk.stderr.trim().slice(0, 500)}`);
+       const listFile = join(runDir, "changed.txt");
+       await writeFile(listFile, result.changedFiles.join("\n") + "\n");
+@@ -333,6 +335,18 @@
+   await log(`done ok=${result.ok} durationMs=${result.durationMs} toolCalls=${result.toolCalls} changed=${result.changedFiles.length} staging=${result.stagingPath ?? "-"}${result.error ? " error=" + result.error.replace(/\n/g, " ") : ""}`);
+   return result;
+ }
++
++// Background jobs share the same semaphore as legacy synchronous calls.
++const durableJobs = new DurableJobs<RunArgs, RunResult>({
++  directory: join(PROJECT_DIR, "jobs"),
++  retentionMs: Math.max(1, RETENTION_DAYS) * 86400_000,
++  execute: async (args, jobId, started) => {
++    await sem.acquire();
++    try { started(); return await piRun(args, undefined, jobId); }
++    finally { sem.release(); }
++  },
++});
++setInterval(() => durableJobs.prune(), PRUNE_INTERVAL_MS).unref();
+ 
+ // ---------- MCP server ----------
+ function buildServer(): McpServer {
+@@ -340,10 +354,15 @@
+ 
+   server.registerTool("pi_status", {
+     title: "Pi runner status",
+-    description: `Status of the Pi runner "${HOST_NAME}": concurrency limit, busy/queued runs, provider, allowed models, default timeout.`,
+-    inputSchema: {},
+-  }, async () => {
+-    const s = { host: HOST_NAME, name: HOST_NAME, provider: PROVIDER, limit: LIMIT, busy: sem.busy, queued: sem.queued,
++    description: `Status of the Pi runner "${HOST_NAME}" or durable job by jobId. Host status lists concurrency, provider and models; a job returns queued/running/completed/failed/interrupted plus terminal result.`,
++    inputSchema: { jobId: z.string().regex(/^[a-f0-9]{32}$/).optional().describe("Persistent jobId from background pi_run; omit for host status.") },
++  }, async ({ jobId }) => {
++    if (jobId) {
++      const job = durableJobs.get(jobId);
++      if (!job) return { isError: true, content: [{ type: "text", text: "Tarefa não encontrada ou recibo expirado." }] };
++      return { content: [{ type: "text", text: JSON.stringify(job) }], structuredContent: job as any };
++    }
++    const s = { backgroundJobs: true, host: HOST_NAME, name: HOST_NAME, provider: PROVIDER, limit: LIMIT, busy: sem.busy, queued: sem.queued,
+       models: [...MODELS], defaultModel: DEFAULT_MODEL, defaultTimeoutSeconds: DEFAULT_TIMEOUT_S, maxTimeoutSeconds: MAX_TIMEOUT_S, retentionDays: RETENTION_DAYS };
+     return { content: [{ type: "text", text: JSON.stringify(s) }], structuredContent: s };
+   });
+@@ -353,9 +372,11 @@
+     description: `Run the Pi coding agent (provider "${PROVIDER}" on host "${HOST_NAME}") on a task in an isolated work dir. ` +
+       `If "workspace" (absolute path on the Beelink) is given, it is rsynced in first; changes are NOT written back — ` +
+       `they are staged to ~/pi-staging/<runId>/ on the Beelink and returned as a unified diff for review. ` +
+-      `Runs beyond the concurrency limit (${LIMIT}) wait in FIFO order. Models: ${MODELS.join(", ")} (default ${DEFAULT_MODEL}).`,
++      `Use background:true and an idempotencyKey to receive a durable jobId immediately, then poll pi_status({jobId}). Reuse the same key only for identical retries. Runs beyond the concurrency limit (${LIMIT}) wait in FIFO order. Models: ${MODELS.join(", ")} (default ${DEFAULT_MODEL}).`,
+     inputSchema: {
+       task: z.string().min(1).describe("The task / prompt for Pi."),
++      background: z.boolean().optional().describe("Return a durable job receipt immediately. Required for ownbot long-running work."),
++      idempotencyKey: z.string().min(1).max(256).optional().describe("Required for background jobs. Stable unique task key; repeat unchanged on transport retries."),
+       model: z.string().optional().describe(`One of: ${MODELS.join(", ")}. Default ${DEFAULT_MODEL}.`),
+       workspace: z.string().optional().describe("Absolute path on the Beelink to sync in as the workspace (no '..')."),
+       tools: z.array(z.string()).optional().describe(`Pi tool allowlist. Default: ${DEFAULT_TOOLS.join(",")}.`),
+@@ -363,6 +384,18 @@
+       thinking: z.enum(["off", "low", "medium", "high"]).optional().describe("Pi thinking level."),
+     },
+   }, async (args, extra) => {
++    if (args.background) {
++      try {
++        if (!args.idempotencyKey) throw new Error("Background jobs require idempotencyKey.");
++        if (args.model && !MODELS.includes(args.model)) throw new Error("Model is not in this worker's allowed catalogue.");
++        if (args.workspace && validWorkspace(args.workspace)) throw new Error("Invalid workspace.");
++        const { background, idempotencyKey, ...task } = args;
++        const job = durableJobs.submit(task, idempotencyKey);
++        return { content: [{ type: "text", text: JSON.stringify(job) }], structuredContent: job as any };
++      } catch (error) {
++        return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : "Background task rejected." }] };
++      }
++    }
+     const token = extra._meta?.progressToken;
+     let n = 0;
+     const progress = (message: string) => {

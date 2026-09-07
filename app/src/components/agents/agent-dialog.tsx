@@ -1,5 +1,5 @@
 import { AgentMemoryPanel } from "./agent-memory-panel";
-import { AcpModelSelector } from "./acp-model-selector";
+import { AcpProviderSelector } from "./acp-provider-selector";
 import {
   IconAdjustments,
   IconArrowsExchange,
@@ -668,7 +668,7 @@ function ConnectionSection({
         </p>
         {profile.runtime.kind === "acp" ? (
           profile.runtime.canSelectModel
-            ? <AcpModelSelector agentId={agentId} />
+            ? <AcpProviderSelector agentId={agentId} />
             : <p className="text-sm">Modelo: {profile.runtime.model ?? "Padrão da CLI"}. O administrador pode alterar esta escolha.</p>
         ) : null}
       </section>

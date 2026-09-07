@@ -8,19 +8,18 @@ Restart e hermes_cron nunca são concedidos ao novo coworker. Coord mantém suas
 concessões anteriores. Não foi confirmado que o alvo vps-ops é Hostinger;
 o coworker precisa citar o host efetivamente retornado.
 
-O container Onyx existe, mas não há conector de busca Onyx configurado no OpenBot.
-O onyx-a0-bridge encontrado é Onyx → Agent Zero, com execução arbitrária; não é
-RAG e não deve ser usado para esta integração. A API Onyx instalada possui
-POST /admin/search com filtros de ACL do usuário e exigência curator/admin;
-reutilizar um PAT administrativo compartilhado não equivale a preservar as
-permissões de cada pessoa. A próxima integração exige credencial apropriada e
-busca comprovada com teste de isolamento por usuário. O coworker e canal deixam
-**conexão pendente** visível e só analisam documentos fornecidos na conversa.
+O conector `onyx/search` usa a API instalada do Onyx com a identidade explicitamente
+vinculada à pessoa autenticada no ownbot. Confere `/me` em cada busca e mantém as
+ACLs da conta Onyx. Uma concessão sem esse vínculo é recusada; o token do administrador
+não é disponibilizado a outras pessoas. Busca por palavras-chave, sem expansão ou
+resposta por LLM; o modelo escolhido para o coworker continua independente.
+Configuração e testes: [Onyx](../../docs/onyx-integration.md).
 
-Nenhum endpoint de recibos Nexus FX foi configurado/verificado no catálogo. A
-skill `nexus-fx-status-read-only` interpreta apenas recibos fornecidos, marca a
-fonte e o instante observados; não é um monitor ativo. Não importa instruções
-históricas de FX pause, Hostinger home base ou exclusão de máquina como política.
+O conector `nexus-fx/status` lê somente um snapshot projetado no Nexus, por SSH com
+comando obrigatório e identidade dedicada. Retorna recibos e validade de cotações
+separadamente. Fonte atual `codex-fx`; não chamar esses recibos de Grok. HOLD não
+prova saúde, cotação atual nem ausência de posições. Sem submissão de decisões,
+ordens ou alteração de flags. Instalação: [Nexus FX](../../docs/nexus-fx-integration.md).
 
 ## Aplicação pelo operador
 
@@ -36,7 +35,8 @@ históricas de FX pause, Hostinger home base ou exclusão de máquina como polí
    Verificar os avisos de preservação de customizações antes de afirmar sucesso.
 4. Executar o mesmo script com `--apply` (sem policy-only). Ele preserva regras
    anteriores, recusa modo dry-run global, salva/verifica fronteira antes de
-   conceder exatamente os três MCP via API auditada. Sem --apply só planeja.
+   conceder exatamente os três MCP do Infra via API auditada. Os conectores Onyx e FX
+   exigem configuração de identidade e seus grants exatos separados. Sem --apply só planeja.
 5. Validar recusas no gateway para infra/restart, infra/hermes_cron, infra/computer
    e onyx/computer, e resposta real para infra/status. Não executar ferramentas
    mutantes para testar: usar decisões da política e testes de gateway.
@@ -44,8 +44,7 @@ históricas de FX pause, Hostinger home base ou exclusão de máquina como polí
    estiverem presentes. Canais não concedem automaticamente peer handoffs.
 
 A regra CEL também bloqueia qualquer outro MCP futuro e qualquer computador para
-os dois novos IDs, mesmo se alguém der grants amplos depois. Onyx não recebe nem
-mesmo a exceção vps-ops. Outros bots continuam com as regras anteriores. Skills e
+os dois novos IDs, mesmo se alguém der grants amplos depois. Onyx recebe somente a exceção `onyx/search` de leitura, sem vps-ops. Outros bots continuam com as regras anteriores. Skills e
 prompts sozinhos não estabelecem esse limite. Relatos de Infra ao Coord são
 achados e propostas: não autorizam remediação autônoma por outro agente.
 

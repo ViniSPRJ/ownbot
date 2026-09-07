@@ -331,7 +331,9 @@ describe("a built-in Bot", () => {
         }
       )?.messages ?? []
     )
-      .filter((message) => message.role === "system")
+      // OpenAI reasoning models normalize system instructions to the developer role.
+      // Both are authoritative instructions; never accept matching text from a user message.
+      .filter((message) => message.role === "system" || message.role === "developer")
       .map((message) => String(message.content))
       .join("\n");
     /*

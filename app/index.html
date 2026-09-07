@@ -15,11 +15,12 @@
     <!-- Sets the theme before the first paint. Must stay inline and classic: `defer` or `type="module"` runs too late. -->
     <script>
       // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
+      let dark = true;
       try {
-        const dark = window.localStorage.getItem("openbot-theme") === "dark";
-        document.documentElement.classList.toggle("dark", dark);
-        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        dark = window.localStorage.getItem("openbot-theme") !== "light";
       } catch {}
+      document.documentElement.classList.toggle("dark", dark);
+      document.documentElement.style.colorScheme = dark ? "dark" : "light";
     </script>
   </head>
   <body>

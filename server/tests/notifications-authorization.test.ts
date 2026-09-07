@@ -128,7 +128,7 @@ test("internal readiness verifies inbox and persistent no-egress policy without 
   const db = {
     execute: async (q: SQL) => {
       queries.push(dialect.sqlToQuery(q));
-      return [{ scheduler: true, notifications: true, runs: true }];
+      return [{ scheduler: true, notifications: true, runs: true, handoffs: true }];
     },
   } as unknown as Database;
   expect(

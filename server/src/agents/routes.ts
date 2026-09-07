@@ -1,3 +1,4 @@
+import { createAcpProviderRoutes } from "../acp/provider-routes";
 import { agentRuntimeInfo } from "../acp/runtime-info";
 import { createAcpModelRoutes } from "../acp/model-routes";
 import type { Context, MiddlewareHandler } from "hono";
@@ -205,6 +206,7 @@ export function createAgentRoutes(
   };
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.route("/", createAcpModelRoutes(store, requireUser, auditStore));
+  routes.route("/", createAcpProviderRoutes(store, requireUser, auditStore));
 
   /**
    * The Bot declined something, and says so.

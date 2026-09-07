@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Unified patches contain required single-space context lines.
+integrations/pi-runner/server.patch -whitespace

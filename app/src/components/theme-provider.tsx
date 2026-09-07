@@ -19,13 +19,21 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(() =>
-    parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY)),
-  );
+  const [dark, setDark] = useState(() => {
+    try {
+      return parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+    } catch {
+      return parseStoredDarkTheme(null);
+    }
+  });
 
   useEffect(() => {
     applyDarkTheme(dark, {
-      setStoredValue: (key, value) => window.localStorage.setItem(key, value),
+      setStoredValue: (key, value) => {
+        try {
+          window.localStorage.setItem(key, value);
+        } catch {}
+      },
       toggleRootClass: (name, force) =>
         document.documentElement.classList.toggle(name, force),
       setRootColorScheme: (scheme) => {

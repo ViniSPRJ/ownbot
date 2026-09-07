@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Ownbot read-only FX snapshot
+
+[Timer]
+OnBootSec=15s
+OnUnitInactiveSec=30s
+AccuracySec=1s
+Unit=ownbot-fx-status.service
+
+[Install]
+WantedBy=timers.target

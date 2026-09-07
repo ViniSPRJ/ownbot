@@ -715,6 +715,37 @@ describe("the lock is released on every exit path", () => {
       { threadId: THREAD_ID, runId: calls.acquired[0]?.runId ?? "" },
     ]);
   });
+
+  test("deadline reason survives an ACP RUN_ERROR emitted by abort", async () => {
+    const { run, calls } = harness({
+      drive: ({ agent, observer }) => {
+        agent.onAbort = () => {
+          observer.next({
+            type: EventType.RUN_ERROR,
+            message: "Execução ACP cancelada.",
+          });
+          observer.complete();
+        };
+      },
+      turnTimeoutMs: 5,
+      abortGraceMs: 50,
+    });
+    await expect(run()).rejects.toThrow("was stopped after");
+    expect(calls.cleaned).toHaveLength(1);
+    expect(calls.stops).toHaveLength(1);
+  });
+
+  test("deadline reason survives a stream rejection emitted by abort", async () => {
+    const { run, calls } = harness({
+      drive: ({ agent, observer }) => {
+        agent.onAbort = () => observer.error(new Error("ACP stream cancelled"));
+      },
+      turnTimeoutMs: 5,
+      abortGraceMs: 50,
+    });
+    await expect(run()).rejects.toThrow("was stopped after");
+    expect(calls.cleaned).toHaveLength(1);
+  });
 });
 
 describe("cleanup only runs for a lock that was actually taken", () => {
@@ -791,13 +822,33 @@ describe("one run id, everywhere", () => {
       },
     });
 
-    await expect(run()).rejects.toThrow("could not be stopped");
+    await expect(run()).rejects.toThrow("somebody else holds this lock");
 
     expect(calls.stops).toHaveLength(1);
   });
 });
 
 describe("a failed heartbeat stops the turn", () => {
+  test("lock failure takes priority over ACP cancellation reported by abort", async () => {
+    const { run, calls } = harness({
+      drive: ({ agent, observer }) => {
+        agent.onAbort = () => {
+          observer.next({
+            type: EventType.RUN_ERROR,
+            message: "Execução ACP cancelada.",
+          });
+          observer.complete();
+        };
+      },
+      heartbeatMs: 2,
+      renew: () => {
+        throw new Error("lock lost");
+      },
+    });
+    await expect(run()).rejects.toThrow("lock lost");
+    expect(calls.cleaned).toHaveLength(1);
+    expect(calls.stops).toHaveLength(1);
+  });
   test("aborts the agent, stops the run, and rethrows", async () => {
     const { run, calls, agent } = harness({
       drive: ({ agent: driven, observer }) => {
@@ -925,9 +976,19 @@ describe("a RUN_ERROR through next", () => {
 
 describe("the computer loop", () => {
   const fakeComputer = (): HeadlessComputer & {
-    called: { name: string; args: unknown; botId: string; ownerUserId: string }[];
+    called: {
+      name: string;
+      args: unknown;
+      botId: string;
+      ownerUserId: string;
+    }[];
   } => {
-    const called: { name: string; args: unknown; botId: string; ownerUserId: string }[] = [];
+    const called: {
+      name: string;
+      args: unknown;
+      botId: string;
+      ownerUserId: string;
+    }[] = [];
     return {
       called,
       tools: [
@@ -1007,7 +1068,10 @@ describe("the computer loop", () => {
     const persisted = calls.runs[1]?.persistedInputMessages ?? [];
     expect(persisted).toHaveLength(1);
     expect((persisted[0] as { toolCallId?: string }).toolCallId).toBe("call_1");
-    expect(JSON.parse(String(persisted[0]?.content))).toMatchObject({ ok: true, exitCode: 0 });
+    expect(JSON.parse(String(persisted[0]?.content))).toMatchObject({
+      ok: true,
+      exitCode: 0,
+    });
     expect(result.replyText).toBe("Curva postada.");
     // The lock is one lock for the whole turn, cleaned once.
     expect(calls.cleaned).toHaveLength(1);
@@ -1029,8 +1093,16 @@ describe("the computer loop", () => {
         role: "assistant",
         content: "",
         toolCalls: [
-          { id: "c1", type: "function", function: { name: "x", arguments: "{}" } },
-          { id: "c2", type: "function", function: { name: "y", arguments: "" } },
+          {
+            id: "c1",
+            type: "function",
+            function: { name: "x", arguments: "{}" },
+          },
+          {
+            id: "c2",
+            type: "function",
+            function: { name: "y", arguments: "" },
+          },
         ],
       },
       { id: "t", role: "tool", toolCallId: "c1", content: "{}" },

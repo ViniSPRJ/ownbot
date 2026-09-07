@@ -38,6 +38,7 @@ import {
 } from "./catalogue";
 import { McpServerError } from "./mcp";
 import { registerDynamicClient } from "./oauth";
+import { piRunAdmissionRefusal } from "./pi-run-admission";
 import { transportFor } from "./transport";
 
 /**
@@ -2926,6 +2927,26 @@ export function createPluginStore(options: PluginStoreOptions) {
       }
       if (!verdict.forward) {
         throw new PluginRefusedError(verdict.reason, verdict.matched);
+      }
+
+      // A synchronous local-model run outlives Ownbot's 60s MCP window and can keep working
+      // after the caller retries. Require the worker's durable admission contract before any
+      // credential or network access. This is independent of policy dry-run and never rewrites
+      // the task or invents an idempotency key on the person's behalf.
+      const admissionRefusal = piRunAdmissionRefusal(input.ref, args);
+      if (admissionRefusal) {
+        await recordAuditEvent(auditStore, {
+          eventType: "mcp.call_rejected",
+          targetType: "mcp_tool",
+          targetId: input.ref,
+          payload: {
+            ...decided,
+            decision: { ...decided.decision, carriedOut: false },
+            refusal: "pi_durable_submission_required",
+            reason: admissionRefusal,
+          },
+        });
+        throw new PluginRefusedError(admissionRefusal, null);
       }
 
       /*

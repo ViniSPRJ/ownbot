@@ -1,7 +1,8 @@
 export const THEME_STORAGE_KEY = "openbot-theme";
 
 export function parseStoredDarkTheme(value: string | null) {
-  return value === "dark";
+  // Only an explicit light preference overrides the default dark appearance.
+  return value !== "light";
 }
 
 type ThemeEffects = {

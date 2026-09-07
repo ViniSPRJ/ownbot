@@ -31,6 +31,8 @@ describe("runtime capabilities", () => {
       generativeUi: false,
       // Names only. The sign-in screen reads this to know which buttons to draw.
       authProviders: ["google"],
+      localPasswordAuth: false,
+      privateAgentIds: [],
       // A boolean, not a list: naming the registered providers would tell anybody who loads the
       // sign-in page which companies use this deployment.
       ssoConfigured: false,
@@ -52,6 +54,8 @@ describe("runtime capabilities", () => {
       "durableHistory",
       "generativeUi",
       "authProviders",
+      "localPasswordAuth",
+      "privateAgentIds",
       "ssoConfigured",
     ]);
     // The provider list is names, never the clients and secrets behind them.

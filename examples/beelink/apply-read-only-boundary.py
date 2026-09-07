@@ -14,7 +14,7 @@ BOUNDARY = json.loads(Path(__file__).with_name('read-only-boundary.json').read_t
 def merge_policy(current):
     if current.get('mode') != 'enforce':
         raise ValueError('Existing policy must already enforce; refusing to alter global mode.')
-    return {**current, 'deny': list(dict.fromkeys([*current['deny'], BOUNDARY['deny']]))}
+    return {**current, 'deny': list(dict.fromkeys([*[rule for rule in current['deny'] if rule not in BOUNDARY.get('previousDeny', [])], BOUNDARY['deny']]))}
 
 def main():
     parser = argparse.ArgumentParser()

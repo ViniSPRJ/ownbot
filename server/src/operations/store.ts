@@ -1,5 +1,16 @@
 import { sql } from "drizzle-orm";
 import type { Database } from "../db/client";
+import { HANDOFF_KIND } from "../agents/handoff";
+import { DEFAULT_MAX_ATTEMPTS } from "../work/queue";
+
+// A healthy routine worker does not prove that the separate handoff consumer is running.
+// Check forwards, answer relays and failure notices alike. An active final attempt is not
+// exhausted yet; queued work becomes actionable after ten minutes without a live lease.
+export const handoffQueueReadiness = sql`NOT EXISTS(
+  SELECT 1 FROM work_items WHERE kind=${HANDOFF_KIND} AND finished_at IS NULL
+  AND (lease_until IS NULL OR lease_until <= now())
+  AND (attempts >= ${DEFAULT_MAX_ATTEMPTS} OR run_at < now()-interval '10 minutes')
+)`;
 
 export type RunRecord = {
   id: string;
@@ -84,6 +95,7 @@ export function createOperationsStore(
         scheduler: false,
         notifications: false,
         history: !historyCheck,
+        handoffs: false,
       };
       try {
         const rows = (await database.execute(sql`
@@ -104,16 +116,19 @@ export function createOperationsStore(
               EXISTS(SELECT 1 FROM openbot_service_health WHERE name='routine-notifier' AND last_ok_at > now()-interval '5 minutes')
               AND NOT EXISTS(SELECT 1 FROM routine_notifications WHERE status='failed' OR (status<>'sent' AND created_at<now()-interval '15 minutes'))))`
             } AS notifications,
-            NOT EXISTS(SELECT 1 FROM routine_runs WHERE status IS NULL AND started_at<now()-interval '11 minutes') AS runs
+            NOT EXISTS(SELECT 1 FROM routine_runs WHERE status IS NULL AND started_at<now()-interval '11 minutes') AS runs,
+            ${handoffQueueReadiness} AS handoffs
         `)) as unknown as {
           scheduler: boolean;
           notifications: boolean;
           runs: boolean;
+          handoffs: boolean;
         }[];
         checks.database = true;
         checks.scheduler = rows[0]?.scheduler === true;
         checks.notifications = rows[0]?.notifications === true;
         checks.runs = rows[0]?.runs === true;
+        checks.handoffs = rows[0]?.handoffs === true;
       } catch {
         /* Only boolean health leaves this endpoint; never database error details. */
       }
