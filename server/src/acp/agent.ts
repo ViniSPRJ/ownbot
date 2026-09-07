@@ -1,0 +1,132 @@
+import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
+import { Observable } from "rxjs";
+import { createHash } from "node:crypto";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { join } from "node:path";
+import { AcpStdioTransport } from "./transport";
+import { createToolBridge } from "./tool-bridge";
+import type { AcpProfile } from "./config";
+import type { GrantedTool } from "../plugins/tools";
+const running = new Set<string>();
+
+type SessionRecord = { sessionId: string; lastMessageId: string | null; replyMessageId?: string };
+export class AcpAgent extends AbstractAgent {
+  private stop?: () => void;
+  constructor(private readonly options: {
+    agentId: string; name: string; ownerId: string; prompt: string;
+    profile: AcpProfile; tools: (input: RunAgentInput) => Promise<readonly GrantedTool[]>;
+  }) { super({ agentId: options.agentId, description: options.name }); }
+  clone(): AcpAgent { return new AcpAgent(this.options); }
+  abortRun(): void { this.stop?.(); }
+  run(input: RunAgentInput): Observable<BaseEvent> {
+    return new Observable(subscriber => {
+      const o = this.options;
+      const key = createHash("sha256").update(JSON.stringify([o.ownerId,o.agentId,input.threadId,o.profile])).digest("hex");
+      let transport: AcpStdioTransport | undefined;
+      let bridge: Awaited<ReturnType<typeof createToolBridge>> | undefined;
+      let sessionId: string | undefined;
+      let ownsLock = false;
+      const grantedCalls = new Set<string>();
+      const consumedCalls = new Set<string>();
+      let cancelled = false, finished = false, textStarted = false, accepting = false;
+      const messageId = crypto.randomUUID();
+      const emit = (event: Record<string, unknown>) => { if (!subscriber.closed) subscriber.next(event as BaseEvent); };
+      const stop = () => {
+        if (cancelled || finished) return;
+        cancelled = true;
+        if (sessionId && transport) void transport.cancel(sessionId).catch(() => {}).finally(() => transport?.close());
+        else transport?.close();
+        if (!subscriber.closed) subscriber.error(new Error("Execução ACP cancelada."));
+      };
+      this.stop = stop;
+      void (async () => {
+        if (running.has(key)) throw new Error("Este agente já está trabalhando nesta conversa.");
+        running.add(key); ownsLock = true;
+        try {
+          const cwd = join(o.profile.workspaceRoot, key);
+          await mkdir(cwd, { recursive: true, mode: 0o700 });
+          const stateFile = join(cwd, ".ownbot-session.json");
+          let saved: SessionRecord | undefined;
+          try { saved = JSON.parse(await readFile(stateFile,"utf8")); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+          const tools = await o.tools(input);
+          const toolNames = new Set(tools.map(tool=>tool.name));
+          bridge = await createToolBridge(tools);
+          if (cancelled) return;
+          const env: NodeJS.ProcessEnv = {};
+          for (const name of ["HOME","PATH","USER","LANG","TMPDIR","XDG_CONFIG_HOME","XDG_CACHE_HOME"]) if (process.env[name]) env[name] = process.env[name];
+          Object.assign(env,o.profile.env);
+          transport = new AcpStdioTransport({ command:o.profile.command,args:o.profile.args,cwd,env,
+            requestTimeoutMs:o.profile.timeoutMs,
+            onRequest: (method, params) => {
+              // Native CLI permissions are never blanket-approved by ownbot.
+              if (method === "session/request_permission") {
+                const request = params as {sessionId?:string;toolCall?:{toolCallId?:string};_meta?:{is_mcp_tool_approval?:boolean};options?:{optionId:string;kind:string}[]};
+                const callId = request.toolCall?.toolCallId;
+                const option = request.options?.find(option=>option.kind==="allow_once");
+                if (request.sessionId === sessionId && request._meta?.is_mcp_tool_approval === true && callId && !consumedCalls.has(callId) && grantedCalls.delete(callId) && option) {
+                  consumedCalls.add(callId);
+                  return {outcome:{outcome:"selected",optionId:option.optionId}};
+                }
+                return { outcome:{outcome:"cancelled"} };
+              }
+              throw new Error("Unsupported ACP client operation");
+            },
+            onNotification: (method, value) => {
+              if (!accepting || method !== "session/update") return;
+              const event = value as {sessionId?:string;update?:{toolCallId?:string;rawInput?:{server?:string;tool?:string};_meta?:{is_mcp_tool_call?:boolean};sessionUpdate?:string;content?:{type?:string;text?:string}}};
+              if (event.sessionId !== sessionId) return;
+              const update = event.update;
+              if (update?.sessionUpdate === "tool_call" && update.toolCallId && !consumedCalls.has(update.toolCallId) && update._meta?.is_mcp_tool_call === true && update.rawInput?.server === "ownbot" && update.rawInput.tool && toolNames.has(update.rawInput.tool)) grantedCalls.add(update.toolCallId);
+              if (event.update?.sessionUpdate === "agent_message_chunk" && event.update.content?.type === "text" && event.update.content.text) {
+                if (!textStarted) { emit({type:"TEXT_MESSAGE_START",messageId,role:"assistant"}); textStarted=true; }
+                emit({type:"TEXT_MESSAGE_CONTENT",messageId,delta:event.update.content.text});
+              }
+            },
+          });
+          const init = await transport.request<{protocolVersion:number;agentCapabilities?:{loadSession?:boolean;mcpCapabilities?:{http?:boolean}}}>("initialize",{protocolVersion:1,clientCapabilities:{},clientInfo:{name:"ownbot",version:"0.1.0"}});
+          if (init.protocolVersion !== 1) throw new Error("Versão ACP não suportada");
+          if (!init.agentCapabilities?.mcpCapabilities?.http) throw new Error("Este agente ACP não oferece MCP HTTP para as ferramentas do ownbot.");
+          let fromIndex = 0;
+          const previous = saved ? input.messages.findIndex(m=>m.id===saved.lastMessageId) : -1;
+          if (saved && previous >= 0 && init.agentCapabilities?.loadSession) {
+            await transport.request("session/load",{sessionId:saved.sessionId,cwd,mcpServers:[bridge.descriptor]});
+            sessionId=saved.sessionId;
+            if (previous>=0) fromIndex=previous+1;
+          } else {
+            const session=await transport.request<{sessionId:string}>("session/new",{cwd,mcpServers:[bridge.descriptor]});
+            sessionId=session.sessionId;
+          }
+          if (!sessionId) throw new Error("Agente ACP não retornou uma sessão");
+          if (o.profile.mode) await transport.request("session/set_mode",{sessionId,modeId:o.profile.mode});
+          if (o.profile.model) await transport.request("session/set_model",{sessionId,modelId:o.profile.model});
+          if (cancelled) return;
+          emit({type:"RUN_STARTED",threadId:input.threadId,runId:input.runId});
+          const messages=input.messages.slice(fromIndex).filter(m=>m.role!=="system" && !(fromIndex > 0 && m.id === saved?.replyMessageId));
+          const context=messages.map(m=>`${m.role}: ${typeof m.content==="string"?m.content:JSON.stringify(m.content??"")}`).join("\n\n");
+          accepting=true;
+          const result = await transport.request<{stopReason:string}>("session/prompt",{sessionId,prompt:[{type:"text",text:o.prompt+"\n\nUse as ferramentas MCP ownbot para delegar e acessar os recursos concedidos. Permissões nativas adicionais podem ser recusadas.\n\n"+context}]});
+          accepting=false;
+          if (result.stopReason !== "end_turn") throw new Error("A CLI não concluiu o turno.");
+          if (cancelled) return;
+          if (!textStarted) throw new Error("A CLI terminou sem retornar uma resposta de texto.");
+          emit({type:"TEXT_MESSAGE_END",messageId});
+          const temporary=stateFile+".tmp";
+          await writeFile(temporary,JSON.stringify({sessionId,lastMessageId:input.messages.at(-1)?.id??null,replyMessageId:messageId}),{mode:0o600});
+          await rename(temporary,stateFile);
+          finished = true;
+          transport.close(); transport = undefined;
+          await bridge.close(); bridge = undefined;
+          running.delete(key); ownsLock = false;
+          emit({type:"RUN_FINISHED",threadId:input.threadId,runId:input.runId});
+          subscriber.complete();
+        } finally {
+          if (ownsLock) running.delete(key); transport?.close(); await bridge?.close();
+          if(this.stop===stop)this.stop=undefined;
+        }
+      })().catch(() => {
+        if (!cancelled) subscriber.error(new Error("A execução ACP não foi concluída. Verifique autenticação, perfil e disponibilidade da CLI; não houve fallback para API."));
+      });
+      return stop;
+    });
+  }
+}

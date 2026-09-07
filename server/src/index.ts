@@ -1,3 +1,5 @@
+import { acpProfileFor } from "./acp/config";
+import { acpComputerTools } from "./acp/computer-tools";
 import { createNotificationsStore } from "./notifications/store";
 import { createLocalEnrollmentRoutes } from "./auth/local-enrollment";
 import { createRoutineEventStore } from "./routines/events";
@@ -516,8 +518,19 @@ const resolveRuntimeModelApiKey = () =>
 
 // Tools run here, not in the browser. Each one still executes through the plugin store, so the
 // grant, the policy and the audit row are exactly where they were.
-const loadToolsForActor = (actorId: string) => (botId: string) =>
-  grantedTools({ store: pluginStore, botId, actorId });
+const acpComputer = computerGateway ? createHeadlessComputer({
+  gateway: computerGateway,
+  actorFor: ownerUserId => ({
+    id: ownerUserId,
+    ...(ownerUserId === DEV_ACTOR.id ? {} : { userId: ownerUserId }),
+  }),
+}) : undefined;
+const loadToolsForActor = (actorId: string) => async (botId: string) => {
+  const tools = await grantedTools({ store: pluginStore, botId, actorId });
+  // API agents retain their existing frontend/routine execution path.
+  if (!acpComputer || !acpProfileFor(botId)) return tools;
+  return [...tools, ...acpComputerTools(acpComputer, botId, actorId)];
+};
 
 /*
  * What the deployment tells a remote Bot about the run it is starting.

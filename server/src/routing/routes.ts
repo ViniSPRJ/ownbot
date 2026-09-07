@@ -1,3 +1,4 @@
+import { acpProfileFor } from "../acp/config";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AgentProfileStore } from "../agents/profile-store";
@@ -155,6 +156,14 @@ export function createRoutingRoutes(
         fallback: false,
         viaMention: true,
       });
+    }
+    const coordinatorId = process.env.OPENBOT_ACP_COORDINATOR;
+    if (coordinatorId && acpProfileFor(coordinatorId)) {
+      const coordinator = roster.find(agent => agent.id === coordinatorId);
+      if (!coordinator) return context.json({error:"Coordenador ACP indisponível para esta conta."},409);
+      const reason = "delegated to the ACP coordinator";
+      await record(actorId(actor),coordinator.id,reason,false,false,[coordinator.id],null);
+      return context.json({agentId:coordinator.id,name:coordinator.name,reason,fallback:false,viaMention:false});
     }
     const candidates: RoutingCandidate[] = await Promise.all(
       roster.map(async (a) => ({

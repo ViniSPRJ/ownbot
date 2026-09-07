@@ -1,3 +1,5 @@
+import { AcpAgent } from "./acp/agent";
+import { acpProfileFor } from "./acp/config";
 import { isPrivateAgent, privateModelRoute, privateModelFetch, PRIVATE_BOUNDARY } from "./privacy/policy";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
@@ -54,6 +56,7 @@ export type IdentifyUser = (
 ) => Promise<{ id: string; name: string }>;
 
 type RegisteredBuiltInAgent = {
+  acpOwnerId?: string;
   id: string;
   name: string;
   type: "built_in";
@@ -501,6 +504,14 @@ async function buildAgent(
     }
   }
 
+  const acp = acpProfileFor(agent.id);
+  if (acp && agent.type === "built_in") {
+    if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
+    return new AcpAgent({agentId:agent.id,name:agent.name,ownerId:agent.acpOwnerId,
+      prompt:agent.systemPrompt,profile:acp,
+      tools: async input => [...await loadTools(agent.id), ...await (handoff?.(agent.id,input) ?? Promise.resolve([]))],
+    });
+  }
   const granted = await loadTools(agent.id);
 
   /*
@@ -958,7 +969,7 @@ export async function resolveRuntimeAgents(
   // what that means, exactly as it would have from a roster that did not contain it.
   if (registered.length === 0) return {};
 
-  const apiKey = registered.some((agent) => agent.type === "built_in")
+  const apiKey = registered.some((agent) => agent.type === "built_in" && !isPrivateAgent(agent.id) && !acpProfileFor(agent.id))
     ? await resolveModelApiKey()
     : null;
   return buildAgents(

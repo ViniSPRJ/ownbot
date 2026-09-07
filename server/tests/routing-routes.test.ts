@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -227,6 +230,50 @@ describe("recording why a message was not routed", () => {
     expect(written[0]?.payload).toMatchObject({
       viaMention: true,
       undecided: null,
+    });
+  });
+});
+
+
+describe("ACP coordinator routing", () => {
+  async function withCoordinator(id: string, run: () => Promise<void>) {
+    const folder = mkdtempSync(join(tmpdir(), "ownbot-routing-"));
+    const previous = [process.env.OPENBOT_ACP_CONFIG, process.env.OPENBOT_ACP_COORDINATOR];
+    const file = join(folder, "config.json");
+    writeFileSync(file, JSON.stringify({ profiles: { cli: { command: "/bin/false", workspaceRoot: folder } }, agents: { [id]: "cli" } }));
+    process.env.OPENBOT_ACP_CONFIG = file;
+    process.env.OPENBOT_ACP_COORDINATOR = id;
+    try { await run(); } finally {
+      for (const [index, name] of ["OPENBOT_ACP_CONFIG", "OPENBOT_ACP_COORDINATOR"].entries()) {
+        if (previous[index] === undefined) delete process.env[name];
+        else process.env[name] = previous[index];
+      }
+      rmSync(folder, { recursive: true, force: true });
+    }
+  }
+  test("routes to authorized coordinator without calling the API classifier", async () => {
+    await withCoordinator("risk-analyst", async () => {
+      const { server, asked, written } = app();
+      const response = await post(server, { text: "organize research" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ agentId: "risk-analyst", viaMention: false });
+      expect(asked).toEqual([]);
+      expect(written[0]?.targetId).toBe("risk-analyst");
+    });
+  });
+  test("cannot route to coordinator outside the authenticated roster", async () => {
+    await withCoordinator("hidden", async () => {
+      const { server, asked } = app();
+      expect((await post(server, { text: "research" })).status).toBe(409);
+      expect(asked).toEqual([]);
+    });
+  });
+  test("explicit selection takes precedence over ACP coordinator", async () => {
+    await withCoordinator("risk-analyst", async () => {
+      const { server, asked } = app();
+      const response = await post(server, { text: "research", agentId: "knowledge" });
+      expect(await response.json()).toMatchObject({ agentId: "knowledge", viaMention: true });
+      expect(asked).toEqual([]);
     });
   });
 });

@@ -38,6 +38,7 @@ export function createRuntimeAgentLoader(
     for (const row of active) {
       const agent = registeredAgentFromRow(row);
       if (!agent) continue;
+      if (agent.type === "built_in") agent.acpOwnerId = actor.id;
       const savedContext = memoryContext(
         await createAgentMemoryStore(database).read(actor.id, agent.id),
       );
