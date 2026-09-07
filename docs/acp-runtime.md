@@ -2,7 +2,8 @@
 
 ownbot remains the product and coordinator of record. Role IDs, channel membership,
 local transcript ownership, routine scheduling and durable handoff jobs remain in
-ownbot. ACP replaces the model execution for explicitly selected built-in agents.
+ownbot. ACP replaces the model execution for explicitly selected agents. A mapped remote AG-UI agent keeps its standing role
+and saved memory but no longer calls its old endpoint or resolves that endpoint's credentials.
 It does not make hosted models local.
 
 Set `OPENBOT_ACP_CONFIG` to an absolute operator-owned JSON file. The file is never
@@ -62,7 +63,7 @@ https://github.com/agentclientprotocol/claude-agent-acp ;
 https://github.com/xai-org/grok-build .
 
 
-Initial Beelink activation maps `coord` and `codeexec` to Codex ACP. Claude and Grok
+Beelink phase-1 activation maps `coord`, `codeexec`, `desk`, `quant` and `infra` to Codex ACP. Claude and Grok
 are installed but remain unmapped until account authentication and a granted-tool
 roundtrip pass. This is a partial migration; other public roles keep their existing
 runtime. Research/market role migration is not complete merely because adapters

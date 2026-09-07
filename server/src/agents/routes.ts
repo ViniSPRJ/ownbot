@@ -188,7 +188,7 @@ export function createAgentRoutes(
   /** The dto with the one fact only this closure knows: whether the coworker runs on our own Bot. */
   const dto = (actor: AgentActor, agent: AgentProfile) => ({
     ...agentDto(actor, agent),
-    runtime: agentRuntimeInfo(agent.id, !agent.endpoint || agent.endpoint === managedEndpoint),
+    runtime: agentRuntimeInfo(agent.id, !agent.endpoint),
     // A string comparison on purpose: two absent values must not read as "runs on our Bot".
     builtIn:
       typeof agent.endpoint === "string" && agent.endpoint === managedEndpoint,

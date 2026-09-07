@@ -66,6 +66,7 @@ type RegisteredBuiltInAgent = {
 };
 
 type RegisteredRemoteAgent = {
+  acpOwnerId?: string;
   id: string;
   name: string;
   type: "remote_ag_ui";
@@ -525,7 +526,7 @@ async function buildAgent(
   }
 
   const acp = acpProfileFor(agent.id);
-  if (acp && agent.type === "built_in") {
+  if (acp) {
     if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
     /*
      * The same instructions the API path composes, with the tools the CLI is actually bridged.
@@ -537,13 +538,19 @@ async function buildAgent(
      * No model or key is resolved here; ACP is authenticated by the CLI's own credentials.
      */
     const ownerId = agent.acpOwnerId;
+    // The operator's ACP mapping replaces execution, including a managed remote Bot such as
+    // Desk. Its standing role already contains the owner's saved memory; retain that profile.
+    const promptAgent = agent.type === "built_in" ? agent : {
+      id: agent.id, name: agent.name, type: "built_in" as const,
+      systemPrompt: agent.standingMessage.content,
+    };
     const granted = await loadTools(agent.id);
     const acpAgentFor = (tools: readonly GrantedTool[]) =>
       new AcpAgent({
         agentId: agent.id,
         name: agent.name,
         ownerId,
-        prompt: builtInAgentPrompt(agent, tools, computerGuidance, connectedVendors),
+        prompt: builtInAgentPrompt(promptAgent, tools, computerGuidance, connectedVendors),
         profile: acp,
         tools: async () => tools,
       });

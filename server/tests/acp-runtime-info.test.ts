@@ -15,7 +15,8 @@ test("runtime DTO reports configured CLI without paths, credentials or a health 
     expect(agentRuntimeInfo("research",true)).toEqual({kind:"acp",provider:"claude",label:"Claude Code · ACP"});
     expect(agentRuntimeInfo("credito",true)).toEqual({kind:"private_local",label:"Modelo local privado"});
     expect(agentRuntimeInfo("unmapped",true).kind).toBe("api");
-    expect(agentRuntimeInfo("research",false).kind).toBe("remote");
+    expect(agentRuntimeInfo("research",false).kind).toBe("acp");
+    expect(agentRuntimeInfo("unmapped",false).kind).toBe("remote");
     writeFileSync(file,"invalid config including secret-value");
     expect(agentRuntimeInfo("research",true)).toEqual({kind:"unavailable",label:"Configuração ACP indisponível"});
     expect(JSON.stringify(agentRuntimeInfo("research",true))).not.toContain("secret-value");

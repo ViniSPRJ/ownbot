@@ -162,6 +162,31 @@ describe("ACP runtime preserves the built-in Bot's composed profile", () => {
     expect(agents.research).toBeInstanceOf(AcpAgent);
   });
 
+  test("an ACP mapping replaces remote execution while preserving its standing role, memory and tools", async () => {
+    const cli = await configureAcp(["desk"]);
+    const desk: RegisteredAgent = {
+      id: "desk", name: "Desk", type: "remote_ag_ui", acpOwnerId: "owner-1",
+      endpoint: "http://127.0.0.1:1/must-not-contact",
+      headers: { Authorization: "old-remote-secret" },
+      standingMessage: { id: "standing-role:desk", role: "system", content: `You are Desk, Browser.\n\n${memory}` },
+    };
+    const navigate = tool("computer_navigate", "Navigate the granted browser");
+    const agents = await resolveRuntimeAgents(async () => [desk], model,
+      async () => { throw new Error("ACP must not resolve a model API key"); },
+      undefined, async () => [navigate], undefined, COMPUTER_GUIDANCE,
+      undefined, undefined, async () => { throw new Error("ACP must not call the remote endpoint"); },
+    );
+    const events = await collect(agents.desk!, input("desk-thread"));
+    expect(events.at(-1)?.type).toBe("RUN_FINISHED");
+    const records = await cli.records();
+    const prompt = records.find((r) => r.method === "session/prompt")!.text;
+    expect(prompt).toContain("You are Desk, Browser.");
+    expect(prompt).toContain(memory);
+    expect(prompt).toContain(COMPUTER_GUIDANCE);
+    expect(prompt).not.toContain("old-remote-secret");
+    expect(records.find((r) => r.method === "session/new")!.tools).toEqual(["computer_navigate"]);
+  });
+
   test("the model credential is resolved only for API-path Bots", async () => {
     await configureAcp(["research"]);
     process.env.OPENBOT_PRIVATE_AGENT_IDS = "credito";

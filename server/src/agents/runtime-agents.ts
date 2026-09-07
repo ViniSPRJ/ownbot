@@ -1,4 +1,5 @@
 import { createAgentMemoryStore, memoryContext } from "../memory/store";
+import { acpProfileFor } from "../acp/config";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
@@ -38,7 +39,8 @@ export function createRuntimeAgentLoader(
     for (const row of active) {
       const agent = registeredAgentFromRow(row);
       if (!agent) continue;
-      if (agent.type === "built_in") agent.acpOwnerId = actor.id;
+      if (agent.type !== "unavailable") agent.acpOwnerId = actor.id;
+      const usesAcp = agent.type === "remote_ag_ui" && !!acpProfileFor(agent.id);
       const savedContext = memoryContext(
         await createAgentMemoryStore(database).read(actor.id, agent.id),
       );
@@ -51,7 +53,7 @@ export function createRuntimeAgentLoader(
         };
       // The key is resolved per load, rather than being cached on the row: revoking a
       // credential then takes effect on the next run rather than on the next restart.
-      if (agent.type === "remote_ag_ui" && vault) {
+      if (agent.type === "remote_ag_ui" && !usesAcp && vault) {
         const headers = await agentAuthHeaders({
           reader: vault.reader,
           encryptionKey: vault.encryptionKey,
@@ -61,6 +63,7 @@ export function createRuntimeAgentLoader(
       }
       if (
         agent.type === "remote_ag_ui" &&
+        !usesAcp &&
         managedAgent &&
         agent.endpoint === managedAgent.endpoint.toString()
       ) {
