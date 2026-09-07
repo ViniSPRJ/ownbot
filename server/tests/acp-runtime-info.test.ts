@@ -12,7 +12,7 @@ test("runtime DTO reports configured CLI without paths, credentials or a health 
     process.env.OPENBOT_ACP_CONFIG = file;
     process.env.OPENBOT_PRIVATE_AGENT_IDS = "credito";
     writeFileSync(file,JSON.stringify({ profiles: { cli: { command:"/private/cli",workspaceRoot:"/private/work",provider:"claude",env:{TOKEN:"secret-value"} } },agents:{research:"cli",credito:"cli"} }));
-    expect(agentRuntimeInfo("research",true)).toEqual({kind:"acp",provider:"claude",label:"Claude Code · ACP"});
+    expect(agentRuntimeInfo("research",true)).toEqual({kind:"acp",provider:"claude",label:"Claude Code · ACP",model:null});
     expect(agentRuntimeInfo("credito",true)).toEqual({kind:"private_local",label:"Modelo local privado"});
     expect(agentRuntimeInfo("unmapped",true).kind).toBe("api");
     expect(agentRuntimeInfo("research",false).kind).toBe("acp");

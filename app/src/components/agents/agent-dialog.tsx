@@ -1,4 +1,5 @@
 import { AgentMemoryPanel } from "./agent-memory-panel";
+import { AcpModelSelector } from "./acp-model-selector";
 import {
   IconAdjustments,
   IconArrowsExchange,
@@ -665,6 +666,11 @@ function ConnectionSection({
               ? "As tarefas deste agente usam o modelo local dedicado aos dados privados."
               : "O administrador precisa revisar a configuração de execução deste agente."}
         </p>
+        {profile.runtime.kind === "acp" ? (
+          profile.runtime.canSelectModel
+            ? <AcpModelSelector agentId={agentId} />
+            : <p className="text-sm">Modelo: {profile.runtime.model ?? "Padrão da CLI"}. O administrador pode alterar esta escolha.</p>
+        ) : null}
       </section>
     );
   }

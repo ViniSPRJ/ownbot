@@ -11,7 +11,7 @@ export function agentRuntimeInfo(agentId: string, builtIn: boolean) {
       : { kind: "remote", label: "Agente externo" } as const;
     const provider = profile.provider ?? "codex";
     const names = { codex: "Codex CLI", claude: "Claude Code", grok: "Grok Build" };
-    return { kind: "acp", provider, label: `${names[provider]} · ACP` } as const;
+    return { kind: "acp", provider, label: `${names[provider]} · ACP`, model: profile.model ?? null } as const;
   } catch {
     return { kind: "unavailable", label: "Configuração ACP indisponível" } as const;
   }

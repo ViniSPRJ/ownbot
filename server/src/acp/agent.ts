@@ -1,4 +1,5 @@
 import { AcpPermissionGate } from "./permissions";
+import { acpEnvironment, selectSessionModel } from "./models";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
 import { createHash } from "node:crypto";
@@ -54,9 +55,7 @@ export class AcpAgent extends AbstractAgent {
           const permissions = new AcpPermissionGate(o.profile.provider ?? "codex", new Set(tools.map(tool=>tool.name)));
           bridge = await createToolBridge(tools);
           if (cancelled) return;
-          const env: NodeJS.ProcessEnv = {};
-          for (const name of ["HOME","PATH","USER","LANG","TMPDIR","XDG_CONFIG_HOME","XDG_CACHE_HOME"]) if (process.env[name]) env[name] = process.env[name];
-          Object.assign(env,o.profile.env);
+          const env = acpEnvironment(o.profile);
           transport = new AcpStdioTransport({ command:o.profile.command,args:o.profile.args,cwd,env,
             requestTimeoutMs:o.profile.timeoutMs,
             onRequest: (method, params) => {
@@ -83,18 +82,20 @@ export class AcpAgent extends AbstractAgent {
           if (!init.agentCapabilities?.mcpCapabilities?.http) throw new Error("Este agente ACP não oferece MCP HTTP para as ferramentas do ownbot.");
           phase = "session";
           let fromIndex = 0;
+          let sessionConfiguration: { configOptions?: unknown; models?: unknown } = {};
           const previous = saved ? input.messages.findIndex(m=>m.id===saved.lastMessageId) : -1;
           if (saved && previous >= 0 && init.agentCapabilities?.loadSession) {
-            await transport.request("session/load",{sessionId:saved.sessionId,cwd,mcpServers:[bridge.descriptor]});
+            sessionConfiguration = await transport.request("session/load",{sessionId:saved.sessionId,cwd,mcpServers:[bridge.descriptor]});
             sessionId=saved.sessionId;
             if (previous>=0) fromIndex=previous+1;
           } else {
-            const session=await transport.request<{sessionId:string}>("session/new",{cwd,mcpServers:[bridge.descriptor]});
+            const session=await transport.request<{sessionId:string;configOptions?:unknown;models?:unknown}>("session/new",{cwd,mcpServers:[bridge.descriptor]});
+            sessionConfiguration = session;
             sessionId=session.sessionId;
           }
           if (!sessionId) throw new Error("Agente ACP não retornou uma sessão");
           if (o.profile.mode) await transport.request("session/set_mode",{sessionId,modeId:o.profile.mode});
-          if (o.profile.model) await transport.request("session/set_model",{sessionId,modelId:o.profile.model});
+          if (o.profile.model) await selectSessionModel(transport, sessionId, sessionConfiguration, o.profile.model);
           if (cancelled) return;
           emit({type:"RUN_STARTED",threadId:input.threadId,runId:input.runId});
           const messages=input.messages.slice(fromIndex).filter(m=>m.role!=="system" && !(fromIndex > 0 && m.id === saved?.replyMessageId));

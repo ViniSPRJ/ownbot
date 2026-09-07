@@ -104,3 +104,38 @@ paths, environments and secrets are never exposed by that DTO.
 Pi and the two local models, permanent worker pools and expanded event coordination
 are intentionally the next phase. Phase 1 does not install a Buzz relay or replace
 the existing ownbot channels, queue, authentication or notification system.
+
+## Independent model selection per agent
+
+In the agent dialog, **Connection → Modelo deste agente** lets the administrator
+choose from the models advertised by the authenticated CLI. Listing creates a
+short, prompt-free ACP session with no MCP tools. The selector prefers the ACP
+`configOptions` model category and retains compatibility with legacy `models`.
+Execution applies the choice before prompting, using `session/set_config_option`
+(and checking its acknowledgement) or legacy `session/set_model`.
+
+Two roles can share an executable/account while choosing different models:
+
+```json
+"agents": {
+  "coord": { "profile": "codex", "model": "MODEL_ID_FROM_THE_CLI" },
+  "quant": { "profile": "codex", "model": "ANOTHER_MODEL_ID_FROM_THE_CLI" },
+  "desk": "codex"
+}
+```
+
+These IDs are illustrative; the UI uses the actual CLI catalogue, not the API
+model names from `agents.yaml`. Selecting **Padrão da conexão** removes the
+per-agent override and inherits the profile's configured model or the CLI default.
+Changes affect subsequent chat, handoff and routine runs; active work keeps its
+original selection. A model change creates a fresh isolated CLI session with the
+available ownbot history; it does not delete the channel or agent memory.
+
+The Beelink model endpoint atomically updates only the selected agent mapping in
+`OPENBOT_ACP_CONFIG` (0600 file). Keep this operator file in deployment backups.
+A revision check rejects stale browser edits. The browser cannot change commands,
+environments, accounts, provider mappings, permissions or the private-agent lane.
+The catalogue is cached for up to 60 seconds; a CLI/login failure never substitutes
+an invented list or silently selects an API model.
+
+Protocol reference: https://agentclientprotocol.com/protocol/v1/session-config-options

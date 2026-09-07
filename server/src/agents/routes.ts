@@ -1,4 +1,5 @@
 import { agentRuntimeInfo } from "../acp/runtime-info";
+import { createAcpModelRoutes } from "../acp/model-routes";
 import type { Context, MiddlewareHandler } from "hono";
 import { Hono } from "hono";
 import type { AuditEventType, AuditStore } from "../audit";
@@ -186,14 +187,24 @@ export function createAgentRoutes(
   managedEndpoint?: string,
 ) {
   /** The dto with the one fact only this closure knows: whether the coworker runs on our own Bot. */
-  const dto = (actor: AgentActor, agent: AgentProfile) => ({
-    ...agentDto(actor, agent),
-    runtime: agentRuntimeInfo(agent.id, !agent.endpoint),
-    // A string comparison on purpose: two absent values must not read as "runs on our Bot".
-    builtIn:
-      typeof agent.endpoint === "string" && agent.endpoint === managedEndpoint,
-  });
+  const dto = (actor: AgentActor, agent: AgentProfile) => {
+    const runtime = agentRuntimeInfo(agent.id, !agent.endpoint);
+    return {
+      ...agentDto(actor, agent),
+      runtime: {
+        ...runtime,
+        ...(runtime.kind === "acp"
+          ? { canSelectModel: actor.role === "admin" }
+          : {}),
+      },
+      // A string comparison on purpose: two absent values must not read as "runs on our Bot".
+      builtIn:
+        typeof agent.endpoint === "string" &&
+        agent.endpoint === managedEndpoint,
+    };
+  };
   const routes = new Hono<{ Variables: AppVariables }>();
+  routes.route("/", createAcpModelRoutes(store, requireUser, auditStore));
 
   /**
    * The Bot declined something, and says so.

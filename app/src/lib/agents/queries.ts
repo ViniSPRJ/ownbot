@@ -11,7 +11,7 @@ export type AgentVisibility = "public" | "private";
  */
 export type AgentProfile = {
   /** Execution configuration only; does not claim CLI authentication or liveness. */
-  runtime?: { kind: "acp" | "api" | "private_local" | "remote" | "unavailable"; label: string; provider?: "codex" | "claude" | "grok" };
+  runtime?: { kind: "acp" | "api" | "private_local" | "remote" | "unavailable"; label: string; provider?: "codex" | "claude" | "grok"; model?: string | null; canSelectModel?: boolean };
   id: string;
   name: string;
   title: string;
