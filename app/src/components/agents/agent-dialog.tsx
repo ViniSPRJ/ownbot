@@ -1,3 +1,4 @@
+import { AgentMemoryPanel } from "./agent-memory-panel";
 import {
   IconAdjustments,
   IconArrowsExchange,
@@ -111,6 +112,7 @@ const SECTIONS = [
   { id: "connection", name: "Connection", icon: IconPlugConnected },
   { id: "handoff", name: "Handoff", icon: IconArrowsExchange },
   { id: "routines", name: "Routines", icon: IconClock },
+  { id: "memory", name: "Memória", icon: IconPencil },
   { id: "manage", name: "Manage", icon: IconAdjustments },
 ] as const;
 
@@ -226,6 +228,8 @@ function AgentDialogBody({ agentId }: { agentId: string }) {
               <ConnectionSection agentId={agentId} profile={profile} />
             ) : section === "handoff" ? (
               <HandoffPanel agentId={agentId} />
+            ) : section === "memory" ? (
+              <AgentMemoryPanel agentId={agentId} />
             ) : section === "routines" ? (
               <RoutinesList agentId={agentId} embedded />
             ) : (

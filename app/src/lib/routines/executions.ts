@@ -17,6 +17,8 @@ export type Execution = {
   notificationStatus: string | null;
   notificationAttempts: number | null;
   deliveredAt: string | null;
+  internalNotificationAvailable?: boolean;
+  notificationDelivery?: "internal" | "telegram";
 };
 export type Handoff = {
   id: string;
@@ -26,6 +28,9 @@ export type Handoff = {
   to: string | null;
   run: string | null;
   workKey: string | null;
+  resultAvailable?: boolean | null;
+  returnQueued?: boolean | null;
+  isReturn?: boolean | null;
 };
 export function executionQuery(id?: string) {
   return queryOptions({
@@ -82,4 +87,33 @@ export function deliveryStatus(status: string | null): string {
       } as Record<string, string>
     )[status ?? ""] ?? "Sem registro de envio"
   );
+}
+
+export function handoffStatus(hop: Handoff): string {
+  if (hop.event === "agent.handoff_delivered") {
+    if (hop.isReturn === true) return "Retorno processado pelo solicitante";
+    if (hop.returnQueued === true) return "Resposta salva; retorno enfileirado";
+    if (hop.resultAvailable === true) return "Resposta salva";
+    return "Processada pelo destinatário; retorno não confirmado";
+  }
+  return (
+    (
+      {
+        "agent.handoff_offered": "Enfileirada",
+        "agent.handoff_failed": "Falhou",
+        "agent.handoff_retried": "Nova tentativa",
+        "agent.handoff_refused": "Não enviada",
+      } as Record<string, string>
+    )[hop.event] ?? "Estado desconhecido"
+  );
+}
+
+export function runNotificationStatus(run: Execution): string {
+  if (run.notificationDelivery === "internal")
+    return run.internalNotificationAvailable
+      ? "Notificação interna disponível"
+      : run.finishedAt
+        ? "Notificação interna pendente"
+        : "Notificação após a conclusão";
+  return `Telegram: ${deliveryStatus(run.notificationStatus)}`;
 }

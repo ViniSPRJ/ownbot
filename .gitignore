@@ -38,3 +38,6 @@ charts/*/charts/
 # Python maintenance tools
 __pycache__/
 *.pyc
+
+# macOS archive metadata
+._*

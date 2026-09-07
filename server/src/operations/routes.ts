@@ -8,6 +8,10 @@ export function createOperationsRoutes(
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
   routes.use("*", requireUser);
+  routes.get("/health", async (c) => {
+    const health = await store.readiness();
+    return c.json(health, health.status === "ready" ? 200 : 503);
+  });
   routes.get("/runs", async (c) =>
     c.json({ runs: await store.runs(c.var.actor.id) }),
   );

@@ -199,8 +199,8 @@ export function ConversationView({
   }, [apply, disabled, inFlight]);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex flex-1 min-h-0">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0">
+      <div className="flex flex-1 min-h-0 min-w-0">
         {/*
          * The command NAMES, joined, rather than the option objects.
          *

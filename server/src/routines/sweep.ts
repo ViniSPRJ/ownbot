@@ -330,6 +330,40 @@ export async function dispatchClaimedRoutines(
        * exist, and a switched-off one does not want its queued firing carried out later either. The
        * next occurrence is offered afresh if it is switched back on.
        */
+      // Event admission already atomically persisted its immutable run and evidence. Reuse that
+      // exact identity; never manufacture a cron occurrence or accept a cross-routine redirect.
+      if (item.payload.trigger === "event") {
+        const runId =
+          typeof item.payload.runId === "string" ? item.payload.runId : "";
+        const digest = runId.replace(/^routine_run_event_/, "");
+        const context =
+          /^routine_run_event_[a-f0-9]{64}$/.test(runId) &&
+          item.key === `event:${digest}`
+            ? await options.routineStore.runContext(runId)
+            : null;
+        if (!context || context.routineId !== routineId) {
+          await finishOrSay(
+            options,
+            item.key,
+            routineId,
+            "invalid event execution identity",
+          );
+          report.skipped.push({
+            routineId,
+            reason: "invalid event execution identity",
+          });
+          continue;
+        }
+        // Runner rechecks enabled state and channel/agent access before any effects.
+        await options.dispatch(runId);
+        await options.queue.finish({
+          kind: ROUTINE_FIRE_KIND,
+          key: item.key,
+          owner: options.owner,
+        });
+        report.fired.push(routineId);
+        continue;
+      }
       const routine = await options.routineStore.routineForFiring(routineId);
       if (!routine?.enabled) {
         const reason = routine

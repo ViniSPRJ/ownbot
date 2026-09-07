@@ -4,7 +4,7 @@ import { PageShell } from "@/components/layout/page-shell";
 import {
   executionQuery,
   executionStatus,
-  deliveryStatus,
+  runNotificationStatus,
 } from "@/lib/routines/executions";
 export const Route = createFileRoute("/_authed/_app/routine-runs/$runId")({
   component: ExecutionPage,
@@ -27,8 +27,7 @@ function ExecutionPage() {
       ) : run ? (
         <div className="space-y-4">
           <p>
-            {executionStatus(run)} · Telegram:{" "}
-            {deliveryStatus(run.notificationStatus)}
+            {executionStatus(run)} · {runNotificationStatus(run)}
           </p>
           <p className="text-sm text-muted-foreground">
             {new Date(run.startedAt).toLocaleString("pt-BR")} · {run.agentId}

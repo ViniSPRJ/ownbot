@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "./privacy/policy";
 /**
  * On-prem threads without CopilotKit Intelligence.
  *
@@ -85,6 +86,7 @@ function openDb(dbPath: string): Database {
       updated_at INTEGER NOT NULL
     )
   `);
+  db.run("CREATE TABLE IF NOT EXISTS thread_privacy (thread_id TEXT PRIMARY KEY, private INTEGER NOT NULL)");
   return db;
 }
 
@@ -466,14 +468,29 @@ export class LocalAgentRunner extends AgentRunner {
     this.db = openDb(dbPath);
   }
 
+  /** Persisted and atomic across replicas; a browser cannot switch a private thread to a public model. */
+  admitTrustDomain(threadId: string, agentId: string): void {
+    this.db.transaction(() => {
+      const prior = this.db.query("SELECT agent_id FROM threads WHERE id = ?").get(threadId) as { agent_id: string } | null;
+      const classified = this.db.query("SELECT private FROM thread_privacy WHERE thread_id = ?").get(threadId) as { private: number } | null;
+      const requested = isPrivateAgent(agentId) ? 1 : 0;
+      // Existing threads whose last recorded agent is now private are upgraded before admission.
+      const existing = prior && isPrivateAgent(prior.agent_id) ? 1 : classified?.private;
+      if (existing !== undefined && existing !== requested) throw new Error(PRIVATE_BOUNDARY);
+      this.db.query("INSERT INTO thread_privacy(thread_id, private) VALUES (?, ?) ON CONFLICT(thread_id) DO UPDATE SET private = MAX(private, excluded.private)").run(threadId, existing ?? requested);
+    }).immediate();
+  }
+
   run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
     const subject = new ReplaySubject<BaseEvent>(Infinity);
     const events: BaseEvent[] = [];
     this.active.set(request.threadId, { agent: request.agent, subject });
-    touchThread(this.db, request.threadId, agentIdOf(request.agent));
+
 
     const runAgent = async () => {
       try {
+        this.admitTrustDomain(request.threadId, agentIdOf(request.agent));
+        touchThread(this.db, request.threadId, agentIdOf(request.agent));
         const already = knownMessageIds(loadEvents(this.db, request.threadId));
         const inbound = eventsForInboundMessages(
           request.threadId,
@@ -632,6 +649,7 @@ export class LocalAgentRunner extends AgentRunner {
   clearThreads(): void {
     this.db.run("DELETE FROM thread_events");
     this.db.run("DELETE FROM threads");
+    this.db.run("DELETE FROM thread_privacy");
   }
 }
 

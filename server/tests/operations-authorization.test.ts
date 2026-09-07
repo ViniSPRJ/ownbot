@@ -13,6 +13,7 @@ import {
 function harness(
   sessionUser: string | null,
   roles: ("admin" | "user")[] = ["user"],
+  healthy = true,
 ) {
   const calls: { kind: string; owner: string; id?: string }[] = [];
   const store: OperationsStore = {
@@ -26,7 +27,7 @@ function harness(
       calls.push({ kind: "handoffs", owner });
       return [];
     },
-    readiness: async () => ({ status: "ready", checks: { database: true } }),
+    readiness: async () => ({ status: healthy ? "ready" : "degraded", checks: { database: healthy } }),
   };
   const auth = {
     api: {
@@ -45,7 +46,7 @@ function harness(
 describe("operations ownership boundary", () => {
   test("all list and detail routes require a session before reading any store", async () => {
     const { app, calls } = harness(null);
-    for (const path of ["/runs", "/runs/alice-run", "/handoffs"])
+    for (const path of ["/runs", "/runs/alice-run", "/handoffs", "/health"])
       expect((await app.request(path)).status).toBe(401);
     expect(calls).toEqual([]);
   });
@@ -102,4 +103,11 @@ describe("operations ownership boundary", () => {
     expect(queries[1]?.sql).toContain("WHERE actor_user_id=$1");
     expect(queries[1]?.params).toEqual(["owner-secret"]);
   });
+});
+
+test("health travels through authenticated API proxy and preserves degraded state", async () => {
+ const ready = await harness("alice").app.request("/health");
+ expect(ready.status).toBe(200); expect((await ready.json()).checks.database).toBe(true);
+ const degraded = await harness("alice", ["user"], false).app.request("/health");
+ expect(degraded.status).toBe(503); expect((await degraded.json()).status).toBe("degraded");
 });

@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 /**
  * Delivering a hop: running the Bot that was addressed, and putting its answer in the conversation.
  *
@@ -155,24 +156,23 @@ export function createHandoffRunner(options: {
    * relaying run, and a Bot that came back with a report the length of a book would otherwise spend
    * the relay's whole context window repeating it.
    */
-  const relay = (work: HandoffWork, key: string, answer: string) =>
-    queue.offer({
-      kind: HANDOFF_KIND,
-      // Outside the run's fan-out prefix and keyed on the hop, for the same two reasons as the
-      // notice below: a relay is not a Bot this run asked for, and one run may legally ask the
-      // same Bot two different things.
-      key: `relay:${key}`,
-      payload: {
-        fromBotId: work.toBotId,
-        toBotId: work.fromBotId,
-        actorId: work.actorId,
-        threadId: work.threadId,
-        runId: work.runId,
-        depth: work.depth,
-        answerIn: work.threadId,
-        task: `You asked ${work.toName ?? work.toBotId} to help with this: ${work.task}\n\nIt answered:\n\n${clip(answer)}\n\nGive the person the outcome. Keep what matters, drop the pleasantries, and say it came from ${work.toName ?? work.toBotId}.`,
-      } as unknown as Record<string, unknown>,
-    });
+  const relay = (work: HandoffWork, key: string, answer: string) => ({
+    kind: HANDOFF_KIND,
+    // Outside the run's fan-out prefix and keyed on the hop, for the same two reasons as the
+    // notice below: a relay is not a Bot this run asked for, and one run may legally ask the
+    // same Bot two different things.
+    key: `relay:${key}`,
+    payload: {
+      fromBotId: work.toBotId,
+      toBotId: work.fromBotId,
+      actorId: work.actorId,
+      threadId: work.threadId,
+      runId: work.runId,
+      depth: work.depth,
+      answerIn: work.threadId,
+      task: `You asked ${work.toName ?? work.toBotId} to help with this: ${work.task}\n\nIt answered:\n\n${clip(answer)}\n\nGive the person the outcome. Keep what matters, drop the pleasantries, and say it came from ${work.toName ?? work.toBotId}.`,
+    } as unknown as Record<string, unknown>,
+  });
 
   const tell = (work: HandoffWork, key: string, reason: string) =>
     queue.offer({
@@ -286,6 +286,19 @@ export function createHandoffRunner(options: {
             continue;
           }
 
+          // Re-check persisted jobs after configuration changes, including answer relays.
+          if (isPrivateAgent(work.fromBotId) || isPrivateAgent(work.toBotId)) {
+            await recordAuditEvent(auditStore, {
+              eventType: "agent.handoff_failed", targetType: "agent", targetId: work.toBotId,
+              ...(work.actorId ? { actorUserId: work.actorId } : {}),
+              payload: { bot: work.fromBotId, from: work.fromBotId, to: work.toBotId, workKey: item.key, reason: PRIVATE_BOUNDARY },
+            });
+            await queue.finish({ kind: HANDOFF_KIND, key: item.key, owner });
+            ours.delete(item.key);
+            report.skipped.push({ key: item.key, reason: PRIVATE_BOUNDARY });
+            continue;
+          }
+
           /*
            * A hop that has already been tried is not a fresh one, and the difference matters here more
            * than anywhere else this queue is used: a first attempt has certainly not run the other
@@ -358,6 +371,10 @@ export function createHandoffRunner(options: {
               kind: HANDOFF_KIND,
               key: item.key,
               owner,
+              result: { answer, returnedTo: work.answerIn ?? null },
+              ...(!work.answerIn && answer
+                ? { followUp: relay(work, item.key, answer) }
+                : {}),
             });
             ours.delete(item.key);
             /*
@@ -391,22 +408,6 @@ export function createHandoffRunner(options: {
               continue;
             }
             report.delivered.push(work.toBotId);
-            /*
-             * The answer goes home through the queue, like the turn that produced it: durable, so a
-             * pod dying between the turn and the relay loses the relay to a retry rather than for
-             * ever. Only for a forward hop with words to carry — a relay of a relay is the loop the
-             * `answerIn` check exists to stop, and a wordless turn has nothing to say.
-             */
-            if (!work.answerIn && answer) {
-              await relay(work, item.key, answer).catch((failure) => {
-                // The turn happened and is on record; a relay that cannot be queued must not undo
-                // that by failing the hop into a retry and a second turn.
-                console.warn(
-                  "Could not queue the relay for a delivered hop.",
-                  failure,
-                );
-              });
-            }
             await recordAuditEvent(auditStore, {
               eventType: "agent.handoff_delivered",
               targetType: "agent",
@@ -421,6 +422,9 @@ export function createHandoffRunner(options: {
                 run: work.runId,
                 workKey: item.key,
                 depth: work.depth,
+                resultAvailable: Boolean(answer),
+                returnQueued: !work.answerIn && Boolean(answer),
+                isReturn: Boolean(work.answerIn),
                 ms: Date.now() - startedAt,
               },
             });

@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 /**
  * One Bot handing work to another.
  *
@@ -56,7 +57,7 @@ export type HandoffCaps = {
 };
 
 export type HandoffOutcome =
-  | { ok: true; to: string; toName: string }
+  | { ok: true; to: string; toName: string; jobId?: string }
   | { ok: false; refusal: string };
 
 export type HandoffDesk = {
@@ -130,6 +131,7 @@ export function createHandoffDesk(options: {
 
   return {
     async send({ from, target, envelope }) {
+      if (isPrivateAgent(from.botId)) return refuse(from, target, "private_context", PRIVATE_BOUNDARY);
       const task = envelope.task?.trim() ?? "";
       if (!task) {
         return refuse(
@@ -253,6 +255,7 @@ export function createHandoffDesk(options: {
         );
       }
 
+      if (isPrivateAgent(found.id)) return refuse(from, target, "private_context", PRIVATE_BOUNDARY);
       if (found.id === from.botId) {
         return refuse(
           from,
@@ -405,7 +408,7 @@ export function createHandoffDesk(options: {
         },
       });
 
-      return { ok: true, to: found.id, toName: found.name };
+      return { ok: true, to: found.id, toName: found.name, jobId: key };
     },
   };
 }

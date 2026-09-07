@@ -138,6 +138,9 @@ export type WorkQueue = {
     kind: string;
     key: string;
     owner: string;
+    /** Persist the result and enqueue its return in the same commit as completion. */
+    result?: Record<string, unknown>;
+    followUp?: { kind: string; key: string; payload: Record<string, unknown> };
   }) => Promise<boolean>;
   /** Not done, and worth another go after `delayMs`. False means it was no longer ours. */
   release: (input: {
@@ -345,23 +348,34 @@ export function createWorkQueue(database: Database): WorkQueue {
       return Boolean(renewed);
     },
 
-    async finish({ kind, key, owner }) {
-      const [finished] = await database
-        .update(workItems)
-        /*
-         * Marked, not deleted. The row is what a later offer of the same key collides with, and
-         * deleting it handed that key back to anybody who re-offered it: the recovery path was also
-         * a duplicate-run path. Swept later by `purge`.
-         */
-        .set({
-          finishedAt: sql`now()`,
-          claimedBy: null,
-          leaseUntil: null,
-          updatedAt: sql`now()`,
-        })
-        .where(ours(kind, key, owner))
-        .returning({ key: workItems.key });
-      return Boolean(finished);
+    async finish({ kind, key, owner, result, followUp }) {
+      return database.transaction(async (transaction) => {
+        const [finished] = await transaction
+          .update(workItems)
+          .set({
+            finishedAt: sql`now()`,
+            claimedBy: null,
+            leaseUntil: null,
+            updatedAt: sql`now()`,
+            ...(result
+              ? { payload: sql`${workItems.payload} || ${{ result }}::jsonb` }
+              : {}),
+          })
+          .where(ours(kind, key, owner))
+          .returning({ key: workItems.key });
+        if (!finished) return false;
+        // A completed hop without its return queued is a lost answer. A transaction failure
+        // leaves the original claim intact; a stale owner can enqueue no return at all.
+        if (followUp) {
+          const [written] = await transaction
+            .insert(workItems)
+            .values(followUp)
+            .onConflictDoNothing()
+            .returning({ key: workItems.key });
+          if (written) await announceOffered(transaction, followUp.kind);
+        }
+        return true;
+      });
     },
 
     async release({ kind, key, owner, delayMs, reason }) {

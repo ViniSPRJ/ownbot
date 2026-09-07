@@ -208,3 +208,37 @@ skills:
       estime, arredonde além de 4 casas ou complete o que o script não imprimiu. Se o script falhar,
       poste o erro em uma linha.
     tools: []
+
+  - slug: vps-health-read-only
+    title: Diagnóstico de infraestrutura (leitura)
+    summary: Diagnóstico pelos endpoints existentes de status, saúde e disco.
+    instructions: >-
+      Read status, health and disk using only the exact granted tools. Name the host actually
+      observed, check time and evidence. Do not infer readiness from process status alone.
+      Never call restart, hermes_cron, SSH, shell, prune or trading mutation tools. Report
+      unknown hosts and missing capabilities explicitly; hand actionable findings to coord.
+    tools:
+      - vps-ops/status
+      - vps-ops/health
+      - vps-ops/disk
+
+  - slug: onyx-evidence
+    title: Evidência documental Onyx (conexão pendente)
+    summary: Revisão de documentos fornecidos; busca direta no índice ainda indisponível.
+    instructions: >-
+      The Onyx search connector is not configured in this deployment. Do not claim a search.
+      Review only documents provided in the conversation and cite their provenance, page or
+      clause and date. Distinguish source statements from interpretation and missing information.
+      Do not use the Agent Zero bridge: it executes tasks and is not an Onyx retrieval endpoint.
+    tools: []
+
+  - slug: nexus-fx-status-read-only
+    title: Status FX por recibos (fonte pendente)
+    summary: Interpretar recibos fornecidos do Nexus; monitor automático ainda não conectado.
+    instructions: >-
+      No Nexus receipt endpoint has been configured or verified here. State that limitation.
+      If the person supplies a receipt, identify it as supplied evidence, preserve its timestamp,
+      timezone, strategy and explicit state. Distinguish last observed state from current state.
+      Missing or old receipts mean unknown, not paused, healthy or failed. Do not submit decisions,
+      orders, change flags or access an execution endpoint. Never turn this skill into an order.
+    tools: []

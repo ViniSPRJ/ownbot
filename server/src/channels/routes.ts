@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 import {
   and,
   asc,
@@ -253,6 +254,7 @@ export function createChannelStore(
     actor: AgentActor,
     agentIds: string[],
   ): Promise<AgentChannel> => {
+    if (agentIds.some(id => isPrivateAgent(id)) && agentIds.some(id => !isPrivateAgent(id))) throw new Error(PRIVATE_BOUNDARY);
     // Validated on this transaction, not through `profileStore.get`: the read has to share
     // the connection this transaction already holds, and has to hold the profile so an agent
     // cannot be deleted between passing the check and being linked to the new channel.
@@ -894,6 +896,7 @@ export function parseChannelInput(input: unknown): ChannelInputParseResult {
     return { ok: false, error: "Agent IDs must be unique." };
   }
 
+  if (agentIds.some(id => isPrivateAgent(id)) && agentIds.some(id => !isPrivateAgent(id))) return { ok: false, error: PRIVATE_BOUNDARY };
   return { ok: true, value: { agentIds: agentIds.sort() } };
 }
 

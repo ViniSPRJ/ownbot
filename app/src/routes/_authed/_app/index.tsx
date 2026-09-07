@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { AgentCard } from "@/components/agents/agent-card";
+import Avatar from "boring-avatars";
+import { Input } from "@/components/ui/input";
 import { Composer, toAgentOptions } from "@/components/channels/composer";
 import { SidebarToggleBar } from "@/components/layout/sidebar-toggle";
 import { agentListQueryOptions } from "@/lib/agents/queries";
 import { routeMessage } from "@/lib/channels/route";
 import { useStartChannel } from "@/lib/channels/start";
-import { appConfig } from "@/lib/generated/application-config";
 
 export const Route = createFileRoute("/_authed/_app/")({
   component: RouteComponent,
@@ -17,6 +17,8 @@ function RouteComponent() {
   const { data: agents } = useQuery(agentListQueryOptions());
   const explore = agents?.filter((a) => !a.mine && a.visibility === "public");
   const { start, pending } = useStartChannel();
+  const [search, setSearch] = useState("");
+  const visibleAgents = explore?.filter(agent => `${agent.name} ${agent.roleDescription}`.toLocaleLowerCase("pt-BR").includes(search.trim().toLocaleLowerCase("pt-BR")));
   const [error, setError] = useState<string | null>(null);
 
   /** Default recipient when the composer draft has no mention. */
@@ -25,13 +27,13 @@ function RouteComponent() {
   return (
     <>
       <SidebarToggleBar />
-      <div className="flex-1 flex flex-col items-center justify-center w-full p-4 mt-8">
+      <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden px-4 pb-10 pt-6 sm:px-8 sm:pt-10">
         <div className="flex flex-col items-center">
           <h2 className="text-sm uppercase text-muted-foreground font-medium tracking-tight text-center">
-            {appConfig.brand.productName}
+            ownbot
           </h2>
           <h1 className="text-2xl font-bold tracking-tight mt-1.5 text-center">
-            Start a new channel
+            O que vamos fazer hoje?
           </h1>
         </div>
         <div className="mt-8 w-full flex flex-col items-center">
@@ -69,7 +71,7 @@ function RouteComponent() {
                 setError(
                   caught instanceof Error
                     ? caught.message
-                    : "Could not start the conversation.",
+                    : "Não foi possível iniciar a conversa.",
                 );
                 throw caught;
               }
@@ -80,8 +82,7 @@ function RouteComponent() {
             // Said out loud: a message that silently reaches somebody you did not choose is the
             // kind of surprise that costs trust the first time it happens.
             <p className="mt-2 w-full max-w-2xl text-xs text-muted-foreground text-center">
-              Sent to the coworker it is for. Type <code>@</code> to choose one
-              yourself.
+              Descreva sua tarefa ou digite <code>@</code> para escolher um agente.
             </p>
           ) : null}
           {error ? (
@@ -93,23 +94,38 @@ function RouteComponent() {
             </p>
           ) : null}
         </div>
-        <div className="mt-10 w-full max-w-2xl">
-          <h2 className="font-bold text-lg">Explore agents</h2>
-          <div className="flex flex-row gap-4 mt-4">
-            {!!explore?.length &&
-              explore.map((agent) => (
+        <section className="mx-auto mt-10 w-full max-w-5xl" aria-labelledby="agents-heading">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="agents-heading" className="font-semibold text-lg">Sua equipe</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Escolha um agente para começar uma conversa.</p>
+            </div>
+            <Input aria-label="Buscar agentes" placeholder="Buscar agente ou especialidade…" value={search} onChange={event => setSearch(event.target.value)} className="w-full sm:w-72" />
+          </div>
+          <p className="mt-4 text-xs text-muted-foreground" role="status">{visibleAgents?.length ?? 0} agentes disponíveis</p>
+          <div className="grid grid-cols-1 gap-3 mt-3 sm:grid-cols-2 lg:grid-cols-3">
+            {!!visibleAgents?.length &&
+              visibleAgents.map((agent) => (
                 <Link
                   key={agent.id}
+                  className="group min-w-0 rounded-2xl border bg-card p-4 transition-colors hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   to="/channel/new"
                   search={{
                     agent: agent.id,
                   }}
                 >
-                  <AgentCard agent={agent} />
+                  <div className="flex items-center gap-3">
+                    <div className="shrink-0 overflow-hidden rounded-full"><Avatar name={agent.avatarSeed} size={40} /></div>
+                    <h3 className="min-w-0 flex-1 break-words font-semibold">{agent.name}</h3>
+                    <span aria-hidden="true" className="text-muted-foreground group-hover:text-foreground">↗</span>
+                  </div>
+                  <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted-foreground">{agent.roleDescription}</p>
+                  <span className="mt-4 block text-xs font-medium">Conversar →</span>
                 </Link>
               ))}
           </div>
-        </div>
+          {visibleAgents?.length === 0 && <p className="rounded-xl border border-dashed p-8 mt-3 text-center text-sm text-muted-foreground">Nenhum agente encontrado. Tente outro nome ou especialidade.</p>}
+        </section>
       </div>
     </>
   );

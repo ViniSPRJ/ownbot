@@ -1,3 +1,4 @@
+import { createAgentMemoryStore, memoryContext } from "../memory/store";
 import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { type RegisteredAgent, registeredAgentFromRow } from "../copilot";
 import type { CredentialSecretReader } from "../credentials";
@@ -37,6 +38,16 @@ export function createRuntimeAgentLoader(
     for (const row of active) {
       const agent = registeredAgentFromRow(row);
       if (!agent) continue;
+      const savedContext = memoryContext(
+        await createAgentMemoryStore(database).read(actor.id, agent.id),
+      );
+      if (savedContext && agent.type === "built_in")
+        agent.systemPrompt += "\n\n" + savedContext;
+      if (savedContext && agent.type === "remote_ag_ui")
+        agent.standingMessage = {
+          ...agent.standingMessage,
+          content: agent.standingMessage.content + "\n\n" + savedContext,
+        };
       // The key is resolved per load, rather than being cached on the row: revoking a
       // credential then takes effect on the next run rather than on the next restart.
       if (agent.type === "remote_ag_ui" && vault) {

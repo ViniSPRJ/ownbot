@@ -433,11 +433,11 @@ abYZRBp/4tiHgM90WkrlwzjKLDS3LG3rcgkpT0YwmrI70B62UIa1VYU3seRwHJ9blBiGIjYh2LEe
       <key>IgnoreManifestScope</key>
       <true/>
       <key>Label</key>
-      <string>Grok Bot</string>
+      <string>ownbot</string>
       <key>PayloadDescription</key>
-      <string>Home Screen icon for Grok Bot (OpenBot UI on Beelink).</string>
+      <string>Home Screen icon for ownbot (OpenBot UI on Beelink).</string>
       <key>PayloadDisplayName</key>
-      <string>Grok Bot</string>
+      <string>ownbot</string>
       <key>PayloadIdentifier</key>
       <string>net.ts.tail3c3777.grokbot.webclip</string>
       <key>PayloadType</key>
@@ -453,7 +453,7 @@ abYZRBp/4tiHgM90WkrlwzjKLDS3LG3rcgkpT0YwmrI70B62UIa1VYU3seRwHJ9blBiGIjYh2LEe
     </dict>
   </array>
   <key>PayloadDisplayName</key>
-  <string>Grok Bot</string>
+  <string>ownbot</string>
   <key>PayloadIdentifier</key>
   <string>net.ts.tail3c3777.grokbot</string>
   <key>PayloadOrganization</key>

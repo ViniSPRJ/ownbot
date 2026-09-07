@@ -1318,3 +1318,14 @@ describe("acting on a ref the server cannot resolve", () => {
     expect(calls).toEqual(["scroll"]);
   });
 });
+
+test("private bot cannot use computer even when ordinary policy allows it", async () => {
+  const fixture = await gatewayWith(undefined);
+  const before = process.env.OPENBOT_PRIVATE_AGENT_IDS;
+  try {
+    process.env.OPENBOT_PRIVATE_AGENT_IDS = "bot-1";
+    const count = fixture.calls.length;
+    await expect(fixture.gateway.snapshot("bot-1")).rejects.toThrow("privado");
+    expect(fixture.calls.length).toBe(count);
+  } finally { if (before === undefined) delete process.env.OPENBOT_PRIVATE_AGENT_IDS; else process.env.OPENBOT_PRIVATE_AGENT_IDS = before; }
+});

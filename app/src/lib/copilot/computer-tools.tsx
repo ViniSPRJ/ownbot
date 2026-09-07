@@ -2,7 +2,6 @@ import { useFrontendTool } from "@copilotkit/react-core/v2";
 import { z } from "zod";
 import { ToolLine } from "@/components/channels/tool-line";
 import { CommandOutput } from "@/components/computer/command-output";
-import { ComputerView } from "@/components/computer/computer-view";
 import { tryClient } from "@/lib/client";
 import { noteBrowsed, recordActivity } from "@/lib/computers/activity";
 import { type ControlState, readControl } from "@/lib/computers/control";
@@ -293,48 +292,18 @@ export function ComputerTools() {
           }
         : result;
     },
-    render: ({ result, status, toolCallId }) => {
-      /*
-       * The page this turn left open, so reopening the conversation shows what it browsed rather
-       * than what the Bot has open now. Only once the turn is finished: while it runs, the live
-       * frames are its own.
-       */
-      /*
-       * A RESULT IS WHAT MAKES A TURN OVER, not the status.
-       *
-       * A restored tool call arrives with its result already in hand and a status that is briefly
-       * something other than complete, so keying on the status alone made every reopened turn look
-       * like one still running: the tile polled the live screen, put today's page under yesterday's
-       * answer, and only then restored the frame it should have shown from the start.
-       */
+    render: ({ result, status }) => {
+      // Keep browsing activity readable without embedding a live or historical desktop in chat.
       const finished = status === "complete" || result !== undefined;
       const outcome = finished ? outcomeOf(result) : {};
-      const page =
-        typeof outcome.url === "string"
-          ? {
-              url: outcome.url,
-              ...(typeof outcome.title === "string"
-                ? { title: outcome.title }
-                : {}),
-            }
-          : undefined;
       return (
-        <div className="my-2">
-          <ComputerView
-            computerId={bot.current}
-            active={!finished}
-            /*
-             * FINISHED, NOT "GOT SOMEWHERE". The tile used to count a turn as history only once it
-             * had a page, so a navigation that was refused, failed or stopped never settled: it kept
-             * polling the live screen under a turn that was over, and offered control of it. Those
-             * are the turns most worth freezing, because the thing on screen has nothing to do with
-             * what the person is reading.
-             */
-            finished={finished}
-            {...(page ? { page } : {})}
-            {...(toolCallId ? { toolCallId } : {})}
-          />
-        </div>
+        <ActionLine
+          label="Navegação web"
+          detail={typeof outcome.url === "string" ? outcome.url : undefined}
+          running={!finished}
+          refused={outcome.refused === true}
+          failed={didNotWork(outcome)}
+        />
       );
     },
   });

@@ -18,6 +18,7 @@ export type DeploymentCapabilities = {
    * so both halves read this one answer.
    */
   generativeUi: boolean;
+  privateAgentIds: string[];
 };
 
 export const deploymentKeys = {
@@ -51,9 +52,9 @@ export function deploymentCapabilitiesQueryOptions() {
         await client("/api/capabilities", {
           fallback: "This deployment's capabilities could not be loaded.",
         })
-      ).json()) as { generativeUi?: boolean };
+      ).json()) as { generativeUi?: boolean; privateAgentIds?: string[] };
 
-      return { generativeUi: body.generativeUi === true };
+      return { generativeUi: body.generativeUi === true, privateAgentIds: Array.isArray(body.privateAgentIds) ? body.privateAgentIds : [] };
     },
   });
 }

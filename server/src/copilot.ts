@@ -1,3 +1,4 @@
+import { isPrivateAgent, privateModelRoute, privateModelFetch, PRIVATE_BOUNDARY } from "./privacy/policy";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -485,6 +486,21 @@ async function buildAgent(
     return new UnavailableAgent(agent);
   }
 
+  if (isPrivateAgent(agent.id)) {
+    try {
+      const route = privateModelRoute();
+      if (agent.type !== "built_in") throw new Error("Bots privados exigem o runtime local integrado.");
+      const local = new BuiltInAgent({
+        model: createOpenAI({ baseURL: route.baseURL, apiKey: "local-private", fetch: privateModelFetch(route.baseURL) }).chat(route.model),
+        apiKey: "local-private",
+        prompt: agent.systemPrompt + "\n\n" + PRIVATE_BOUNDARY,
+      });
+      return new RunBuiltAgent({ agentId: agent.id, description: agent.name }, local, async () => local);
+    } catch (error) {
+      return new UnavailableAgent({ id: agent.id, name: agent.name, type: "unavailable", reason: error instanceof Error ? error.message : PRIVATE_BOUNDARY });
+    }
+  }
+
   const granted = await loadTools(agent.id);
 
   /*
@@ -847,7 +863,7 @@ class RunBuiltAgent extends AbstractAgent {
       from(this.build(input)).pipe(
         switchMap((agent) => {
           this.inner = agent;
-          return agent.run(input);
+          return agent.run(isPrivateAgent(this.agentId ?? "") ? { ...input, tools: [] } : input);
         }),
       ),
     );

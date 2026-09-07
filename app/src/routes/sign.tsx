@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
+  authClient,
   providerName,
   signInWith,
   signInWithEmailDomain,
@@ -43,11 +44,25 @@ export const Route = createFileRoute("/sign")({
 function SignScreen() {
   // Which provider is being opened, rather than whether one is: with three buttons, a single
   // boolean would put "Opening…" on all of them.
-  const [opening, setOpening] = useState<AuthProviderId | "sso" | null>(null);
+  const [opening, setOpening] = useState<AuthProviderId | "sso" | "password" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { data: options } = useQuery(authProvidersQueryOptions());
   const providers = options?.providers ?? [];
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  async function handlePasswordSignIn(event: React.FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setOpening("password");
+    try {
+      const result = await authClient.signIn.email({ email, password });
+      if (result.error) throw new Error("E-mail ou senha inválidos. Tente novamente.");
+      window.location.assign("/");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Não foi possível entrar.");
+      setOpening(null);
+    }
+  }
 
   /**
    * Sign in through whichever identity provider covers this address.
@@ -121,13 +136,28 @@ function SignScreen() {
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
-          Sign in to {appConfig.brand.productName}
+          Entrar no {appConfig.brand.productName}
         </motion.h1>
         <motion.div
           className="mt-8 w-full"
           transition={{ duration: ENTRANCE_SECONDS, ease: EASE_OUT }}
           variants={{ hidden, shown }}
         >
+          {options?.localPassword ? (
+            <form className="mb-4 space-y-3" onSubmit={handlePasswordSignIn}>
+              <label className="block text-sm">E-mail
+                <Input autoComplete="username" type="email" required value={email}
+                  onChange={(event) => setEmail(event.target.value)} />
+              </label>
+              <label className="block text-sm">Senha
+                <Input autoComplete="current-password" type="password" required value={password}
+                  onChange={(event) => setPassword(event.target.value)} />
+              </label>
+              <Button className="w-full" type="submit" disabled={opening !== null}>
+                {opening === "password" ? "Entrando…" : "Entrar"}
+              </Button>
+            </form>
+          ) : null}
           {providers.length > 0 ? (
             <div className="flex flex-col gap-2">
               {providers.map((provider) => (
@@ -159,7 +189,7 @@ function SignScreen() {
                 </Button>
               ))}
             </div>
-          ) : options?.sso ? null : (
+          ) : options?.sso || options?.localPassword ? null : (
             <p className="text-center text-sm text-muted-foreground">
               No sign-in provider is configured for this deployment.
             </p>

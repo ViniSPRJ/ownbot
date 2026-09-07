@@ -125,6 +125,7 @@ describe("handing work to another Bot", () => {
 
     expect(outcome).toMatchObject({ ok: true, to: "researcher" });
     expect(rows).toHaveLength(1);
+    expect(outcome.ok && outcome.jobId).toBe(rows[0]?.key);
     expect(rows[0]?.kind).toBe(HANDOFF_KIND);
     expect(rows[0]?.payload).toMatchObject({
       fromBotId: "assistant",
@@ -586,4 +587,17 @@ describe("the same ask a second time", () => {
     if (!outcome.ok)
       expect(outcome.refusal).toContain("could not be confirmed");
   });
+});
+
+test("private source and named private recipient never enqueue cross-domain work", async () => {
+  const before = process.env.OPENBOT_PRIVATE_AGENT_IDS;
+  try {
+    for (const id of ["assistant", "researcher"]) {
+      process.env.OPENBOT_PRIVATE_AGENT_IDS = id;
+      const fixture = desk();
+      const result = await fixture.desk.send({ from: FROM, target: "Researcher", envelope: { task: "private task" } });
+      expect(result.ok).toBe(false);
+      expect(fixture.rows).toHaveLength(0);
+    }
+  } finally { if (before === undefined) delete process.env.OPENBOT_PRIVATE_AGENT_IDS; else process.env.OPENBOT_PRIVATE_AGENT_IDS = before; }
 });

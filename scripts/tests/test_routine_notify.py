@@ -203,5 +203,24 @@ class NotifyTests(unittest.TestCase):
                 n.Config.from_env()
 
 
+
+class InternalDeliveryTests(unittest.TestCase):
+    def test_internal_tick_does_not_claim_or_send(self):
+        store = MemoryStore()
+        with patch.dict('os.environ', {'OPENBOT_NOTIFICATION_DELIVERY': 'internal'}):
+            self.assertEqual(n.tick(store, n.Config(), send=lambda **kwargs: self.fail('external send')), 0)
+        self.assertEqual(store.rows[0]['attempts'], 0)
+
+    def test_internal_report_never_reads_credentials(self):
+        with patch.dict('os.environ', {'OPENBOT_NOTIFICATION_DELIVERY': 'internal'}), patch('builtins.open') as opening:
+            with self.assertRaises(RuntimeError):
+                n.report(n.Config(), text='private')
+            opening.assert_not_called()
+
+    def test_unknown_mode_fails_closed(self):
+        with patch.dict('os.environ', {'OPENBOT_NOTIFICATION_DELIVERY': 'typo'}):
+            with self.assertRaises(ValueError):
+                n.tick(MemoryStore(), n.Config())
+
 if __name__ == '__main__':
     unittest.main()

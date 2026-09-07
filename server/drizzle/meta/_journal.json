@@ -197,6 +197,20 @@
       "when": 1788640000001,
       "tag": "0027_service_health",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788640000002,
+      "tag": "0028_agent_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788640000003,
+      "tag": "0029_internal_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -1,16 +1,19 @@
+import { WorkerHealth } from "./worker-health";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   executionsQuery,
   handoffsQuery,
+  handoffStatus,
   executionStatus,
-  deliveryStatus,
+  runNotificationStatus,
 } from "@/lib/routines/executions";
 export function Executions() {
   const runs = useQuery(executionsQuery());
   const handoffs = useQuery(handoffsQuery());
   return (
     <section className="mt-8 space-y-4">
+      <WorkerHealth />
       <h2 className="font-semibold">Execuções recentes</h2>
       <p className="text-sm text-muted-foreground">
         A conclusão da tarefa e a entrega da notificação são verificadas
@@ -33,8 +36,7 @@ export function Executions() {
             {new Date(run.startedAt).toLocaleString("pt-BR")}
           </Link>
           <p className="text-sm">
-            {executionStatus(run)} · Telegram:{" "}
-            {deliveryStatus(run.notificationStatus)}
+            {executionStatus(run)} · {runNotificationStatus(run)}
           </p>
           {run.error ? (
             <p className="text-sm text-destructive whitespace-pre-wrap">
@@ -55,18 +57,7 @@ export function Executions() {
           <span>
             {hop.from ?? "Bot"} → {hop.to ?? "Bot"}:{" "}
           </span>
-          <span>
-            {(
-              {
-                "agent.handoff_offered": "Enfileirada",
-                "agent.handoff_delivered":
-                  "Processada pelo destinatário; retorno não confirmado",
-                "agent.handoff_failed": "Falhou",
-                "agent.handoff_retried": "Nova tentativa",
-                "agent.handoff_refused": "Não enviada",
-              } as Record<string, string>
-            )[hop.event] ?? "Estado desconhecido"}
-          </span>
+          <span>{handoffStatus(hop)}</span>
           <span className="text-muted-foreground">
             {" "}
             · {new Date(hop.at).toLocaleString("pt-BR")}

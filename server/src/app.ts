@@ -1,3 +1,8 @@
+import { createNotificationsRoutes } from "./notifications/routes";
+import type { NotificationsStore } from "./notifications/store";
+import { createRoutineEventRoutes, type RoutineEventStore } from "./routines/events";
+import { createAgentMemoryRoutes } from "./memory/routes";
+import type { AgentMemoryStore } from "./memory/store";
 import { createOperationsRoutes } from "./operations/routes";
 import type { OperationsStore } from "./operations/store";
 import type { Hono as HonoApp, MiddlewareHandler } from "hono";
@@ -215,8 +220,14 @@ export function createApp(
    */
   localThreadReader?: ThreadReader,
   operations?: OperationsStore,
+  agentMemory?: AgentMemoryStore,
+  routineEvents?: RoutineEventStore,
+  notifications?: NotificationsStore,
+  localEnrollment?: Hono,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
+
+  if (localEnrollment) app.route("/api/local-auth", localEnrollment);
 
   app.get("/health", (context) => context.json({ status: "ok" }));
   app.get("/ready", async (context) => {
@@ -253,6 +264,8 @@ export function createApp(
        * build machine cannot offer a provider that machine had never heard of.
        */
       authProviders: configuredAuthProviders(config.auth),
+      localPasswordAuth: config.auth?.localPassword === true,
+      privateAgentIds: (process.env.OPENBOT_PRIVATE_AGENT_IDS ?? "").split(",").map(v => v.trim()).filter(Boolean),
       /*
        * Whether any enterprise identity provider has been registered.
        *
@@ -815,6 +828,10 @@ export function createApp(
     ? async (actor, botId) =>
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
+
+  if (notifications) app.route("/api/notifications", createNotificationsRoutes(notifications, requireUser));
+  if (routineEvents) app.route("/api/routine-events", createRoutineEventRoutes(routineEvents, requireUser));
+  if (agentMemory) app.route("/api/agent-memory", createAgentMemoryRoutes(agentMemory, requireUser, canUseBot));
 
   // The Bot computer. Acting on a page needs the gateway and the policy it enforces, so both arrive
   // together or the routes are not mounted. An ungoverned computer is not a reduced feature. It is

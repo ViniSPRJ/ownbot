@@ -205,7 +205,16 @@ def validate_receipt(envelope):
     return receipt
 
 
+def external_delivery_enabled():
+    mode = os.environ.get('OPENBOT_NOTIFICATION_DELIVERY', 'telegram')
+    if mode not in ('internal', 'telegram'):
+        raise ValueError('invalid notification delivery mode')
+    return mode == 'telegram'
+
+
 def report(config, **args):
+    if not external_delivery_enabled():
+        raise RuntimeError('external notifications are disabled')
     with open(os.path.expanduser(config.token_file), encoding='utf-8') as source:
         token = source.read().strip()
     if not token:
@@ -228,6 +237,8 @@ def payload(row, config):
 
 
 def tick(store, config, send=report):
+    if not external_delivery_enabled():
+        return 0
     count = 0
     for _ in range(config.batch_size):
         row = store.claim()
@@ -251,6 +262,9 @@ def tick(store, config, send=report):
 
 
 def main():
+    if not external_delivery_enabled():
+        print('External notifications disabled: internal inbox is active', flush=True)
+        return
     config = Config.from_env()
     store = Store(config)
     while True:

@@ -1,0 +1,4 @@
+{
+  "deny": "bot.id == 'onyx' || (bot.id == 'infra' && !(has(mcp.server) && mcp.server == 'vps-ops' && mcp.tool in ['status', 'health', 'disk']))",
+  "grants": ["vps-ops/status", "vps-ops/health", "vps-ops/disk"]
+}

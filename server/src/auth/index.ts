@@ -195,6 +195,13 @@ export function createAuth(
        */
       encryptOAuthTokens: true,
     },
+    emailAndPassword: {
+      enabled: authConfig.localPassword === true,
+      disableSignUp: true,
+      minPasswordLength: 12,
+      maxPasswordLength: 128,
+    },
+    rateLimit: { enabled: true, window: 60, max: 30 },
     plugins,
     socialProviders: {
       ...(authConfig.google ? { google: authConfig.google } : {}),

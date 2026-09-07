@@ -1,3 +1,8 @@
+import { createNotificationsStore } from "./notifications/store";
+import { createLocalEnrollmentRoutes } from "./auth/local-enrollment";
+import { createRoutineEventStore } from "./routines/events";
+import { createHandoffStatusReader, handoffStatusTool } from "./agents/handoff-status-tool";
+import { createAgentMemoryStore } from "./memory/store";
 import { createOperationsStore } from "./operations/store";
 import { randomUUID } from "node:crypto";
 import { serve } from "bun";
@@ -856,7 +861,8 @@ const copilotRuntime = mountCopilotRuntime(
       route: askTheirOwnPerson,
       auditStore: bootAuditStore,
     });
-    return passing ? [passing, asking] : [asking];
+    const status = handoffStatusTool(createHandoffStatusReader(database), run);
+    return passing ? [passing, status, asking] : [status, asking];
   },
   // A run started or ended on a thread; light the channel it belongs to. Fire-and-forget, keyed by
   // thread, and a scratch thread maps to no channel and signals nowhere.
@@ -1132,6 +1138,10 @@ const app = createApp(
         }
       : undefined,
   ),
+  createAgentMemoryStore(database),
+  createRoutineEventStore(database),
+  createNotificationsStore(database),
+  auth ? createLocalEnrollmentRoutes(database, auth, config) : undefined,
 );
 
 /**

@@ -179,6 +179,8 @@ export async function createUiServer(options: UiOptions) {
           ? "public, max-age=31536000, immutable"
           : "no-cache",
         "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'",
       });
       if (req.method === "HEAD") res.end();
       else pipeline(createReadStream(target), res, () => {});

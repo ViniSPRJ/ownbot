@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import {
@@ -2788,6 +2789,7 @@ export function createPluginStore(options: PluginStoreOptions) {
       botId: string;
       actorId: string;
     }): Promise<{ text: string; isError: boolean }> {
+      if (isPrivateAgent(input.botId)) throw new PluginRefusedError(PRIVATE_BOUNDARY, null);
       const [serverId, ...rest] = input.ref.split("/");
       const toolName = rest.join("/");
       if (!serverId || !toolName) {

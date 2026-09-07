@@ -1,6 +1,6 @@
 {
-  "name": "Grok Bot",
-  "short_name": "Grok Bot",
+  "name": "ownbot",
+  "short_name": "ownbot",
   "description": "OpenBot UI on the Beelink, tailnet only.",
   "start_url": "/bot?agent=coord",
   "scope": "/",

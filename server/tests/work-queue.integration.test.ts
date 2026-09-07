@@ -435,3 +435,78 @@ describe("offering at most so many under one prefix", () => {
     expect(results.every((result) => result === "queued")).toBe(true);
   });
 });
+
+describe("atomic completion and return", () => {
+  test("persists the result together with exactly one queued return", async () => {
+    await queue.offer({ kind, key: "original", payload: { task: "research" } });
+    await queue.claim({ kind, owner: "worker", leaseMs: 30_000 });
+    const completion = {
+      kind,
+      key: "original",
+      owner: "worker",
+      result: { answer: "Evidence\nwith multiple lines" },
+      followUp: { kind, key: "return", payload: { answer: "Evidence" } },
+    };
+    expect(await queue.finish(completion)).toBe(true);
+    expect(await queue.finish(completion)).toBe(false);
+    const rows = await database
+      .select()
+      .from(workItems)
+      .where(eq(workItems.kind, kind));
+    expect(rows).toHaveLength(2);
+    const original = rows.find((row) => row.key === "original")!;
+    expect(original.finishedAt).not.toBeNull();
+    expect(original.payload).toEqual({
+      task: "research",
+      result: completion.result,
+    });
+    const claimed = await queue.claim({
+      kind,
+      owner: "return-worker",
+      leaseMs: 30_000,
+    });
+    expect(claimed.map((row) => row.key)).toEqual(["return"]);
+  });
+
+  test("a stale owner cannot publish a result or wake a return", async () => {
+    await queue.offer({ kind, key: "original" });
+    await queue.claim({ kind, owner: "worker", leaseMs: 30_000 });
+    expect(
+      await queue.finish({
+        kind,
+        key: "original",
+        owner: "stale",
+        result: { answer: "wrong" },
+        followUp: { kind, key: "return", payload: {} },
+      }),
+    ).toBe(false);
+    const rows = await database
+      .select()
+      .from(workItems)
+      .where(eq(workItems.kind, kind));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.finishedAt).toBeNull();
+    expect(rows[0]!.payload).toEqual({});
+  });
+
+  test("a return insertion failure rolls back completion and result", async () => {
+    await queue.offer({ kind, key: "original", payload: { task: "research" } });
+    await queue.claim({ kind, owner: "worker", leaseMs: 30_000 });
+    await expect(
+      queue.finish({
+        kind,
+        key: "original",
+        owner: "worker",
+        result: { answer: "retain only on commit" },
+        followUp: { kind, key: null as unknown as string, payload: {} },
+      }),
+    ).rejects.toThrow();
+    const [original] = await database
+      .select()
+      .from(workItems)
+      .where(eq(workItems.kind, kind));
+    expect(original!.finishedAt).toBeNull();
+    expect(original!.claimedBy).toBe("worker");
+    expect(original!.payload).toEqual({ task: "research" });
+  });
+});

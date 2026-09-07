@@ -49,8 +49,16 @@ function runner(options?: {
         { kind: "bot.message", key: "run-1:abc", payload: WORK, attempts: 1 },
       ],
     renew: async () => true,
-    finish: async ({ key, owner }: { key: string; owner: string }) => {
+    finish: async ({
+      key,
+      owner,
+      followUp,
+    }: Parameters<WorkQueue["finish"]>[0]) => {
       calls.push({ verb: "finish", key, owner });
+      if (followUp) {
+        calls.push({ verb: "offer", key: followUp.key });
+        offered.push(followUp.payload as unknown as HandoffWork);
+      }
       return true;
     },
     release: async ({ key, owner }: { key: string; owner: string }) => {
@@ -512,4 +520,18 @@ describe("what a notice shows", () => {
       "Assistant asked Researcher for this on your behalf: find the outage window",
     );
   });
+});
+
+test("queued private tasks and private result relays stop before delivery", async () => {
+  const before = process.env.OPENBOT_PRIVATE_AGENT_IDS;
+  try {
+    for (const id of ["assistant", "researcher"]) {
+      process.env.OPENBOT_PRIVATE_AGENT_IDS = id;
+      const fixture = runner({ answer: "private answer" });
+      await fixture.runner.sweep();
+      expect(fixture.delivered).toHaveLength(0);
+      expect(fixture.offered).toHaveLength(0);
+      expect(fixture.events).toContain("agent.handoff_failed");
+    }
+  } finally { if (before === undefined) delete process.env.OPENBOT_PRIVATE_AGENT_IDS; else process.env.OPENBOT_PRIVATE_AGENT_IDS = before; }
 });

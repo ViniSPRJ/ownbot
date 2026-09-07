@@ -84,6 +84,9 @@ export type AuthConfig = {
   secret: string;
   trustedOrigins: string[];
   initialAdminEmails: string[];
+  /** Local password accounts provisioned by the operator; public signup stays disabled. */
+  localPassword?: boolean;
+  localEnrollmentTokenHash?: string;
   google?: OAuthClient;
   /**
    * `tenantId` decides who may sign in at all, so it is not a detail. `common` admits any Microsoft
@@ -469,13 +472,14 @@ function authConfig(
   environment: Environment,
   google: OAuthClient | undefined,
 ): AuthConfig | undefined {
+  const localPassword = optional(environment, "OPENBOT_LOCAL_PASSWORD_AUTH") === "true";
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
 
   const secret = optional(environment, "BETTER_AUTH_SECRET");
   const baseUrl = url(environment, "BETTER_AUTH_URL");
 
-  if (!google && !microsoft && !okta) {
+  if (!google && !microsoft && !okta && !localPassword) {
     if (secret || baseUrl) {
       throw new Error(
         "BETTER_AUTH_SECRET or BETTER_AUTH_URL is set but no identity provider is. Configure GOOGLE_OAUTH_*, MICROSOFT_OAUTH_* or OKTA_OAUTH_*, or unset both",
@@ -518,6 +522,7 @@ function authConfig(
       ? commaSeparated(environment, "TRUSTED_ORIGINS")
       : ["http://localhost:3010"],
     initialAdminEmails,
+    ...(localPassword ? { localPassword: true, localEnrollmentTokenHash: optional(environment, "OPENBOT_LOCAL_ENROLLMENT_TOKEN_HASH") } : {}),
     ...(google ? { google } : {}),
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
@@ -918,7 +923,7 @@ export function loadConfig(
     auth,
     singleUser: singleUserEnabled(
       environment,
-      configuredAuthProviders(auth).length > 0,
+      configuredAuthProviders(auth).length > 0 || auth?.localPassword === true,
     ),
     accessibility: accessibilityEnabled(environment),
     generativeUi: generativeUiEnabled(environment),

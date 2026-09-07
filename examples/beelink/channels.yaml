@@ -37,5 +37,16 @@ channels:
   - id: credito
     name: Crédito
     description: Crédito e securitização.
-    permitted_agents: [credito, coord]
+    permitted_agents: [credito]
+    allowed_groups: [all]
+
+  - id: infra
+    name: Infra
+    description: Diagnóstico de infraestrutura somente leitura, com evidências.
+    permitted_agents: [infra, coord]
+    allowed_groups: [all]
+  - id: onyx
+    name: Onyx
+    description: Evidências documentais; conexão de busca Onyx pendente.
+    permitted_agents: [onyx, research, coord]
     allowed_groups: [all]

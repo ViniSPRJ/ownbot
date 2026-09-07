@@ -8,3 +8,7 @@ export * from "./plugins";
 export * from "./work";
 
 export * from "./health";
+
+export * from "./memory";
+
+export * from "./notifications";

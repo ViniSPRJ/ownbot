@@ -1,5 +1,6 @@
 import {
   IconBolt,
+  IconBell,
   IconBox,
   IconClock,
   IconLogout,
@@ -54,6 +55,7 @@ import {
 import { useChannelEvents } from "@/lib/channels/use-channel-events";
 import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
+import { inboxQuery } from "@/lib/notifications/queries";
 import { relativeTime } from "@/lib/relative-time";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
@@ -211,6 +213,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
   const signOut = useMutation(signOutMutationOptions(queryClient));
   const channels = useInfiniteQuery(channelListQueryOptions());
+  const inbox = useQuery(inboxQuery());
   // One socket for the app, opened where the roster is kept live.
   useChannelEvents();
   const [search, setSearch] = useState("");
@@ -378,6 +381,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconClock />
               </div>
               <span className="text-sm">Rotinas e execuções</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/notifications"
+                  activeProps={{ className: "bg-foreground/5" }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconBell />
+              </div>
+              <span className="text-sm">Notificações</span>
+              {(inbox.data?.unreadCount ?? 0) > 0 && (
+                <span
+                  aria-label={`${inbox.data!.unreadCount} notificações não lidas`}
+                  className="ml-auto rounded-full bg-primary text-primary-foreground px-2 text-xs"
+                >
+                  {inbox.data!.unreadCount > 99
+                    ? "99+"
+                    : inbox.data!.unreadCount}
+                </span>
+              )}
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

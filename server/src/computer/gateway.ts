@@ -1,3 +1,4 @@
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 /**
  * The only way an action reaches a Bot's computer.
  *
@@ -253,6 +254,7 @@ export function createComputerGateway(
    * Bot may browse and the wrong one here, where loopback is the normal case.
    */
   async function locate(botId: string): Promise<string> {
+    if (isPrivateAgent(botId)) throw new ActionRefusedError(PRIVATE_BOUNDARY, "private-context");
     const address = await provider.locate(botId);
     const verdict = checkComputerAddress(address);
     if (!verdict.allowed) {
