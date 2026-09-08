@@ -44,3 +44,11 @@ This proves the direct native Pi adapter, real model, Ownbot tool bridge and
 session resume path. Full application activation and UI acceptance are separate:
 the probes did not modify production provider profiles, role assignments,
 existing cmux sessions or model settings, and did not restart Ownbot.
+
+## Application activation
+
+After those isolated probes, production added optional `pi-m4` and `pi-m5` profiles with
+operator-owned private configs. Existing coworker mappings were compared and preserved.
+The deployed Connection panel displayed both Pi choices alongside Codex, Claude and Grok;
+Onyx retained its selected GPT-5.6-Terra model. The separate durable-worker application
+roundtrip is recorded in [Pi worker validation](../pi-runner/VALIDATION.md).

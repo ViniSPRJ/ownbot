@@ -47,6 +47,30 @@ No model switch or interruption was performed.
 - Exact marker plus newline verified; original smoke workspace stayed empty.
 - Remote staging directory 0700 and marker file 0600 verified.
 
-These are authenticated direct-MCP worker roundtrips. They prove local execution,
-receipts, staging and idempotency. The ownbot catalogue must expose the new schema,
-and Code must use background mode, before claiming the complete ownbot chat path.
+The smoke tests above are authenticated direct-MCP worker roundtrips. They prove
+local execution, receipts, staging and idempotency.
+
+## Ownbot automatic completion E2E — 2026-09-08 UTC
+
+The deployed Ownbot application accepted a browser request in synthetic channel
+`channel_382ea377-b7c1-41e7-802f-7cb4f9f409c4`. Coord delegated to Code at urgent
+priority; Code submitted one `pi-m5/pi_run` with `background:true`, `tools:[]`,
+idempotency key `ownbot-auto-wake-20260908-v1` and a neutral marker prompt.
+
+- Job `4451db694db262ed77ec4d0d2af0ab8d` completed on qwen3.8-flash-next in 2680 ms:
+  `ok:true`, `toolCalls:0`, no changed/deleted files, text `OWNBOT_PI_AUTO_WAKE_OK`.
+- Audit records show one `pi_run` at 00:07:08.876Z. Code finished at 00:07:16.338Z.
+  The sole `pi_status` occurred afterward at 00:07:23.776Z through the watcher;
+  Code did not poll during its turn.
+- `pi.watch` key
+  `9f367134073e250ba1ab60beccfb0df5c720564b7c053a18ee978ff62f992127`
+  finished at 00:07:23.780Z with state `completed`, one attempt, no error.
+- Exactly one `bot.message` with the matching `pi-return:` key finished at
+  00:07:34.898Z, one attempt, no error. It returned to the requesting thread
+  `e712a02b-83a6-8c08-a70c-ca04c3e0a250`.
+- Coord's final persisted message reports the marker, `completed` and the correct
+  job ID. Its run `9a4c441e-9eb6-4da0-b4dd-d69fbfc121af` has `RUN_FINISHED`.
+
+This acceptance covers browser request → Coord → Code → local Pi background job →
+durable watcher → automatic Coord wake → persisted answer in the original channel.
+It did not require another prompt, manual polling, model changes or service restart.

@@ -237,7 +237,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 test("a saved research marker installs a fresh budget and preserves the complete instruction", async () => {
   const instruction = INSTRUCTION + "\n[OWNBOT_RESEARCH_BUDGET_V1]";
   const configured = harness({ instruction });
-  await configured.run();
+  await expect(configured.run()).rejects.toThrow("editorial_coverage_incomplete");
   expect(configured.calls.built[0]?.researchBudget).toBeDefined();
   const text = String(configured.calls.runs[0]?.persistedInputMessages?.[0]?.content);
   expect(text).toContain(instruction);

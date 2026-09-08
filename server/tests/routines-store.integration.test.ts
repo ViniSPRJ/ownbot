@@ -1267,6 +1267,16 @@ describe("counting the failures at the tail", () => {
     expect(await store.consecutiveFailures(routine.id)).toBe(0);
   });
 
+  test("an editorial incomplete turn breaks infrastructure failure streaks", async () => {
+    const { routine } = await makeRoutine();
+    await finish(routine.id, "failed");
+    const { runId } = await store.insertRun(routine.id);
+    await store.finishRun(runId, "failed", "editorial_coverage_incomplete: missing opinion", {replyText:"Draft preserved"});
+    expect(await store.consecutiveFailures(routine.id)).toBe(0);
+    await finish(routine.id, "failed");
+    expect(await store.consecutiveFailures(routine.id)).toBe(1);
+  });
+
   test("a skip between failures neither counts nor resets", async () => {
     const { routine } = await makeRoutine();
 

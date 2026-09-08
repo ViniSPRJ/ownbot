@@ -896,7 +896,7 @@ export function createRoutineStore(database: Database): RoutineStore {
        * Finished runs only — an in-flight run has no outcome yet and must not end the streak.
        */
       const rows = await database
-        .select({ status: routineRuns.status })
+        .select({ status: routineRuns.status, error: routineRuns.error })
         .from(routineRuns)
         .where(
           and(
@@ -921,7 +921,7 @@ export function createRoutineStore(database: Database): RoutineStore {
 
       let failures = 0;
       for (const run of rows) {
-        if (run.status !== "failed") break;
+        if (run.status !== "failed" || run.error?.startsWith("editorial_coverage_incomplete:")) break;
         failures += 1;
       }
       return failures;

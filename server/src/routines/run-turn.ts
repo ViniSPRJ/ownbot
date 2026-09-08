@@ -872,6 +872,6 @@ export function createTurnRunner(options: {
     }
 
     const resultMessageId = replies.at(-1)?.id;
-    return { replyText, ...(resultMessageId ? { resultMessageId } : {}) };
+    return { replyText: researchBudget ? researchBudget.finalise(replyText, resultMessageId) : replyText, ...(resultMessageId ? { resultMessageId } : {}) };
   };
 }

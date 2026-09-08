@@ -1,3 +1,4 @@
+import { NewsEditorialError } from "./news-evidence";
 /**
  * Running one firing of a routine with nobody's browser open.
  *
@@ -146,6 +147,15 @@ export function createRoutineRunner(options: {
       }));
     } catch (error) {
       const reason = reasonOf(error);
+      if (error instanceof NewsEditorialError) {
+        // A completed research turn with incomplete editorial evidence is not an infrastructure
+        // failure: keep its draft and receipt, never retry it or trip the fatigue kill-switch here.
+        await routineStore.finishRun(routineRunId, "failed", reason, {
+          replyText: error.draft, ...(error.resultMessageId ? { resultMessageId: error.resultMessageId } : {}),
+        });
+        await say(error.draft);
+        return;
+      }
       await routineStore.finishRun(routineRunId, "failed", reason);
 
       /*

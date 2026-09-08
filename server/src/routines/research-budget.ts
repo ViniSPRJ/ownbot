@@ -1,4 +1,5 @@
 import type { GrantedTool } from "../plugins/tools";
+import { createNewsEvidence } from "./news-evidence";
 
 /** Explicit opt-in in a saved routine; never applied to ordinary chat or other routines. */
 export const RESEARCH_BUDGET_MARKER = "[OWNBOT_RESEARCH_BUDGET_V1]";
@@ -14,6 +15,7 @@ export function createRoutineResearchBudget(
   now: () => number = () => performance.now(),
 ) {
   const started = now();
+  const editorial = createNewsEvidence();
   const reserveMs = Math.min(90_000, timeoutMs / 4);
   const researchMs = Math.max(0, timeoutMs - reserveMs);
   const maxCalls = 14;
@@ -24,16 +26,17 @@ export function createRoutineResearchBudget(
   const guidance = () =>
     `Ownbot routine budget: ${remaining()} seconds remain; ${Math.max(0, maxCalls - calls)} browser calls remain. ` +
     `Reserve the final ${Math.round(reserveMs / 1000)} seconds for the complete requested report. ` +
-    "Cover every requested section, cite only retrieved evidence, and label source limitations. Never substitute fabricated facts for missing evidence.";
+    "Cover every requested section, cite only retrieved evidence, and label source limitations. Never substitute fabricated facts for missing evidence. Before the final answer register every cited article with news_record_evidence (actual body, author, literal excerpt). Read actual FT and Valor opinion articles, not homepage links. Unverified publication dates are context only, not current news.";
 
   return {
     guidance,
+    finalise: editorial.finalise,
     wrap(tools: GrantedTool[]): GrantedTool[] {
-      return tools.map(tool => {
+      const wrapped = tools.map(tool => {
         if (!BROWSER_READS.has(tool.name)) return tool;
         return {
           ...tool,
-          execute: args => {
+          execute: (args: unknown) => {
             const execute = async () => {
               if (calls >= maxCalls || now() - started >= researchMs)
                 return "Refused. The routine's research budget has ended. Write the full requested report now using collected evidence and explicit source limitations.\n" + guidance();
@@ -43,6 +46,7 @@ export function createRoutineResearchBudget(
                 return "Refused. This browser ref already failed as stale. Do not repeat it; take one fresh snapshot or move to the remaining sources.\n" + guidance();
               calls += 1;
               const answer = await tool.execute(args);
+              editorial.capture(tool.name, answer);
               if (ref && /"staleRefs"\s*:\s*true|not on the page any more|refs are stale/i.test(answer))
                 staleRefs.add(ref);
               if (tool.name === "computer_snapshot") {
@@ -59,6 +63,7 @@ export function createRoutineResearchBudget(
           },
         };
       });
+      return [...wrapped, editorial.tool];
     },
   };
 }
