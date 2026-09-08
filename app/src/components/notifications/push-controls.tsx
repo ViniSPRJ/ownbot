@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { client } from "@/lib/client";
+import { pushSupport, registerPushWorker } from "@/lib/notifications/browser-push";
 
 /**
  * Web Push controls for one device.
@@ -22,13 +23,11 @@ import { client } from "@/lib/client";
  *   another person's account on this browser, and silently re-registering it could move it.
  *
  * NOTHING HERE IS ENABLED EARLY. The state says "Ativado neste dispositivo" only when the server lists
- * the hash of the subscription this browser holds. A POST that failed leaves the button on "Ativar", and
- * the only subscription this click created is unsubscribed again so the browser does not keep a
- * registration the server knows nothing about.
+ * the hash of the subscription this browser holds. A failed POST leaves the device visibly unregistered,
+ * with explicit removal/retry instead of an automatic unsubscribe that could affect another tab.
  *
- * PERMISSION IS ASKED FOR ON A CLICK ONLY. `Notification.requestPermission()` is called inside the
- * activate handler below, never on mount and never from an effect: a request nobody asked for trains
- * people to dismiss dialogs without reading them, and a dismissed one is refused for good.
+ * The service worker is prepared without asking permission. subscribe() is called directly in the
+ * click handler, before any await, so Safari keeps the user gesture required for its permission prompt.
  */
 
 const ENDPOINT_HASH_LENGTH = 64;
@@ -39,15 +38,6 @@ export type PushSettings = {
   publicKey: string | null;
   subscriptions: { id: string; endpointHash: string }[];
 };
-
-/** Why push cannot be offered here, in the words the person needs rather than an error code. */
-export type UnsupportedReason =
-  /** No service worker, no PushManager, or no WebCrypto to hash the endpoint with. */
-  | "no-push"
-  /** Push requires a secure context; http on a tailnet address does not qualify. */
-  | "insecure"
-  /** iOS and iPadOS accept Web Push only for a home-screen install. */
-  | "ios-not-installed";
 
 export const pushSettingsQueryOptions = () =>
   queryOptions({
@@ -79,80 +69,6 @@ export async function endpointHash(endpoint: string): Promise<string> {
     .join("");
 }
 
-const isAppleTabletOrPhone = () =>
-  typeof navigator !== "undefined" &&
-  (/iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    // iPadOS 13+ reports as MacIntel with touch.
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
-
-const isInstalledShell = () => {
-  if (typeof window === "undefined") return false;
-  const standalone = (window as { standalone?: boolean }).standalone;
-  if (typeof standalone === "boolean") return standalone;
-  try {
-    return window.matchMedia("(display-mode: standalone)").matches;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * The container's `pushManager`, through the shape this component uses.
- *
- * The DOM library this app compiles against types `ServiceWorkerRegistration.pushManager` but not
- * `ServiceWorkerContainer.pushManager`, so the pre-flight probe reaches it structurally. The cast is the
- * width of the one call made below, and the value is only returned after a `"pushManager" in` test.
- */
-type PushController = {
-  subscribe(options: {
-    userVisibleOnly: true;
-    applicationServerKey?: BufferSource | null;
-  }): Promise<PushSubscription>;
-};
-const containerPushManager = (): PushController | undefined =>
-  typeof ServiceWorkerContainer === "undefined" ||
-  !("pushManager" in ServiceWorkerContainer.prototype)
-    ? undefined
-    : (navigator.serviceWorker as unknown as { pushManager?: PushController })
-        .pushManager;
-
-/**
- * Whether this browser can be offered push at all, before anyone clicks.
- *
- * Deliberately synchronous and side-effect free: no registration, no permission prompt, no request. The
- * iOS branch is checked before and after the capability probe on purpose — Safari 16.4+ exposes
- * `PushManager` in the browser but refuses `subscribe()` unless the site runs as a home-screen install,
- * so both "the API is missing" and "the API is there but will be refused" mean the same instruction.
- */
-export function pushSupport():
-  | { supported: true; reason?: undefined }
-  | { supported: false; reason: UnsupportedReason } {
-  if (typeof window === "undefined" || typeof navigator === "undefined")
-    return { supported: false, reason: "no-push" };
-  const appleWithoutInstall = isAppleTabletOrPhone() && !isInstalledShell();
-  const hasPush =
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    "Notification" in window &&
-    typeof containerPushManager()?.subscribe === "function" &&
-    typeof crypto?.subtle?.digest === "function";
-  if (!hasPush)
-    return {
-      supported: false,
-      reason: appleWithoutInstall ? "ios-not-installed" : "no-push",
-    };
-  // `isSecureContext` is the answer when the browser exposes it; the address is the fallback.
-  const secure =
-    typeof window.isSecureContext === "boolean"
-      ? window.isSecureContext
-      : window.location.protocol === "https:" ||
-        ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
-  if (!secure) return { supported: false, reason: "insecure" };
-  if (appleWithoutInstall)
-    return { supported: false, reason: "ios-not-installed" };
-  return { supported: true };
-}
-
 /** A VAPID key is a 65-byte uncompressed P-256 point in base64url. Anything else fails with `DataError`. */
 function vapidKeyToBytes(value: string) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -166,21 +82,6 @@ function vapidKeyToBytes(value: string) {
       "A chave de assinatura publicada por esta instalação não tem o formato esperado.",
     );
   return bytes;
-}
-
-const SERVICE_WORKER = "/ownbot-push-sw.js";
-
-/**
- * Registering is done on the way to subscribing, never on mount.
- *
- * A registration on its own is a standing process the person did not ask for and a scope claim over
- * `/`. It happens here only after a click, in a supported secure context, and the file it registers has
- * no `fetch` handler and no cache.
- */
-async function registerWorker(): Promise<ServiceWorkerRegistration> {
-  const registration = await navigator.serviceWorker.getRegistration("/");
-  if (registration) return registration;
-  return navigator.serviceWorker.register(SERVICE_WORKER, { scope: "/" });
 }
 
 type DeviceState =
@@ -203,6 +104,9 @@ export function PushNotificationControls() {
   const [busy, setBusy] = useState<"enable" | "disable" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const mounted = useRef(true);
+  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const [prepareAttempt, setPrepareAttempt] = useState(0);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   const support = pushSupport();
   const registeredHashes = new Set(
@@ -212,40 +116,35 @@ export function PushNotificationControls() {
       .filter((hash) => hash.length === ENDPOINT_HASH_LENGTH),
   );
 
-  /*
-   * Read what this browser already holds. Only in a supported context, and via `getRegistration`, which
-   * answers at once — `serviceWorker.ready` can stay pending forever when a worker never activates, and
-   * a pending read would leave the panel showing nothing.
-   */
   useEffect(() => {
     mounted.current = true;
-    if (!support.supported) return () => {};
+    return () => { mounted.current = false; };
+  }, []);
+
+  // Preparing the worker never requests notification permission. The click can then subscribe
+  // synchronously, without losing Safari's user activation to registration or network awaits.
+  useEffect(() => {
+    if (!support.supported || !settings.data?.enabled) return;
     let cancelled = false;
+    setRegistration(null);
+    setPrepareError(null);
     void (async () => {
       try {
-        const registration = await navigator.serviceWorker.getRegistration("/");
-        const subscription =
-          await registration?.pushManager?.getSubscription?.();
-        if (cancelled || !subscription?.endpoint) return;
-        const hash = await endpointHash(subscription.endpoint).catch(
-          () => null,
-        );
+        const ready = await registerPushWorker();
+        const held = await ready.pushManager.getSubscription();
+        const hash = held?.endpoint ? await endpointHash(held.endpoint) : null;
         if (cancelled) return;
-        setDevice({
-          phase: "held",
-          endpoint: subscription.endpoint,
-          registered: false,
-        });
+        setDevice(held?.endpoint
+          ? { phase: "held", endpoint: held.endpoint, registered: false }
+          : { phase: "unknown", endpoint: null });
         setLocalHash(hash);
+        setRegistration(ready);
       } catch {
-        // A browser that will not answer is reported by the button staying on "Ativar".
+        if (!cancelled) setPrepareError("Não foi possível preparar os avisos neste navegador. Tente novamente.");
       }
     })();
-    return () => {
-      cancelled = true;
-      mounted.current = false;
-    };
-  }, [support.supported]);
+    return () => { cancelled = true; };
+  }, [support.supported, settings.data?.enabled, prepareAttempt]);
 
   // The server owns the answer to "is this registered", so the match is recomputed, never assumed.
   const registered =
@@ -258,55 +157,18 @@ export function PushNotificationControls() {
   }, [queryClient]);
 
   const enable = useCallback(async () => {
-    if (!support.supported || busy) return;
+    if (!support.supported || busy || !registration || !settings.data?.enabled || !settings.data.publicKey) return;
     setBusy("enable");
     setNotice(null);
     try {
-      const granted = await Notification.requestPermission();
-      if (!mounted.current) return;
-      setPermission(granted);
-      if (granted !== "granted") {
-        setNotice(
-          "O navegador não permitiu avisos para este site. Nada foi registrado.",
-        );
-        return;
-      }
-      if (!settings.data?.enabled) {
-        setNotice(
-          "O envio de avisos pelo navegador está desativado nesta instalação.",
-        );
-        return;
-      }
-      if (!settings.data.publicKey) {
-        setNotice(
-          "O serviço de avisos ainda não está disponível. Tente novamente mais tarde.",
-        );
-        return;
-      }
-      const registration = await registerWorker();
-      const held = await registration.pushManager.getSubscription();
-      // A subscription this session did not create is never reposted or removed here.
-      if (held?.endpoint) {
-        if (!mounted.current) return;
-        setDevice({
-          phase: "held",
-          endpoint: held.endpoint,
-          registered: false,
-        });
-        setNotice(
-          "Este navegador já guarda uma inscrição que não está registrada na sua conta. Desative este navegador e ative de novo para criar uma inscrição nova.",
-        );
-        return;
-      }
+      // Keep this as the first asynchronous operation in the click handler. subscribe() itself
+      // requests permission; a separate requestPermission()/register()/fetch would lose the gesture.
       const created = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: vapidKeyToBytes(settings.data.publicKey),
       });
-      if (!mounted.current) {
-        // The person navigated away mid-flow: do not leave a half-registered subscription behind.
-        await created.unsubscribe().catch(() => {});
-        return;
-      }
+      if (!mounted.current) return;
+      setPermission(Notification.permission);
       setDevice({
         phase: "held",
         endpoint: created.endpoint,
@@ -320,12 +182,9 @@ export function PushNotificationControls() {
           fallback: "Não foi possível registrar este dispositivo para avisos.",
         });
       } catch (error) {
-        // Undo only the subscription this click created, so the browser does not hold a registration
-        // the server knows nothing about. An older one stays exactly where it is.
-        await created.unsubscribe().catch(() => {});
+        // Another tab may have created the same subscription concurrently. Do not remove it
+        // automatically on a failed POST; the UI offers explicit removal and retry.
         if (!mounted.current) return;
-        setDevice({ phase: "unknown", endpoint: null });
-        setLocalHash(null);
         throw error;
       }
       if (!mounted.current) return;
@@ -336,16 +195,18 @@ export function PushNotificationControls() {
       });
       refresh();
     } catch (error) {
-      if (mounted.current)
+      if (mounted.current) {
+        setPermission(Notification.permission);
         setNotice(
           error instanceof Error && error.message
             ? error.message
             : "Não foi possível ativar avisos neste dispositivo.",
         );
+      }
     } finally {
       if (mounted.current) setBusy(null);
     }
-  }, [busy, refresh, settings.data, support.supported]);
+  }, [busy, refresh, registration, settings.data, support.supported]);
 
   /*
    * Explicit disable: the server first, so the endpoint stops being used even if this tab dies before
@@ -392,6 +253,7 @@ export function PushNotificationControls() {
     !support.supported ||
     settings.isPending ||
     settings.isError ||
+    !registration ||
     permission === "denied";
   const action: "enable" | "disable" | "regrant" =
     busy !== null
@@ -418,11 +280,15 @@ export function PushNotificationControls() {
             ? "O navegador bloqueou avisos para este site. Siga os passos abaixo para liberar."
             : settings.isPending
               ? "Verificando o registro deste dispositivo no ownbot…"
-              : registered
-                ? "Este navegador está registrado para receber avisos da conta em que você está."
-                : device.phase === "held"
-                  ? "Este navegador guarda uma inscrição que o ownbot não reconhece como sua. Ela pode pertencer a outra conta usada neste navegador; o ownbot não a remove nem a re-registra sem um clique seu."
-                  : "Nenhum aviso ativado neste navegador ainda.";
+              : prepareError
+                ? prepareError
+                : !registration && settings.data?.enabled
+                  ? "Preparando os avisos neste navegador…"
+                  : registered
+                    ? "Este navegador está registrado para receber avisos da conta em que você está."
+                    : device.phase === "held"
+                      ? "Este navegador guarda uma inscrição que o ownbot não reconhece como sua. Ela pode pertencer a outra conta usada neste navegador; o ownbot não a remove nem a re-registra sem um clique seu."
+                      : "Nenhum aviso ativado neste navegador ainda.";
 
   const instructions: string[] = [];
   if (!support.supported) {
@@ -510,6 +376,12 @@ export function PushNotificationControls() {
         {stateLine}
         {notice ? ` ${notice}` : ""}
       </p>
+
+      {prepareError && (
+        <Button variant="outline" size="sm" onClick={() => setPrepareAttempt(value => value + 1)}>
+          Tentar preparar novamente
+        </Button>
+      )}
 
       {instructions.length > 0 && (
         <ul className="text-sm text-muted-foreground list-disc space-y-1 pl-5">

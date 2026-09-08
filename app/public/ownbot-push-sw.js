@@ -48,15 +48,14 @@ function tagFor(raw) {
   return id;
 }
 
-self.addEventListener("install", () => {
-  // Nothing to precache, so there is nothing to wait for.
-  self.skipWaiting();
+self.addEventListener("install", (event) => {
+  event.waitUntil(self.skipWaiting());
 });
 
-self.addEventListener("activate", () => {
+self.addEventListener("activate", (event) => {
   // Claim the open tabs so a registration made on this page is the one that receives pushes now,
   // rather than after the next navigation.
-  self.clients.claim();
+  event.waitUntil(self.clients.claim());
 });
 
 self.addEventListener("push", (event) => {
