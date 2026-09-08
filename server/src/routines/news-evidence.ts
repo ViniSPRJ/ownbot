@@ -28,6 +28,23 @@ function publicationTime(text: string): number | null {
   return dates.length === 1 ? dates[0]! : null;
 }
 
+const ZONED_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+/** A timestamp the browser read out of the page's own markup, carried as a structured field.
+ *
+ * The text scan above cannot certify almost any real article: `computer_read` returns live
+ * `innerText`, so `<time itemprop="datePublished" datetime="...">` never reaches it, and what a
+ * reader sees instead is `07/09/2026 09h00` — which no honest certifier should accept. The
+ * publisher's own zoned metadata is a different kind of claim: it came from the served document on
+ * this run, not from the model, and it is a complete zoned instant. Same trust rule, new channel.
+ * Unzoned, human, malformed or absent stays unverified exactly as before. */
+function structuredPublicationTime(value: unknown): number | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!ZONED_ISO.test(trimmed)) return null;
+  const parsed = Date.parse(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function createNewsEvidence(now = Date.now()) {
   const sources = new Map<string, Source>();
   const evidence = new Map<string, Evidence>();
@@ -38,7 +55,7 @@ export function createNewsEvidence(now = Date.now()) {
       if (value?.ok !== true || typeof value.url !== "string" || typeof value.text !== "string" || value.text.length < 120) return;
       if (/security verification|subscribe to continue|assine para continuar lendo|acesso exclusivo para assinantes/i.test(value.text)) return;
       const url = canonical(value.url); if (!url) return;
-      sources.set(url, { url, title: typeof value.title === "string" ? value.title : "", text: value.text.slice(0, 100_000), publishedAt: publicationTime(value.text) });
+      sources.set(url, { url, title: typeof value.title === "string" ? value.title : "", text: value.text.slice(0, 100_000), publishedAt: structuredPublicationTime(value.publishedAt) ?? publicationTime(value.text) });
     } catch { /* Refusals, stale refs and unreadable responses are not article evidence. */ }
   }
   function assess(): string[] {
@@ -72,7 +89,10 @@ export function createNewsEvidence(now = Date.now()) {
     capture, tool,
     finalise(report: string, resultMessageId?: string): string {
       const issues = assess();
-      const citations = [...report.matchAll(/https?:\/\/[^\s<>"\])]+/g)].map(m => canonical(m[0].replace(/[.,;!?]+$/, "")));
+      // Trailing prose/markdown punctuation is not part of the address. Without this a backtick or
+      // an asterisk around a link survives into `canonical`, which percent-encodes it (`…%60`), so a
+      // URL the Bot really did read and register reads as an invented citation.
+      const citations = [...report.matchAll(/https?:\/\/[^\s<>"\])]+/g)].map(m => canonical(m[0].replace(/[.,;:!?'"`*[\]()<>]+$/, "")));
       for (const url of new Set(citations)) if (!evidence.has(url)) issues.push(`${url}: citação sem registro de evidência nesta execução`);
       if (citations.length === 0) issues.push("relatório sem citações registradas");
       const entries = [...evidence.values()];

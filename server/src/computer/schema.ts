@@ -81,6 +81,15 @@ export type NavigateResult = {
   text: string;
   /** True when the page was longer than the extract, so the Bot can say so rather than guess. */
   truncated: boolean;
+  /**
+   * The page's own publication instant, zoned ISO, read from its markup by the browser.
+   *
+   * Optional because it was added after the first computers shipped, and an agent-computer that has not
+   * been redeployed does not send it. `null` means the page did not declare one unambiguously, which is
+   * not the same as a page that is old: absence certifies nothing either way, so the editorial guard
+   * falls back to the text scan and, failing that, leaves the item unverified context.
+   */
+  publishedAt?: string | null;
   /** Wall-clock ms the navigation took, for the progress line in the transcript. */
   elapsedMs: number;
 };

@@ -53,3 +53,53 @@ test.each(["https://example.com/source", '<a href="https://example.com/source">s
  const e=createNewsEvidence(now);
  expect(()=>e.finalise(value)).toThrow("https://example.com/source: citação sem registro");
 });
+
+// The gap these close: every existing case proves a date CANNOT be certified. None proved that a
+// real publisher's timestamp CAN, so the suite stayed green while no live article could pass.
+test("a structured publishedAt carried from the page markup certifies freshness", async () => {
+ const e=createNewsEvidence(now);
+ // What Valor actually serves: a human date in the text, a zoned one in <time itemprop=datePublished>.
+ e.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\n${valor.author}\n07/09/2026 09h00\n${excerpt}`,truncated:false,publishedAt:"2026-09-07T09:00:00-03:00"}));
+ expect(JSON.parse(await e.tool.execute(valor)).freshness).toBe("current");
+ capture(e,ft); await e.tool.execute(ft);
+ expect(e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toContain("publicação na janela de 24h");
+});
+test.each(["07/09/2026 09h00","2026-09-07T10:00:00","2026-09-08T05:00:00Z","09-07-2026T09:00:00-03:00","","not-a-date"])("a structured publishedAt that is unzoned, future or malformed stays unverified: %s", async publishedAt => {
+ const e=createNewsEvidence(now);
+ e.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\n${valor.author}\n${excerpt}`,truncated:false,publishedAt}));
+ expect(JSON.parse(await e.tool.execute(valor)).freshness).toBe("unverified");
+});
+test("a non-string structured publishedAt cannot certify freshness", async () => {
+ for(const publishedAt of [42,null,true,{},["2026-09-07T09:00:00-03:00"]]) {
+  const e=createNewsEvidence(now);
+  e.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\n${valor.author}\n${excerpt}`,truncated:false,publishedAt}));
+  expect(JSON.parse(await e.tool.execute(valor)).freshness).toBe("unverified");
+ }
+});
+test("a structured publishedAt beyond 24h becomes dated context, never current news", async () => {
+ const e=createNewsEvidence(now);
+ e.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\n${valor.author}\n${excerpt}`,truncated:false,publishedAt:"2026-09-06T10:00:00-03:00"}));
+ const result=JSON.parse(await e.tool.execute(valor));
+ expect(result.freshness).toBe("old"); expect(result.permittedUse).toContain("context only");
+});
+test("a structured publishedAt beats a missing text label, and a text label still works alone", async () => {
+ const structured=createNewsEvidence(now);
+ structured.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\n${valor.author}\n${excerpt}`,truncated:false,publishedAt:"2026-09-07T10:00:00-03:00"}));
+ expect(JSON.parse(await structured.tool.execute(valor)).freshness).toBe("current");
+ // An older agent-computer that sends no publishedAt at all must behave exactly as before.
+ const legacy=createNewsEvidence(now); capture(legacy);
+ expect(JSON.parse(await legacy.tool.execute(valor)).freshness).toBe("current");
+});
+
+const BQ = String.fromCharCode(96);
+test.each([`${BQ}`, "*", "[", "'", '"', "," , ";", ":", "!", "?", ".."])("trailing %s around a citation does not manufacture an unregistered-citation failure", async punct => {
+ const e=createNewsEvidence(now); capture(e); await e.tool.execute(valor); capture(e,ft); await e.tool.execute(ft);
+ // Both addresses were really read and really registered; a markdown slip must not invent a gap.
+ const report=`leia [FT](${ft.url}${punct}) e ainda [Valor](${valor.url}${punct})`;
+ expect(e.finalise(report)).toContain("publicação na janela de 24h");
+});
+test("a bare citation trailed by punctuation still resolves to the registered source", () => {
+ const e=createNewsEvidence(now); capture(e); return e.tool.execute(valor).then(()=>{
+  expect(()=>e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`)).toThrow("coluna de opinião do FT");
+ });
+});
