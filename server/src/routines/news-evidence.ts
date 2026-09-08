@@ -53,7 +53,7 @@ export function createNewsEvidence(now = Date.now()) {
     try {
       const value = JSON.parse(answer);
       if (value?.ok !== true || typeof value.url !== "string" || typeof value.text !== "string" || value.text.length < 120) return;
-      if (/security verification|subscribe to continue|assine para continuar lendo|acesso exclusivo para assinantes/i.test(value.text)) return;
+      if (/security verification|subscribe to (?:read|continue)|assine para continuar lendo|acesso exclusivo para assinantes/i.test(value.text)) return;
       const url = canonical(value.url); if (!url) return;
       sources.set(url, { url, title: typeof value.title === "string" ? value.title : "", text: value.text.slice(0, 100_000), publishedAt: structuredPublicationTime(value.publishedAt) ?? publicationTime(value.text) });
     } catch { /* Refusals, stale refs and unreadable responses are not article evidence. */ }

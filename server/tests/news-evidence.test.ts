@@ -103,3 +103,8 @@ test("a bare citation trailed by punctuation still resolves to the registered so
   expect(()=>e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`)).toThrow("coluna de opinião do FT");
  });
 });
+test.each(["Subscribe to read", "Subscribe to continue", "Assine para continuar lendo"])("a paywall shell is not article evidence: %s", async phrase => {
+ const e=createNewsEvidence(now);
+ e.capture("computer_read",JSON.stringify({ok:true,url:ft.url,title:ft.title,text:`${ft.title}\n${phrase}\n${ft.author}\nPublished: 2026-09-07T10:00:00-03:00\n${excerpt}`,truncated:false}));
+ expect(await e.tool.execute(ft)).toStartWith("Refused.");
+});
