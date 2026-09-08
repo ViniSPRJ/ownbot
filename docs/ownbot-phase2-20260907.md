@@ -70,6 +70,16 @@ inbox and channel preview carry its qualification; previously streamed conversat
 and intermediate handoffs are not rewritten or retrospectively certified. The live v2 report
 was replayed through the guard and rejected without altering its retained history.
 
+A final live v3 acceptance exercised the new tool through Grok ACP: 12 calls, five accepted
+registrations and seven refusals. The run ended at 00:36:01 UTC on September 8 with
+`editorial_coverage_incomplete`, not an execution-deadline failure. Its qualified draft and
+corresponding failed-status internal notification were persisted; zero outbound rows were
+created. The FT classification and several publication dates remained unverified, so this
+report did not receive integral editorial approval. This does not assert the FT article was
+not opinion; it records insufficient evidence in the returned body. All seven routines retained
+their instructions, cron, timezone, next execution, enabled state, channel and agent.
+The morning News routine remains scheduled for September 8 at 10:30 UTC (07:30 Brasília).
+
 Nexus FX's read-only exporter now recognizes valid historical blocked-before-gateway
 receipts while continuing to reject malformed records. Live quote validity and the age of
 the last decision receipt are reported separately; no trading flags, orders or receipts were
@@ -85,7 +95,7 @@ Thirteen Python exporter tests and the Pi native/live acceptance checks also pas
 final editorial change passed 128 focused and database integration tests plus server typecheck.
 
 Source, profiles, Postgres, SQLite history and UI backups were retained before deployment,
-including backup-delivery-20260908T000355Z. The original repository remains configured as
+including backup-delivery-20260908T000355Z and backup-delivery-20260908T002717Z. The original repository remains configured as
 upstream, and the fork's beelink-local branch receives the reviewed changes. Credentials,
 private configuration and dependency links are excluded from source control.
 
