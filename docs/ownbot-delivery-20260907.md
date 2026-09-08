@@ -98,3 +98,33 @@ execution. The UI displayed the preserved Onyx GPT-5.6-Terra selection, all thre
 choices and the dark homepage after restart. User-selected provider/model mappings were
 not overwritten. Backups of source, profiles, local history, Postgres and the previous UI
 were retained on Beelink before deployment; no credentials were committed.
+
+## Safari push and News follow-up (September 7 evening, Brasília)
+
+Safari's disabled notification button was a feature-detection defect: pushManager belongs
+to ServiceWorkerRegistration, not ServiceWorkerContainer. The UI now prepares and waits
+for its active worker before enabling the button, calls subscribe directly from the user
+gesture, and confirms the owner-bound server registration before displaying activation.
+Subscription persistence failures remain visible and never silently unsubscribe a device.
+The browser-push, mounted-control and service-worker tests passed; app typecheck and the
+Beelink production build passed. The updated UI was deployed and real Safari registration
+completed after the user permission dialog.
+
+One diagnostic re-delivery of an existing News routine notification was queued for each
+of the owner's four enabled subscriptions. All four were accepted by the push service on
+the first attempt, with no delivery error. No routine result or inbox record was fabricated
+or rewritten. The user then explicitly confirmed that the notification appeared on a device;
+this confirmation is separate from the server's delivery status. The existing ownbot web
+app was updated using Safari's Add to Dock flow, pointing to the Beelink Tailnet homepage.
+
+News already had routines/list_routines granted. Grok native discovery omitted MCP tool
+names containing double underscores. Grok-only stable transport aliases now retain the
+original owner-bound executor and audit reference. A native probe changed from one of
+three tools discovered to all three. ACP permission, alias and session tests passed.
+After deployment, News performed an audited successful routines/list_routines call from
+its normal channel and confirmed the enabled morning schedule for September 8 at 07:30
+America/Sao_Paulo. The routine had pointed at the user's deleted News channel; its binding
+was repaired to the replacement News channel while preserving its instruction, cron,
+timezone, owner, enabled state and next execution time. No research routine was rerun.
+
+The concurrent Beelink skills.yaml edit was preserved byte-for-byte during deployment.
