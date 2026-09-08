@@ -1,4 +1,4 @@
-export type AcpProvider = "codex" | "claude" | "grok";
+export type AcpProvider = "codex" | "claude" | "grok" | "pi";
 type ObjectValue = Record<string, any>;
 const object = (value: unknown): ObjectValue | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -19,6 +19,9 @@ export class AcpPermissionGate {
       const qualified = permission ? call.name : call._meta?.claudeCode?.toolName;
       if (typeof qualified !== "string" || !qualified.startsWith("mcp__ownbot__")) return;
       name = qualified.slice("mcp__ownbot__".length);
+    } else if (this.provider === "pi") {
+      if (call._meta?.ownbot_pi_tool !== true || call.rawInput?.server !== "ownbot") return;
+      name = call.rawInput.tool;
     } else {
       const input = object(call.rawInput);
       if (input?.variant !== "MCPTool" || typeof input.tool_name !== "string" || !input.tool_name.startsWith("ownbot__")) return;

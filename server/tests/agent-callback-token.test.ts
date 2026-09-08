@@ -303,3 +303,18 @@ describe("how deep a run is", () => {
     );
   });
 });
+
+describe("signed original requester for asynchronous dependencies", () => {
+  test("preserves the server origin across scratch runs; legacy assertions have none", () => {
+    const originRequest = { botId: "coord", threadId: "visible" };
+    expect(readRunAssertion(mintRunAssertion({ ...RUN, threadId: "scratch", originRequest }, KEY), KEY)?.originRequest).toEqual(originRequest);
+    expect(readRunAssertion(mintRunAssertion(RUN, KEY), KEY)?.originRequest).toBeUndefined();
+  });
+  test("changing the encoded requester invalidates the signature", () => {
+    const signed = mintRunAssertion({ ...RUN, originRequest: { botId: "coord", threadId: "visible" } }, KEY);
+    const [payload, signature] = signed.split(".");
+    const forged = JSON.parse(Buffer.from(payload!, "base64url").toString());
+    forged.originRequest.threadId = "victim";
+    expect(readRunAssertion(`${Buffer.from(JSON.stringify(forged)).toString("base64url")}.${signature}`, KEY)).toBeNull();
+  });
+});

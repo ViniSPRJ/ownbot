@@ -321,6 +321,7 @@ export function createHandoffDesk(options: {
         atMost: { keyPrefix: runPrefix, max: caps.maxPerRun },
         payload: {
           fromBotId: from.botId,
+          originRequest: from.originRequest ?? { botId: from.botId, threadId: from.threadId },
           ...(envelope.priority === "urgent" ? { priority: "urgent" } : {}),
           toBotId: found.id,
           actorId: from.actorId,

@@ -47,3 +47,15 @@ test("Claude and Grok reject a changed MCP target in the permission request", ()
     expect(gate.decide(fixture(provider,"another").request,"s1")).toEqual({outcome:{outcome:"cancelled"}});
   }
 });
+
+test("Pi allows only a correlated Ownbot MCP grant and rejects native or changed targets", () => {
+  const gate = new AcpPermissionGate("pi", new Set(["echo"]));
+  const call = { toolCallId: "pi-call", _meta: { ownbot_pi_tool: true }, rawInput: { server: "ownbot", tool: "echo" } };
+  gate.observe({ ...call, sessionUpdate: "tool_call", status: "pending" });
+  const params = { sessionId: "s", toolCall: call, options: [{ optionId: "once", kind: "allow_once" }] };
+  expect(gate.decide({ ...params, toolCall: { ...call, rawInput: { server: "ownbot", tool: "bash" } } }, "s")).toEqual({ outcome: { outcome: "cancelled" } });
+  expect(gate.decide({ ...params, toolCall: { ...call, _meta: {} } }, "s")).toEqual({ outcome: { outcome: "cancelled" } });
+  expect(gate.decide(params, "wrong-owner-session")).toEqual({ outcome: { outcome: "cancelled" } });
+  expect(gate.decide(params, "s")).toEqual({ outcome: { outcome: "selected", optionId: "once" } });
+  expect(gate.decide(params, "s")).toEqual({ outcome: { outcome: "cancelled" } });
+});

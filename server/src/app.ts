@@ -1,3 +1,6 @@
+import { readPushConfig } from "./notifications/push-config";
+import { createPushRoutes } from "./notifications/push-routes";
+import type { PushStore } from "./notifications/push-store";
 import { createNotificationsRoutes } from "./notifications/routes";
 import type { NotificationsStore } from "./notifications/store";
 import { createRoutineEventRoutes, type RoutineEventStore } from "./routines/events";
@@ -224,6 +227,7 @@ export function createApp(
   routineEvents?: RoutineEventStore,
   notifications?: NotificationsStore,
   localEnrollment?: Hono,
+  push?: PushStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -829,6 +833,14 @@ export function createApp(
         (await agentProfileStore.get(actor, botId)) !== null
     : async () => true;
 
+  if (push) {
+    app.route("/api/notifications/push", createPushRoutes(push, requireUser, readPushConfig, {
+      allowedOrigins: [...new Set([
+        ...(config.auth?.trustedOrigins ?? []),
+        ...(config.appUrl ? [new URL(config.appUrl).origin] : []),
+      ])],
+    }));
+  }
   if (notifications) app.route("/api/notifications", createNotificationsRoutes(notifications, requireUser));
   if (routineEvents) app.route("/api/routine-events", createRoutineEventRoutes(routineEvents, requireUser));
   if (agentMemory) app.route("/api/agent-memory", createAgentMemoryRoutes(agentMemory, requireUser, canUseBot));

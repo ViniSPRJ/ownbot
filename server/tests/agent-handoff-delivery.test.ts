@@ -44,7 +44,7 @@ function delivery(
   events: BaseEvent[],
   agent: AbstractAgent | null = stubAgent(),
   lockHeld = true,
-  options: { history?: readonly unknown[]; deadlineMs?: number } = {},
+  options: { history?: readonly unknown[]; deadlineMs?: number; signRun?: Parameters<typeof createHandoffDelivery>[0]["signRun"] } = {},
 ) {
   const requests: Array<{
     threadId: string;
@@ -64,6 +64,7 @@ function delivery(
       agentFor: async () => agent,
       history: async () => options.history ?? PRIOR,
       newRunId: () => "run-2",
+      ...(options.signRun ? {signRun: options.signRun} : {}),
       mintThreadId: () => "scratch-thread",
       lock: {
         acquire: async () => {
@@ -782,4 +783,13 @@ describe("a history read that fails", () => {
     ).rejects.toThrow("the platform answered 500");
     expect(lockCalls).toEqual([]);
   });
+});
+
+
+test("delegation signature binds the acquired run and actual scratch thread", async () => {
+  const bound: unknown[] = [];
+  const test = delivery(FINISHED, stubAgent(), true, {signRun: input => { bound.push(input); return "new-exact-signature"; }});
+  await test.delivery.deliver({work:WORK,message:"task",assertion:"legacy-unbound-signature"});
+  expect(bound).toEqual([{work:WORK,runId:"platform-run",threadId:"scratch-thread"}]);
+  expect(test.requests[0]?.input.forwardedProps).toEqual({openbotRun:"new-exact-signature"});
 });

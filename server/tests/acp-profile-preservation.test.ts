@@ -112,7 +112,8 @@ describe("ACP runtime preserves the built-in Bot's composed profile", () => {
     expect(agent).not.toBeInstanceOf(BuiltInAgent);
 
     const events = await collect(agent, input("thread"));
-    expect(events.map((e) => e.type)).toEqual(["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED"]);
+    expect(events.map((e) => e.type)).toEqual(["RUN_STARTED", "TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "CUSTOM", "RUN_FINISHED"]);
+    expect(events.find(e => e.type === "CUSTOM")).toMatchObject({name:"ownbot.acp.final-message",value:{messageId:(events.find(e => e.type === "TEXT_MESSAGE_END") as any).messageId}});
     const records = await cli.records();
     const prompt: string = records.find((r) => r.method === "session/prompt")!.text;
 

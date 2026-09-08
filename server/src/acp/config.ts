@@ -9,7 +9,7 @@ const absolutePath = processText.refine(isAbsolute);
 const profile = z
   .object({
     command: absolutePath,
-    provider: z.enum(["codex", "claude", "grok"]).optional(),
+    provider: z.enum(["codex", "claude", "grok", "pi"]).optional(),
     args: z.array(processText).default([]),
     workspaceRoot: absolutePath,
     env: z

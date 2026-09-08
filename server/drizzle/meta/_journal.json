@@ -211,6 +211,13 @@
       "when": 1788640000003,
       "tag": "0029_internal_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788640000004,
+      "tag": "0030_web_push",
+      "breakpoints": true
     }
   ]
 }

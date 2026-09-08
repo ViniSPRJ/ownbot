@@ -1,0 +1,14 @@
+{
+  "piCommand": "/home/viniciuspinho/ownbot-pi-acp/runtime/node_modules/.bin/pi",
+  "defaultModel": "nemotron-m4",
+  "models": [
+    {
+      "id": "nemotron-m4",
+      "name": "Nemotron · M4",
+      "model": "Nemotron-3-Super-120B-5bit",
+      "baseUrl": "http://100.92.206.45:8081/v1",
+      "contextWindow": 262144,
+      "maxTokens": 32768
+    }
+  ]
+}

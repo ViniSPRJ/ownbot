@@ -87,8 +87,10 @@ skills:
       (Nemotron-3-Super-120B) and pi-m5 (qwen3.8-flash-next), each with up to four concurrent
       jobs. Read pi_status for live capacity and model identity; do not change their models.
       Always submit coding jobs with background: true and a stable idempotencyKey per logical
-      task. The immediate response is acceptance, not completion. Preserve jobId and query
-      pi_status with that jobId until succeeded, failed or interrupted. On an ambiguous timeout,
+      task. The immediate response is acceptance, not completion. Preserve jobId. When ownbot
+      confirms durable completion tracking, end the turn: completed, failed or interrupted jobs
+      wake the requesting agent automatically. Use pi_status only for diagnosis or when tracking
+      could not be persisted. On an ambiguous timeout,
       repeat only the identical request and idempotencyKey; never create a duplicate job.
       When a subtask needs the repository, pass its absolute workspace path. Pi works on a copy
       and returns a diff and staging path; it does not alter the original. Inspect every result,

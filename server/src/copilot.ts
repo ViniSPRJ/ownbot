@@ -469,6 +469,7 @@ export async function buildAgents(
   agentFetch?: AgentFetch,
   /** How a run gets its tool for handing work on. Absent means no Bot is offered one. */
   handoff?: HandoffForRun,
+  observeTools?: ToolObserverForRun,
 ): Promise<Record<string, AbstractAgent>> {
   const vendors = await loadVendors().catch(() => [] as readonly string[]);
   return Object.fromEntries(
@@ -487,6 +488,7 @@ export async function buildAgents(
           selection,
           agentFetch,
           handoff,
+          observeTools,
         ),
       ]),
     ),
@@ -505,6 +507,7 @@ async function buildAgent(
   selection?: ToolSelection,
   agentFetch?: AgentFetch,
   handoff?: HandoffForRun,
+  observeTools?: ToolObserverForRun,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -552,7 +555,7 @@ async function buildAgent(
         ownerId,
         prompt: builtInAgentPrompt(promptAgent, tools, computerGuidance, connectedVendors),
         profile: acp,
-        tools: async () => tools,
+        tools: async (input) => observeTools ? observeTools(agent.id, input, tools) : tools,
       });
     const whole = acpAgentFor(granted);
     if (!handoff) return whole;
@@ -651,7 +654,7 @@ async function buildAgent(
     );
 
   const whole = withTools(granted);
-  if (!narrowing && !handoff) return whole;
+  if (!narrowing && !handoff && !observeTools) return whole;
 
   return new RunBuiltAgent(
     { agentId: agent.id, description: agent.name },
@@ -667,10 +670,11 @@ async function buildAgent(
        * than a run and knows neither.
        */
       const passing = (await handoff?.(agent.id, input)) ?? [];
-      const tools = passing.length > 0 ? [...offered, ...passing] : offered;
+      const rawTools = passing.length > 0 ? [...offered, ...passing] : offered;
+      const tools = observeTools ? [...await observeTools(agent.id, input, rawTools)] : rawTools;
       // Nothing added and nothing narrowed means nothing to rebuild, and reusing the agent already
       // built for this request keeps that path allocation-for-allocation what it was.
-      return tools.length === granted.length && passing.length === 0
+      return !observeTools && tools.length === granted.length && passing.length === 0
         ? whole
         : withTools(tools);
     },
@@ -1009,6 +1013,7 @@ export async function resolveRuntimeAgents(
    * theirs to see at all; what narrows is what gets built.
    */
   onlyBotId?: string,
+  observeTools?: ToolObserverForRun,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -1039,8 +1044,11 @@ export async function resolveRuntimeAgents(
     selection,
     agentFetch,
     handoff,
+    observeTools,
   );
 }
+
+export type ToolObserverForRun = (botId: string, input: RunAgentInput, tools: readonly GrantedTool[]) => Promise<readonly GrantedTool[]>;
 
 /** What one Bot may call, for the person whose request this is. */
 export type LoadToolsForBot = (botId: string) => Promise<GrantedTool[]>;
@@ -1109,6 +1117,7 @@ export function createRequestAgents(
    * roster that person can see, so a Bot must never be able to address one they cannot.
    */
   handoffForActor?: (actorId: string) => HandoffForRun,
+  observeToolsForActor?: (actorId: string) => ToolObserverForRun,
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
@@ -1124,6 +1133,8 @@ export function createRequestAgents(
       selectionForActor?.(actor.id),
       agentFetch,
       handoffForActor?.(actor.id),
+      undefined,
+      observeToolsForActor?.(actor.id),
     );
   };
 }
@@ -1248,6 +1259,7 @@ export function mountCopilotRuntime(
    * the runtime, hops and routines share one runner and one lock map.
    */
   localThreads?: LocalThreadStore,
+  observeToolsForActor?: (actorId: string) => ToolObserverForRun,
 ) {
   if (config.runtime.mode === "sse" && !localThreads) {
     throw new Error(
@@ -1294,6 +1306,7 @@ export function mountCopilotRuntime(
       // see is still absent; what this skips is constructing the other Bots and asking the database
       // what each of them was granted, on every delivery and again on every retry.
       input.botId,
+      observeToolsForActor?.(actor.id),
     );
     return agents[input.botId] ?? null;
   };
@@ -1317,6 +1330,7 @@ export function mountCopilotRuntime(
     selectionForActor,
     agentFetch,
     handoffForActor,
+    observeToolsForActor,
   ) as never;
   const telemetry = config.accessibility
     ? { telemetryProperties: { accessibility_title: "OpenBot" as const } }

@@ -1,0 +1,22 @@
+{
+  "pi-m4": {
+    "provider": "pi",
+    "command": "/home/viniciuspinho/.bun/bin/bun",
+    "args": ["/home/viniciuspinho/openbot/integrations/pi-acp/src/server.ts"],
+    "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
+    "env": {
+      "OWNBOT_PI_ACP_CONFIG": "/home/viniciuspinho/ownbot-acp-runtime/pi-nemotron.json"
+    },
+    "timeoutMs": 900000
+  },
+  "pi-m5": {
+    "provider": "pi",
+    "command": "/home/viniciuspinho/.bun/bin/bun",
+    "args": ["/home/viniciuspinho/openbot/integrations/pi-acp/src/server.ts"],
+    "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
+    "env": {
+      "OWNBOT_PI_ACP_CONFIG": "/home/viniciuspinho/ownbot-acp-runtime/pi-qwen.json"
+    },
+    "timeoutMs": 1200000
+  }
+}

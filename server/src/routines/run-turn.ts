@@ -587,9 +587,18 @@ export function createTurnRunner(options: {
     /** Where the final round's messages start, so narration between computer calls is not the reply. */
     let lastRoundFrom = agent.messages.length;
     const chunks: string[] = [];
+    const chunksByMessage = new Map<string, string>();
+    let acpFinalMessageId: string | undefined;
     const spoken = agent.subscribe({
-      onTextMessageEndEvent: ({ textMessageBuffer }) => {
-        if (textMessageBuffer.length > 0) chunks.push(textMessageBuffer);
+      onTextMessageEndEvent: ({ event, textMessageBuffer }) => {
+        if (textMessageBuffer.length > 0) {
+          chunks.push(textMessageBuffer);
+          chunksByMessage.set(event.messageId, textMessageBuffer);
+        }
+      },
+      onCustomEvent: ({ event }) => {
+        if (event.name === "ownbot.acp.final-message" && typeof event.value?.messageId === "string")
+          acpFinalMessageId = event.value.messageId;
       },
     });
 
@@ -834,14 +843,15 @@ export function createTurnRunner(options: {
       ? finalRound
       : fresh;
     const replies = candidates.filter(
-      (message) => assistantText(message) !== undefined,
+      (message) => assistantText(message) !== undefined && (!acpFinalMessageId || message.id === acpFinalMessageId),
     );
     const said = replies
       .map(assistantText)
       .filter((text): text is string => text !== undefined);
     // The diff first, the streamed chunks as the fallback: the diff is what was persisted, which is
     // what the person will read in the channel, and the chunks are only what went past.
-    const replyText = (said.length > 0 ? said : chunks).join("\n\n");
+    const streamed = acpFinalMessageId ? [chunksByMessage.get(acpFinalMessageId) ?? ""] : chunks;
+    const replyText = (said.length > 0 ? said : streamed).join("\n\n");
 
     /*
      * An interrupt is an unfinished turn with nobody to ask, and it is checked BEFORE the empty-reply

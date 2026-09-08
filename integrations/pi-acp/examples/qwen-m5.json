@@ -1,0 +1,14 @@
+{
+  "piCommand": "/home/viniciuspinho/ownbot-pi-acp/runtime/node_modules/.bin/pi",
+  "defaultModel": "qwen-m5",
+  "models": [
+    {
+      "id": "qwen-m5",
+      "name": "Qwen 3.8 · M5",
+      "model": "qwen3.8-flash-next",
+      "baseUrl": "http://100.83.149.120:8080/v1",
+      "contextWindow": 262144,
+      "maxTokens": 16384
+    }
+  ]
+}

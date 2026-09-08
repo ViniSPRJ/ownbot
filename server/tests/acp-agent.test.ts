@@ -29,6 +29,20 @@ createInterface({input:process.stdin}).on('line',async line=>{
   log({method:m.method,sessionId:m.params.sessionId,text:m.params.prompt[0].text});
   pending=m;
   if(process.env.TEST_MODE==='hang')return;
+  if(process.env.TEST_MODE==='segments'||process.env.TEST_MODE==='no-final') {
+   const update=u=>emit({jsonrpc:'2.0',method:'session/update',params:{sessionId:m.params.sessionId,update:u}});
+   chunk(m.params.sessionId,'I will search.');
+   update({sessionUpdate:'tool_call',toolCallId:'tool1',status:'pending'});
+   update({sessionUpdate:'tool_call_update',toolCallId:'tool1',status:'in_progress'});
+   if(process.env.TEST_MODE==='no-final')return ok({stopReason:'end_turn'});
+   chunk(m.params.sessionId,'I found the first source.');
+   update({sessionUpdate:'tool_call_update',toolCallId:'tool2',status:'in_progress'});
+   chunk(m.params.sessionId,'Final report: ');
+   update({sessionUpdate:'tool_call_update',toolCallId:'tool1',status:'completed'});
+   update({sessionUpdate:'tool_call_update',toolCallId:'late-tool',status:'completed'});
+   chunk(m.params.sessionId,'two verified findings.');
+   return ok({stopReason:'end_turn'});
+  }
   if(process.env.TEST_MODE==='permission-matrix') {
    const cases=[
     {name:'valid'}, {name:'reuse',reuse:true}, {name:'replay-event',replay:true}, {name:'no-correlation',skip:true},
@@ -79,7 +93,7 @@ describe("ACP agent subprocess integration",()=>{
   const h=await harness(); const old=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="test-cloud-secret";
   try {
    const events=await collect(h.make(),input("thread"));
-   expect(events.map(e=>e.type)).toEqual(["RUN_STARTED","TEXT_MESSAGE_START","TEXT_MESSAGE_CONTENT","TEXT_MESSAGE_CONTENT","TEXT_MESSAGE_END","RUN_FINISHED"]);
+   expect(events.map(e=>e.type)).toEqual(["RUN_STARTED","TEXT_MESSAGE_START","TEXT_MESSAGE_CONTENT","TEXT_MESSAGE_CONTENT","TEXT_MESSAGE_END","CUSTOM","RUN_FINISHED"]);
    expect(events.filter(e=>e.type==="TEXT_MESSAGE_CONTENT").map(e=>(e as any).delta).join("")).toBe("Hello world");
    const records=await h.read();expect(records.find(r=>r.permission).permission).toEqual({outcome:{outcome:"cancelled"}});
    expect(records.find(r=>r.bridgeType)).toEqual({bridgeType:"http",bridgeHost:"127.0.0.1",tools:["approved_lookup"]});
@@ -119,7 +133,7 @@ describe("ACP agent subprocess integration",()=>{
    expect(records.filter(r=>r.method==="session/new")).toHaveLength(2);
   }finally{await h.close();}
  });
- for(const mode of ["fail","nohttp","stopped"])test(`fails closed without API fallback: ${mode}`,async()=>{
+ for(const mode of ["fail","nohttp","stopped","no-final"])test(`fails closed without API fallback: ${mode}`,async()=>{
   const h=await harness(mode);try{
    await expect(collect(h.make(),input("thread"))).rejects.toThrow("não houve fallback para API");
    const records=await h.read();expect(records.filter(r=>r.method==="initialize")).toHaveLength(1);
@@ -149,4 +163,41 @@ describe("ACP agent subprocess integration",()=>{
    expect(await Bun.file(join(cwd,".ownbot-session.json")).exists()).toBe(false);
   }finally{await h.close();}
  });
+});
+
+
+test("ACP tool boundaries preserve separate messages, final marker and replay cursor", async () => {
+ const h=await harness("segments");
+ try {
+  const first=await collect(h.make(),input("thread"));
+  const starts=first.filter(e=>e.type==="TEXT_MESSAGE_START") as any[];
+  const ends=first.filter(e=>e.type==="TEXT_MESSAGE_END") as any[];
+  expect(starts).toHaveLength(3); expect(ends.map(e=>e.messageId)).toEqual(starts.map(e=>e.messageId));
+  expect(new Set(starts.map(e=>e.messageId)).size).toBe(3);
+  const messages=starts.map(e=>({id:e.messageId,role:"assistant" as const,content:first.filter(c=>c.type==="TEXT_MESSAGE_CONTENT"&&(c as any).messageId===e.messageId).map(c=>(c as any).delta).join("")}));
+  expect(messages.map(m=>m.content)).toEqual(["I will search.","I found the first source.","Final report: two verified findings."]);
+  expect(first.find(e=>e.type==="CUSTOM")).toMatchObject({name:"ownbot.acp.final-message",value:{messageId:messages[2]!.id}});
+  const records=await h.read(); const cwd=records.find(r=>r.method==="session/new").cwd;
+  const saved=JSON.parse(await readFile(join(cwd,".ownbot-session.json"),"utf8"));
+  expect(saved.replyMessageId).toBe(messages[2]!.id); expect(saved.replyMessageIds).toEqual(messages.map(m=>m.id));
+  const next=input("thread",["u1"]); next.messages.push(...messages,{id:"u2",role:"user",content:"Next user question"});
+  await collect(h.make(),next);
+  const prompt=(await h.read()).filter(r=>r.method==="session/prompt")[1].text;
+  expect(prompt).toContain("Next user question");
+  for(const message of messages) expect(prompt).not.toContain(message.content);
+ } finally {await h.close();}
+});
+
+test("standard AG-UI consumer keeps every segment and exposes final ID to routine subscribers", async () => {
+ const h=await harness("segments");
+ try {
+  const agent=h.make(); agent.threadId="consumer-thread"; agent.messages=input("consumer-thread").messages;
+  const buffers: string[]=[]; let finalId: string|undefined;
+  agent.subscribe({onTextMessageEndEvent: ({textMessageBuffer}) => {buffers.push(textMessageBuffer);},onCustomEvent: ({event}) => {if(event.name==="ownbot.acp.final-message")finalId=event.value.messageId;}});
+  await agent.runAgent({runId:crypto.randomUUID()});
+  expect(buffers).toEqual(["I will search.","I found the first source.","Final report: two verified findings."]);
+  const messages=agent.messages.filter(m=>m.role==="assistant");
+  expect(messages).toHaveLength(3); expect(messages.at(-1)?.id).toBe(finalId);
+  expect(messages.at(-1)?.content).toBe("Final report: two verified findings.");
+ }finally{await h.close();}
 });

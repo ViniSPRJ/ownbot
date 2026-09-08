@@ -12,6 +12,7 @@ test("routine ACP coordinator delegates through owner-bound handoff tool without
  const before = process.env.OPENBOT_ACP_CONFIG;
  const configFile = join(root,"config.json");
  const sent: unknown[] = [];
+ const observed: unknown[] = [];
  const script = `import {createInterface} from 'node:readline';
  const emit=v=>process.stdout.write(JSON.stringify(v)+'\\n');let descriptor;
  createInterface({input:process.stdin}).on('line',async line=>{const m=JSON.parse(line);const reply=result=>emit({jsonrpc:'2.0',id:m.id,result});
@@ -36,9 +37,12 @@ test("routine ACP coordinator delegates through owner-bound handoff tool without
     from:{botId,actorId:"routine-owner",runId:input.runId,threadId:input.threadId,depth:0},
     hasSomebodyToAsk:true,maxDepth:3,maxPerRun:3,
    })!],"coord",
+   async (botId, input, tools) => { observed.push({botId,runId:input.runId,threadId:input.threadId}); return tools.map(tool => ({...tool, execute: async args => { const result = await tool.execute(args); observed.push({ref:tool.ref,result}); return result; }})); },
   );
   const agent=agents.coord!;
   await new Promise<void>((resolve,reject)=>agent.run({threadId:"routine-thread",runId:"routine-run",messages:[{id:"firing",role:"user",content:"Routine firing: ask codeexec to inspect workspace"}],state:{},context:[],tools:[],forwardedProps:{}}).subscribe({error:reject,complete:resolve}));
+  expect(observed[0]).toEqual({botId:"coord",runId:"routine-run",threadId:"routine-thread"});
+  expect(observed).toHaveLength(2);
   expect(sent).toEqual([{from:{botId:"coord",actorId:"routine-owner",runId:"routine-run",threadId:"routine-thread",depth:0},target:"codeexec",envelope:{task:"Inspect the workspace"}}]);
  } finally {
   if(before===undefined)delete process.env.OPENBOT_ACP_CONFIG;else process.env.OPENBOT_ACP_CONFIG=before;

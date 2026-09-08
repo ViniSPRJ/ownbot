@@ -13,7 +13,7 @@
  */
 import type { AbstractAgent, BaseEvent } from "@ag-ui/client";
 import type { Observable } from "rxjs";
-import type { HandoffDelivery } from "./handoff-runner";
+import type { HandoffDelivery, HandoffWork } from "./handoff-runner";
 import { textOf } from "./message-text";
 
 /** Whatever runs an agent against a thread and records what it did. */
@@ -132,6 +132,8 @@ export function createHandoffDelivery(options: {
    */
   setBusy?: (input: { threadId: string; busy: boolean }) => Promise<void>;
   newRunId: () => string;
+  /** Bind delegation identity to the actual acquired run, including its scratch thread. */
+  signRun?: (input: { work: HandoffWork; runId: string; threadId: string }) => string;
   /**
    * How long one delivery may take before it is given up on.
    *
@@ -372,7 +374,7 @@ export function createHandoffDelivery(options: {
                  * gone. It is what stops the addressed Bot handing the work on for ever, and it is
                  * signed, so the Bot cannot edit its own depth on the way past.
                  */
-                forwardedProps: { openbotRun: assertion },
+                forwardedProps: { openbotRun: options.signRun?.({ work, runId, threadId: where.threadId }) ?? assertion },
               },
             }),
             deadlineMs,

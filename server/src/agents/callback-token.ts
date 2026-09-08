@@ -102,6 +102,8 @@ export type RunAssertion = {
    * Optional on the way in so an assertion minted before this existed still reads, and read as zero.
    */
   depth?: number;
+  /** Original visible requester, preserved by the server across delegated scratch runs. */
+  originRequest?: { botId: string; threadId: string };
 };
 
 type SignedRun = RunAssertion & { exp: number };
@@ -163,6 +165,8 @@ export function readRunAssertion(
       ...(typeof payload.threadId === "string" && payload.threadId
         ? { threadId: payload.threadId }
         : {}),
+      ...(payload.originRequest && typeof payload.originRequest.botId === "string" && payload.originRequest.botId && typeof payload.originRequest.threadId === "string" && payload.originRequest.threadId
+        ? { originRequest: { botId: payload.originRequest.botId, threadId: payload.originRequest.threadId } } : {}),
       /*
        * A depth that is not a whole number at least zero is not a depth. Read as zero rather than
        * refused, because the assertion's signature has already been checked: this is a field that

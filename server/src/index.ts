@@ -1,6 +1,8 @@
 import { acpProfileFor } from "./acp/config";
 import { acpComputerTools } from "./acp/computer-tools";
 import { createNotificationsStore } from "./notifications/store";
+import { createPushStore } from "./notifications/push-store";
+import { startPushWorker } from "./notifications/push-worker";
 import { createLocalEnrollmentRoutes } from "./auth/local-enrollment";
 import { createRoutineEventStore } from "./routines/events";
 import { createHandoffStatusReader, handoffStatusTool } from "./agents/handoff-status-tool";
@@ -16,6 +18,7 @@ import { askTheirOwnPerson, escalationTool } from "./agents/escalation";
 import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
 import { createHandoffDelivery } from "./agents/handoff-delivery";
 import { createHandoffRunner } from "./agents/handoff-runner";
+import { createPiWatcher } from "./agents/pi-watch";
 import { handoffTool } from "./agents/handoff-tool";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
@@ -59,6 +62,7 @@ import {
   resolveRuntimeAgents,
   type ToolSelection,
   type HandoffForRun,
+  type ToolObserverForRun,
 } from "./copilot";
 import {
   createCredentialAdminService,
@@ -163,6 +167,10 @@ if (
 }
 const port = Number.parseInt(rawPort, 10);
 const database = createDatabase(config.databaseUrl);
+const pushStore = createPushStore(database, config.keyEncryptionKey);
+const pushWorker = startPushWorker(pushStore, {
+  onError: () => console.warn("Browser notification delivery will retry."),
+});
 await initializeDevActorUser(database, config.singleUser);
 // The vault, built before the agent store because a customer's agent may sit behind a key and that
 // key belongs here rather than on the agent row. See agents/auth-header.ts.
@@ -633,17 +641,20 @@ const agentFetch = createAgentFetch({
 
 // Shared by interactive turns, inbound handoffs and unattended routines.
 const handoffForActor = (actorId: string): HandoffForRun => async (botId, input) => {
-    const from = readRunAssertion(
+    const supplied = readRunAssertion(
       (input.forwardedProps as { openbotRun?: unknown } | undefined)
         ?.openbotRun,
       config.keyEncryptionKey,
     );
+    const from = supplied?.botId === botId && supplied.actorId === actorId &&
+      supplied.runId === input.runId && supplied.threadId === input.threadId ? supplied : null;
     const run = {
       botId,
       actorId,
       runId: input.runId,
       threadId: input.threadId,
       depth: from?.depth ?? 0,
+      ...(from?.originRequest ? { originRequest: from.originRequest } : {}),
     };
     /*
      * The caps are checked BEFORE the grants query, not inside the tool that would discard it.
@@ -724,6 +735,41 @@ const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
   };
 };
 
+const piWatcher = createPiWatcher({
+  queue: createWorkQueue(database), store: pluginStore,
+  owner: `pi-watch/${randomUUID()}`,
+  authorised: async (work) => {
+    try {
+      if (config.handoff.maxDepth <= 0 || config.handoff.maxPerRun <= 0) return false;
+      const actor = await actorFor(work.actorId);
+      const [executor, requester, grants] = await Promise.all([
+        agentProfileStore.get(actor, work.botId),
+        agentProfileStore.get(actor, work.originRequest.botId),
+        pluginStore.listForAgent(work.botId),
+      ]);
+      if (!executor || !requester || !grants.tools.some(t => t.ref === `${work.worker}/pi_status`)) return false;
+      // This is a receipt returning through an already-authorized, signed delegation, not a new
+      // direct handoff. Requiring a shortcut grant would break valid Coord -> Research -> Code chains.
+      return true;
+    } catch { return false; }
+  },
+});
+const observeToolsForActor = (actorId: string): ToolObserverForRun => async (botId, input, tools) => {
+  const supplied = readRunAssertion(
+    (input.forwardedProps as { openbotRun?: unknown } | undefined)?.openbotRun,
+    config.keyEncryptionKey,
+  );
+  const bound = supplied?.botId === botId && supplied.actorId === actorId &&
+    supplied.runId === input.runId && supplied.threadId === input.threadId ? supplied : null;
+  return piWatcher.observe({ botId, actorId, runId: input.runId, threadId: input.threadId,
+    depth: bound?.depth ?? 0, ...(bound?.originRequest ? {originRequest: bound.originRequest} : {}),
+  }, tools);
+};
+const piWatchLoop = repeatAfterEach(async () => {
+  try { await piWatcher.sweep(); } catch { console.warn("Pi completion tracking will retry."); }
+}, 5_000);
+const piWatchRetention = repeatAfterEach(async () => { await piWatcher.reap(); }, 3_600_000);
+
 /**
  * One Bot, built for a routine's turn, as its owner.
  *
@@ -762,6 +808,7 @@ const buildAgentFor = async ({
     // full so a Bot this owner cannot see is still absent, but the other Bots are neither built nor
     // asked what they hold.
     agentId,
+    observeToolsForActor(actor.id),
   );
   const agent = agents[agentId];
   if (!agent) {
@@ -893,6 +940,7 @@ const copilotRuntime = mountCopilotRuntime(
     void channelStore.signalBusy(input.threadId, input.busy).catch(() => {});
   },
   localThreads,
+  observeToolsForActor,
 );
 
 /**
@@ -944,6 +992,12 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
         config.keyEncryptionKey,
       ),
     delivery: createHandoffDelivery({
+      signRun: ({ work, runId, threadId }) => mintRunAssertion({
+        botId: work.toBotId, actorId: work.actorId, runId, threadId, depth: work.depth,
+        originRequest: work.answerIn
+          ? { botId: work.toBotId, threadId: work.answerIn }
+          : work.originRequest ?? { botId: work.fromBotId, threadId: work.threadId },
+      }, config.keyEncryptionKey),
       deadlineMs: config.handoff.deliveryDeadlineMs,
       /*
        * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
@@ -1167,6 +1221,7 @@ const app = createApp(
   createRoutineEventStore(database),
   createNotificationsStore(database),
   auth ? createLocalEnrollmentRoutes(database, auth, config) : undefined,
+  pushStore,
 );
 
 /**
@@ -1336,6 +1391,9 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       // Started only where handing work between Bots is switched on, so it is often not there.
       workOfferedListener?.stop() ?? Promise.resolve(),
       Promise.resolve(retentionSweeps.stop()),
+      pushWorker.stop(),
+      Promise.resolve(piWatchLoop.stop()),
+      Promise.resolve(piWatchRetention.stop()),
     ]).finally(() => process.exit(0));
   });
 }

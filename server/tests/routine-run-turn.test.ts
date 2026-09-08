@@ -1126,3 +1126,21 @@ describe("the computer loop", () => {
     expect(pending).toEqual([{ id: "c2", name: "y", args: "" }]);
   });
 });
+
+
+describe("ACP segmented final routine receipt", () => {
+  for (const persist of [true, false]) test(`uses only final ACP segment (${persist ? "transcript" : "stream fallback"})`, async () => {
+    const { run } = harness({ drive: ({ agent, observer }) => {
+      const parts = [{id:"narration",content:"I will browse now."},{id:"final",content:"Verified final briefing."}];
+      if (persist) agent.messages = [...agent.messages, ...parts.map(m => ({...m,role:"assistant" as const}))];
+      for (const subscriber of agent.subscribers) {
+        for (const part of parts) void subscriber.onTextMessageEndEvent?.({event:{type:EventType.TEXT_MESSAGE_END,messageId:part.id},textMessageBuffer:part.content} as any);
+        void subscriber.onCustomEvent?.({event:{type:EventType.CUSTOM,name:"ownbot.acp.final-message",value:{messageId:"final"}}} as any);
+      }
+      observer.complete();
+    }});
+    const result = await run();
+    expect(result.replyText).toBe("Verified final briefing.");
+    if (persist) expect(result.resultMessageId).toBe("final");
+  });
+});
