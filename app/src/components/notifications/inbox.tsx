@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
+import { PushNotificationControls } from "@/components/notifications/push-controls";
 import { inboxQuery, markNotification } from "@/lib/notifications/queries";
 
 export function NotificationInbox() {
@@ -20,6 +21,7 @@ export function NotificationInbox() {
         {inbox.data ? `${inbox.data.unreadCount} não lidas. ` : ""}Resumos e
         resultados ficam aqui, disponíveis após entrar na sua conta.
       </p>
+      <PushNotificationControls />
       {inbox.isPending && <p role="status">Carregando notificações…</p>}
       {inbox.isError && (
         <p role="alert">

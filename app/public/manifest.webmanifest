@@ -1,8 +1,9 @@
 {
   "name": "ownbot",
   "short_name": "ownbot",
-  "description": "OpenBot UI on the Beelink, tailnet only.",
-  "start_url": "/bot?agent=coord",
+  "description": "ownbot no seu navegador: avisos de rotinas e coworker, com o conteúdo dentro do ownbot.",
+  "id": "/",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
