@@ -139,17 +139,20 @@ export function createComputerTransport(
     const timeoutMs = timeoutMsOverride ?? defaultTimeoutMs;
 
     const target = baseUrl.replace(/\/$/, "");
+    // Normalised through `Headers`, which accepts every HeadersInit shape: spreading a `Headers`
+    // instance or an array of pairs would have silently yielded no headers at all.
+    const headers: Record<string, string> = Object.fromEntries(
+      new Headers(init?.headers),
+    );
+    headers["x-openbot-bot-id"] = botId;
+    if (options.token) {
+      headers["x-openbot-computer-token"] = options.token;
+    }
     let response: Response;
     try {
       response = await doFetch(`${target}${path}`, {
         ...init,
-        headers: {
-          ...(init?.headers as Record<string, string> | undefined),
-          "x-openbot-bot-id": botId,
-          ...(options.token
-            ? { "x-openbot-computer-token": options.token }
-            : {}),
-        },
+        headers,
         signal: caller
           ? AbortSignal.any([caller, AbortSignal.timeout(timeoutMs)])
           : AbortSignal.timeout(timeoutMs),

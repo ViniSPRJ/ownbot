@@ -256,7 +256,11 @@ const computerProvider = config.computer
   : undefined;
 
 if (computerProvider?.warm) {
-  void computerProvider.warm();
+  // Not awaited so startup is not held on the computer fleet; a failure is still reported rather
+  // than left to surface as an unhandled rejection.
+  computerProvider.warm().catch((error) => {
+    console.warn("Computer provider warm-up failed; computers start on first use.", error);
+  });
 }
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
 // administrator can change it while running, and a restart returns to the configured one.
