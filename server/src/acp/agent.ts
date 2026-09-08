@@ -7,6 +7,7 @@ import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { AcpStdioTransport } from "./transport";
 import { createToolBridge } from "./tool-bridge";
+import { acpToolsForProvider } from "./tool-names";
 import type { AcpProfile } from "./config";
 import type { GrantedTool } from "../plugins/tools";
 const running = new Set<string>();
@@ -58,7 +59,7 @@ export class AcpAgent extends AbstractAgent {
           let saved: SessionRecord | undefined;
           try { saved = JSON.parse(await readFile(stateFile,"utf8")); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
           phase = "tools";
-          const tools = await o.tools(input);
+          const { tools, guidance: toolGuidance } = acpToolsForProvider(o.profile.provider ?? "codex", await o.tools(input));
           const permissions = new AcpPermissionGate(o.profile.provider ?? "codex", new Set(tools.map(tool=>tool.name)));
           bridge = await createToolBridge(tools);
           if (cancelled) return;
@@ -119,7 +120,7 @@ export class AcpAgent extends AbstractAgent {
           const context=messages.map(m=>`${m.role}: ${typeof m.content==="string"?m.content:JSON.stringify(m.content??"")}`).join("\n\n");
           accepting=true;
           phase = "prompt";
-          const result = await transport.request<{stopReason:string}>("session/prompt",{sessionId,prompt:[{type:"text",text:o.prompt+"\n\nUse as ferramentas MCP ownbot para delegar e acessar os recursos concedidos. Permissões nativas adicionais podem ser recusadas. Quando message_bot aceitar uma delegação, informe o ID e encerre o turno; o ownbot entregará o resultado depois. Não mantenha o turno aberto consultando status repetidamente.\n\n"+context}]});
+          const result = await transport.request<{stopReason:string}>("session/prompt",{sessionId,prompt:[{type:"text",text:o.prompt+"\n\n"+toolGuidance+"\n\nUse as ferramentas MCP ownbot para delegar e acessar os recursos concedidos. Permissões nativas adicionais podem ser recusadas. Quando message_bot aceitar uma delegação, informe o ID e encerre o turno; o ownbot entregará o resultado depois. Não mantenha o turno aberto consultando status repetidamente.\n\n"+context}]});
           accepting=false;
           stopReason = ["end_turn", "max_tokens", "max_turn_requests", "refusal", "cancelled"].includes(result.stopReason) ? result.stopReason : "unknown";
           if (result.stopReason !== "end_turn") throw new Error("A CLI não concluiu o turno.");
