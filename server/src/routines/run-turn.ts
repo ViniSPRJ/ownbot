@@ -458,6 +458,8 @@ export function createTurnRunner(options: {
   maxToolRounds?: number;
   /** How long one headless turn may take before it is stopped. */
   turnTimeoutMs?: number;
+  /** Browser calls a research routine may spend in one turn; see `DEFAULT_RESEARCH_MAX_CALLS`. */
+  researchMaxCalls?: number;
   lockTtlSeconds?: number;
   heartbeatMs?: number;
   /** See {@link DEFAULT_ABORT_GRACE_MS}. */
@@ -470,6 +472,7 @@ export function createTurnRunner(options: {
     computer,
     maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS,
     turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
+    researchMaxCalls,
     lockTtlSeconds = DEFAULT_LOCK_TTL_SECONDS,
     heartbeatMs = DEFAULT_HEARTBEAT_MS,
     abortGraceMs = DEFAULT_ABORT_GRACE_MS,
@@ -477,7 +480,7 @@ export function createTurnRunner(options: {
 
   return async ({ ownerUserId, agentId, threadId, instruction }) => {
     const researchBudget = instruction.includes(RESEARCH_BUDGET_MARKER)
-      ? createRoutineResearchBudget(turnTimeoutMs)
+      ? createRoutineResearchBudget(turnTimeoutMs, undefined, researchMaxCalls)
       : undefined;
     /*
      * One id for this turn, minted once.

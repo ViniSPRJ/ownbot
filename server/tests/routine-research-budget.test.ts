@@ -21,7 +21,7 @@ test("research stops before the existing deadline, reserving time for all report
 
 test("call cap is shared by all browser tools without blocking result handoff", async () => {
   let calls = 0;
-  const tools = createRoutineResearchBudget(480_000, () => 0).wrap([
+  const tools = createRoutineResearchBudget(480_000, () => 0, 14).wrap([
     tool("computer_navigate", async () => { calls++; return '{"ok":true}'; }),
     tool("computer_read", async () => { calls++; return '{"ok":true}'; }),
     tool("message_bot", async () => "result queued"),
@@ -69,5 +69,5 @@ test("tool errors preserve refusal and separate routines do not share counters",
   const original = tool("computer_navigate", async () => { throw new Error("gateway denied"); });
   const [guarded] = createRoutineResearchBudget(480_000, () => 0).wrap([original]);
   await expect(guarded!.execute({})).rejects.toThrow("gateway denied");
-  expect(createRoutineResearchBudget(480_000, () => 0).guidance()).toContain("14 browser calls remain");
+  expect(createRoutineResearchBudget(480_000, () => 0).guidance()).toContain("30 browser calls remain");
 });

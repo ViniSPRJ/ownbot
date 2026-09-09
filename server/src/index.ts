@@ -902,6 +902,9 @@ const routineRunner = createRoutineRunner({
     ...(process.env.ROUTINE_TURN_TIMEOUT_MS
       ? { turnTimeoutMs: Number(process.env.ROUTINE_TURN_TIMEOUT_MS) }
       : {}),
+    ...(process.env.ROUTINE_RESEARCH_MAX_CALLS
+      ? { researchMaxCalls: Number(process.env.ROUTINE_RESEARCH_MAX_CALLS) }
+      : {}),
   }),
 });
 

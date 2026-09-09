@@ -36,8 +36,10 @@ const DISPATCH_RETRY_DELAY_MS = 60_000;
  */
 export const DEFAULT_GRACE_MS = 10 * 60_000;
 
-/** Longer than the five-minute turn deadline. Interrupted admitted executions require review;
- * unclaimed accepted work is recovered separately, without conflating dispatch with execution. */
+/** Longer than the default five-minute turn deadline; a deployment with a longer deadline passes
+ * `abandonedRunMs`, or a turn still running would be closed as interrupted from under it. Interrupted
+ * admitted executions require review; unclaimed accepted work is recovered separately, without
+ * conflating dispatch with execution. */
 const ABANDONED_RUN_MS = 10 * 60_000;
 
 export type RoutineSweepOptions = {
@@ -56,6 +58,8 @@ export type RoutineSweepOptions = {
   limit?: number;
   /** How late a firing may be and still be offered. Default ten minutes; see the policy below. */
   graceMs?: number;
+  /** After how long a claimed run with no outcome is closed as interrupted. Default ten minutes. */
+  abandonedRunMs?: number;
   now?: () => Date;
 };
 
@@ -254,7 +258,7 @@ export async function dispatchClaimedRoutines(
   // Claimed executions past the hard turn bound have unknown effects. Surface them, never replay.
   try {
     const reaped = await options.routineStore.reapAbandonedRuns(
-      ABANDONED_RUN_MS,
+      options.abandonedRunMs ?? ABANDONED_RUN_MS,
       "Execution interrupted after admission; effects and result are unknown. Review before retrying manually.",
     );
     if (reaped > 0) {

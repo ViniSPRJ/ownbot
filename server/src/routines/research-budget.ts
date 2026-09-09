@@ -10,15 +10,22 @@ const BROWSER_READS = new Set([
 
 export type RoutineResearchBudget = ReturnType<typeof createRoutineResearchBudget>;
 
+/**
+ * Browser calls one research turn may spend. Two newspapers, each an opinion column plus the day's
+ * reporting, cost roughly twenty navigations and reads; the rest is room for stale refs and a paywall
+ * retry. The time budget below still ends research first on a slow local model.
+ */
+export const DEFAULT_RESEARCH_MAX_CALLS = 30;
+
 export function createRoutineResearchBudget(
   timeoutMs: number,
   now: () => number = () => performance.now(),
+  maxCalls: number = DEFAULT_RESEARCH_MAX_CALLS,
 ) {
   const started = now();
   const editorial = createNewsEvidence();
   const reserveMs = Math.min(90_000, timeoutMs / 4);
   const researchMs = Math.max(0, timeoutMs - reserveMs);
-  const maxCalls = 14;
   let calls = 0;
   const staleRefs = new Set<string>();
   let serial: Promise<unknown> = Promise.resolve();

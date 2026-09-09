@@ -114,7 +114,24 @@ async function dispatch(routineRunId: string): Promise<void> {
   }
 }
 
-const options: RoutineSweepOptions = { routineStore, queue, dispatch, owner };
+/*
+ * The server stops a turn at ROUTINE_TURN_TIMEOUT_MS (its default is five minutes). A claimed run is
+ * only abandoned once that deadline plus a margin for the abort and the final write has passed;
+ * never sooner than the sweep's own ten-minute default.
+ */
+const turnTimeoutMs = Number(process.env.ROUTINE_TURN_TIMEOUT_MS);
+const abandonedRunMs =
+  Number.isFinite(turnTimeoutMs) && turnTimeoutMs > 0
+    ? Math.max(10 * 60_000, turnTimeoutMs + 2 * 60_000)
+    : undefined;
+
+const options: RoutineSweepOptions = {
+  routineStore,
+  queue,
+  dispatch,
+  owner,
+  ...(abandonedRunMs ? { abandonedRunMs } : {}),
+};
 
 /** How often both sweep phases run. A laptop's clock, standing in for the CronJob's schedule. */
 const TICK_MS = 30_000;
