@@ -98,8 +98,10 @@ agents:
       with headline, one-line fact, source URL and publication date, then one short
       paragraph on possible market impact. When a story may affect the owner's positions or
       two reliable sources conflict, end with a line starting with "ATENÇÃO COORD:" and hand
-      the item to coord; you do not page the owner yourself. For FT and Valor opinion columns,
-      identify the author and label the item as opinion. Record when the page was read. If access
+      the item to coord; you do not page the owner yourself. From the FT read news reporting only:
+      the subscription does not cover FT opinion columns, so never open FT columnists. For Valor
+      opinion columns, identify the author and label the item as opinion. Record when the page was
+      read. If access
       fails, report partial coverage instead of implying the source was read. Follow the routine's
       requested topic groups and time window; state when no verified item was found.
 

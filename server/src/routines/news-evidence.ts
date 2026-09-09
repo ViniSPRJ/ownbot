@@ -61,13 +61,15 @@ export function createNewsEvidence(now = Date.now()) {
   function assess(): string[] {
     const entries = [...evidence.values()]; const issues: string[] = [];
     if (!entries.some(e => e.kind === "opinion" && new URL(e.url).hostname === "valor.globo.com")) issues.push("coluna de opinião do Valor sem trecho e autoria verificados");
-    if (!entries.some(e => e.kind === "opinion" && /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) issues.push("coluna de opinião do FT sem trecho e autoria verificados");
+    // FT reporting only: the subscription does not cover FT columnists, so an opinion column there
+    // is a paywall shell, never evidence. Any verified FT article satisfies the FT requirement.
+    if (!entries.some(e => /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) issues.push("matéria do FT sem trecho e autoria verificados");
     for (const item of entries) if (item.useAs === "current" && item.freshness !== "current") issues.push(`${item.url}: ${item.freshness === "old" ? "fonte com mais de 24h usada como atual" : "data de publicação não verificada para uso como atual"}`);
     return issues;
   }
   const tool: GrantedTool = {
     name: "news_record_evidence", ref: "routine/news_record_evidence",
-    description: "Register each source before writing this News briefing. Requires its actual returned article URL, title, author and a literal 120+ character excerpt from computer_read/navigate (not a homepage or snapshot link). The server verifies the excerpt and labels publication time; never invent dates. Human/relative dates are unverified and may only be context. Valor opinion requires an actual /opiniao/coluna/ article. This is a local record, not a web request.",
+    description: "Register each source before writing this News briefing. Requires its actual returned article URL, title, author and a literal 120+ character excerpt from computer_read/navigate (not a homepage or snapshot link). The server verifies the excerpt and labels publication time; never invent dates. Human/relative dates are unverified and may only be context. Valor opinion requires an actual /opiniao/coluna/ article. FT counts as news reporting only: FT opinion columns are outside the subscription, do not open them. This is a local record, not a web request.",
     parameters: evidenceInput,
     async execute(args) {
       const parsed = evidenceInput.safeParse(args);

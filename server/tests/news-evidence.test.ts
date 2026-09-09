@@ -3,7 +3,7 @@ import { createNewsEvidence, NewsEditorialError } from "../src/routines/news-evi
 const now = Date.parse("2026-09-08T00:00:00Z");
 const excerpt = "A análise do autor examina o custo de capital e a evolução do crédito, distinguindo fatos observados de projeções condicionais para o próximo trimestre.";
 const valor = {url:"https://valor.globo.com/opiniao/coluna/analise.ghtml",title:"Uma análise dos juros",author:"Maria Silva",kind:"opinion",excerpt,useAs:"current"};
-const ft = {...valor,url:"https://www.ft.com/content/abc",title:"Bonds and inflation",author:"John Smith"};
+const ft = {...valor,url:"https://www.ft.com/content/abc",title:"Bonds and inflation",author:"John Smith",kind:"news"};
 function capture(e: ReturnType<typeof createNewsEvidence>, item = valor, date = "2026-09-07T10:00:00-03:00", tool = "computer_read") {
   e.capture(tool,JSON.stringify({ok:true,url:item.url,title:item.title,text:`${item.title}\nOpinion\n${item.author}\nPublished: ${date}\n${excerpt}`,truncated:false}));
 }
@@ -13,7 +13,7 @@ test("only a real article body and exact author/excerpt establish opinion covera
  capture(e,valor,undefined,"computer_snapshot"); expect(await e.tool.execute(valor)).toStartWith("Refused.");
  capture(e); expect(await e.tool.execute({...valor,excerpt:"Invented article text that was never returned by the browser. ".repeat(4)})).toStartWith("Refused.");
  expect(JSON.parse(await e.tool.execute(valor)).registered).toBe(true);
- expect(()=>e.finalise(`[Valor](${valor.url})`)).toThrow("coluna de opinião do FT");
+ expect(()=>e.finalise(`[Valor](${valor.url})`)).toThrow("matéria do FT");
  capture(e,ft); await e.tool.execute(ft);
  expect(e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toContain("publicação na janela de 24h");
 });
@@ -100,11 +100,19 @@ test.each([`${BQ}`, "*", "[", "'", '"', "," , ";", ":", "!", "?", ".."])("traili
 });
 test("a bare citation trailed by punctuation still resolves to the registered source", () => {
  const e=createNewsEvidence(now); capture(e); return e.tool.execute(valor).then(()=>{
-  expect(()=>e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`)).toThrow("coluna de opinião do FT");
+  expect(()=>e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`)).toThrow("matéria do FT");
  });
 });
 test.each(["Subscribe to read", "Subscribe to continue", "Assine para continuar lendo"])("a paywall shell is not article evidence: %s", async phrase => {
  const e=createNewsEvidence(now);
  e.capture("computer_read",JSON.stringify({ok:true,url:ft.url,title:ft.title,text:`${ft.title}\n${phrase}\n${ft.author}\nPublished: 2026-09-07T10:00:00-03:00\n${excerpt}`,truncated:false}));
  expect(await e.tool.execute(ft)).toStartWith("Refused.");
+});
+test("FT reporting satisfies FT coverage; an FT opinion claim still needs an opinion body", async () => {
+ const e=createNewsEvidence(now); capture(e); await e.tool.execute(valor);
+ // A news body: no "Opinion" label anywhere, so an opinion claim over it is refused.
+ e.capture("computer_read",JSON.stringify({ok:true,url:ft.url,title:ft.title,text:`${ft.title}\nMarkets\n${ft.author}\nPublished: 2026-09-07T10:00:00-03:00\n${excerpt}`,truncated:false}));
+ expect(await e.tool.execute({...ft,kind:"opinion"})).toStartWith("Refused.");
+ expect(JSON.parse(await e.tool.execute(ft)).coverageIssues).toEqual([]);
+ expect(e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toContain("Notícia: Bonds and inflation");
 });

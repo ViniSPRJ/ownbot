@@ -33,7 +33,7 @@ export function createRoutineResearchBudget(
   const guidance = () =>
     `Ownbot routine budget: ${remaining()} seconds remain; ${Math.max(0, maxCalls - calls)} browser calls remain. ` +
     `Reserve the final ${Math.round(reserveMs / 1000)} seconds for the complete requested report. ` +
-    "Cover every requested section, cite only retrieved evidence, and label source limitations. Never substitute fabricated facts for missing evidence. Before the final answer register every cited article with news_record_evidence (actual body, author, literal excerpt). Read actual FT and Valor opinion articles, not homepage links. Unverified publication dates are context only, not current news.";
+    "Cover every requested section, cite only retrieved evidence, and label source limitations. Never substitute fabricated facts for missing evidence. Before the final answer register every cited article with news_record_evidence (actual body, author, literal excerpt). Read actual FT news articles and one Valor opinion column, not homepage links; FT opinion columns are outside the subscription, do not open them. Unverified publication dates are context only, not current news.";
 
   return {
     guidance,
