@@ -80,6 +80,58 @@ function fakeAgent(): AbstractAgent {
   } as unknown as AbstractAgent;
 }
 
+for (const partial of [false, true]) {
+  test(`failed/cancelled turns retain the user before partial output: ${partial}`, async () => {
+    const dbPath = tempDb();
+    const runner = new LocalAgentRunner(dbPath);
+    const agent = {
+      agentId: "coord",
+      async runAgent(_input: unknown, { onEvent }: any) {
+        if (partial) {
+          onEvent({ event: { type: EventType.RUN_STARTED, threadId: "cancelled", runId: "r1" } });
+          onEvent({ event: { type: EventType.TEXT_MESSAGE_START, messageId: "partial", role: "assistant" } });
+          onEvent({ event: { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "partial", delta: "partial answer" } });
+        }
+        throw new Error("cancelled");
+      },
+      abortRun() {},
+    } as unknown as AbstractAgent;
+    const input = { threadId: "cancelled", runId: "r1", messages: [{ id: "u1", role: "user" as const, content: "first question" }], tools: [], context: [], state: {}, forwardedProps: {} };
+    await expect(collect(runner.run({ threadId: input.threadId, agent, input }))).rejects.toThrow("cancelled");
+    const restored = new LocalAgentRunner(dbPath);
+    expect(restored.getThreadMessages(input.threadId).map(m=>m.content)).toEqual(partial ? ["first question", "partial answer"] : ["first question"]);
+    await collect(restored.run({ threadId: input.threadId, agent: fakeAgent(), input: { ...input, runId: "r2", messages: [...input.messages, { id: "u2", role: "user", content: "next question" }] } }));
+    const messages = restored.getThreadMessages(input.threadId);
+    expect(messages.filter(m=>m.id==="u1")).toHaveLength(1);
+    expect(messages.map(m=>m.content)).toEqual(partial ? ["first question", "partial answer", "next question", "pong"] : ["first question", "next question", "pong"]);
+  });
+}
+
+for (const shown of [[], [{ id: "internal", role: "user", content: "Code returned a result." }]]) {
+  test(`handoff model instructions stay out of live replay and persisted history: ${shown.length}`, async () => {
+    const dbPath = tempDb();
+    const runner = new LocalAgentRunner(dbPath);
+    const input = { threadId: "handoff", runId: "r1", messages: [{ id: "internal", role: "user" as const, content: "PRIVATE ORCHESTRATION INSTRUCTIONS" }], tools: [], context: [], state: {}, forwardedProps: {} };
+    const agent = {
+      agentId: "coord",
+      async runAgent(received: any, { onEvent }: any) {
+        expect(received.messages).toEqual(input.messages);
+        onEvent({ event: { type: EventType.RUN_STARTED, threadId: input.threadId, runId: input.runId, input: received } });
+        onEvent({ event: { type: EventType.TEXT_MESSAGE_START, messageId: "reply", role: "assistant" } });
+        onEvent({ event: { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "reply", delta: "Result: 323" } });
+        onEvent({ event: { type: EventType.RUN_FINISHED, threadId: input.threadId, runId: input.runId } });
+      },
+      abortRun() {},
+    } as unknown as AbstractAgent;
+    const live = await collect(runner.run({ threadId: input.threadId, agent, input, persistedInputMessages: shown }));
+    const restored = new LocalAgentRunner(dbPath);
+    const replay = await collect(restored.connect({ threadId: input.threadId }));
+    expect(JSON.stringify(live)).not.toContain("PRIVATE ORCHESTRATION");
+    expect(JSON.stringify(replay)).not.toContain("PRIVATE ORCHESTRATION");
+    expect(restored.getThreadMessages(input.threadId).map(m=>m.content)).toEqual([...shown.map(m=>m.content), "Result: 323"]);
+  });
+}
+
 describe("local SQLite threads", () => {
   test("stores inbound user text and replays it after a new runner opens the same db", async () => {
     const dbPath = tempDb();

@@ -15,7 +15,7 @@ let pending; let permissionCount=0;
 const chunk=(sessionId,text)=>emit({jsonrpc:'2.0',method:'session/update',params:{sessionId,update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text}}}});
 createInterface({input:process.stdin}).on('line',async line=>{
  const m=JSON.parse(line); const ok=result=>emit({jsonrpc:'2.0',id:m.id,result});
- if(m.method==='initialize') {log({method:m.method,cloudKeyPresent:!!process.env.OPENAI_API_KEY});return ok({protocolVersion:1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:process.env.TEST_MODE!=='nohttp'}}});}
+ if(m.method==='initialize') {log({method:m.method,clientCapabilities:m.params.clientCapabilities,cloudKeyPresent:!!process.env.OPENAI_API_KEY});return ok({protocolVersion:1,agentCapabilities:{loadSession:true,mcpCapabilities:{http:process.env.TEST_MODE!=='nohttp'}}});}
  if(m.method==='session/new'||m.method==='session/load') {
   log({method:m.method,cwd:m.params.cwd,sessionId:m.params.sessionId});
   const descriptor=m.params.mcpServers[0];
@@ -29,6 +29,11 @@ createInterface({input:process.stdin}).on('line',async line=>{
   log({method:m.method,sessionId:m.params.sessionId,text:m.params.prompt[0].text});
   pending=m;
   if(process.env.TEST_MODE==='hang')return;
+  if(process.env.TEST_MODE==='notice'||process.env.TEST_MODE==='notice-only') {
+   emit({jsonrpc:'2.0',method:'session/update',params:{sessionId:m.params.sessionId,update:{sessionUpdate:'session_info_update',_meta:{jetbrains:{air:{version:1,sessionFailure:{severity:'warning',category:'unknown',title:'vendor-secret transport warning',actions:[]}}}}}}});
+   if(process.env.TEST_MODE==='notice')chunk(m.params.sessionId,'clean answer');
+   return ok({stopReason:'end_turn'});
+  }
   if(process.env.TEST_MODE==='segments'||process.env.TEST_MODE==='no-final') {
    const update=u=>emit({jsonrpc:'2.0',method:'session/update',params:{sessionId:m.params.sessionId,update:u}});
    chunk(m.params.sessionId,'I will search.');
@@ -133,7 +138,7 @@ describe("ACP agent subprocess integration",()=>{
    expect(records.filter(r=>r.method==="session/new")).toHaveLength(2);
   }finally{await h.close();}
  });
- for(const mode of ["fail","nohttp","stopped","no-final"])test(`fails closed without API fallback: ${mode}`,async()=>{
+ for(const mode of ["fail","nohttp","stopped","no-final","notice-only"])test(`fails closed without API fallback: ${mode}`,async()=>{
   const h=await harness(mode);try{
    await expect(collect(h.make(),input("thread"))).rejects.toThrow("não houve fallback para API");
    const records=await h.read();expect(records.filter(r=>r.method==="initialize")).toHaveLength(1);
@@ -163,6 +168,17 @@ describe("ACP agent subprocess integration",()=>{
    expect(await Bun.file(join(cwd,".ownbot-session.json")).exists()).toBe(false);
   }finally{await h.close();}
  });
+});
+
+test("Codex negotiates typed diagnostics without contaminating assistant text", async () => {
+ const h=await harness("notice");
+ try {
+  const events=await collect(h.make(),input("thread"));
+  expect((await h.read()).find(r=>r.method==="initialize").clientCapabilities).toEqual({_meta:{jetbrains:{air:{version:1,capabilities:["sessionFailure"]}}}});
+  expect(events.filter(e=>e.type==="TEXT_MESSAGE_CONTENT").map(e=>(e as any).delta)).toEqual(["clean answer"]);
+  expect(JSON.stringify(events)).not.toContain("vendor-secret");
+  expect(events.at(-1)?.type).toBe("RUN_FINISHED");
+ } finally {await h.close();}
 });
 
 

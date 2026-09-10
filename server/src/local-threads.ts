@@ -481,21 +481,33 @@ export class LocalAgentRunner extends AgentRunner {
     }).immediate();
   }
 
-  run(request: AgentRunnerRunRequest): Observable<BaseEvent> {
+  run(request: AgentRunnerRunRequest & { persistedInputMessages?: readonly unknown[] }): Observable<BaseEvent> {
     const subject = new ReplaySubject<BaseEvent>(Infinity);
     const events: BaseEvent[] = [];
     this.active.set(request.threadId, { agent: request.agent, subject });
 
 
     const runAgent = async () => {
+      let inbound: BaseEvent[] = [];
+      let persisted = false;
+      const persist = () => {
+        if (persisted) return;
+        if (inbound.length > 0) {
+          const startedAt = events.findIndex(event => event.type === EventType.RUN_STARTED);
+          events.splice(startedAt >= 0 ? startedAt + 1 : 0, 0, ...inbound);
+          inbound = [];
+        }
+        if (events.length > 0) appendEvents(this.db, request.threadId, events);
+        persisted = true;
+      };
       try {
         this.admitTrustDomain(request.threadId, agentIdOf(request.agent));
         touchThread(this.db, request.threadId, agentIdOf(request.agent));
         const already = knownMessageIds(loadEvents(this.db, request.threadId));
-        const inbound = eventsForInboundMessages(
+        inbound = eventsForInboundMessages(
           request.threadId,
           request.input.runId,
-          request.input.messages as InboundMessage[] | undefined,
+          (request.persistedInputMessages ?? request.input.messages) as InboundMessage[] | undefined,
           already,
         );
         let started = false;
@@ -530,24 +542,23 @@ export class LocalAgentRunner extends AgentRunner {
               }
               started = true;
             }
-            emit(event);
+            // Headless deliveries send private orchestration context to the model, but supply
+            // a separate transcript. Respect it on live replay as well as in SQLite.
+            if (event.type === EventType.RUN_STARTED && request.persistedInputMessages !== undefined) {
+              const startedEvent = event as BaseEvent & { input?: Record<string, unknown> };
+              // The visible input is persisted by `inbound`; seeding it here too would double
+              // its content when TEXT_MESSAGE_CONTENT is replayed after RUN_STARTED.
+              emit({ ...event, input: { ...startedEvent.input, messages: [] } } as BaseEvent);
+            } else {
+              emit(event);
+            }
           },
         });
-        if (inbound.length > 0) {
-          const startedAt = events.findIndex(
-            (event) =>
-              (event as { type?: string }).type === EventType.RUN_STARTED,
-          );
-          events.splice(startedAt >= 0 ? startedAt + 1 : 0, 0, ...inbound);
-        }
-        if (events.length > 0) {
-          appendEvents(this.db, request.threadId, events);
-        }
+        persist();
         subject.complete();
       } catch (error) {
-        if (events.length > 0) {
-          appendEvents(this.db, request.threadId, events);
-        }
+        // Failed and cancelled turns still own their inbound user messages.
+        persist();
         subject.error(error);
       } finally {
         this.active.delete(request.threadId);

@@ -76,10 +76,17 @@ export class AcpAgent extends AbstractAgent {
             },
             onNotification: (method, value) => {
               if (!accepting || method !== "session/update") return;
-              const event = value as {sessionId?:string;update?:{toolCallId?:string;rawInput?:{server?:string;tool?:string};_meta?:{is_mcp_tool_call?:boolean};sessionUpdate?:string;status?:string;content?:{type?:string;text?:string}}};
+              const event = value as {sessionId?:string;update?:{toolCallId?:string;rawInput?:{server?:string;tool?:string};_meta?:{is_mcp_tool_call?:boolean;jetbrains?:{air?:{sessionFailure?:{severity?:unknown;category?:unknown}}}};sessionUpdate?:string;status?:string;content?:{type?:string;text?:string}}};
               if (event.sessionId !== sessionId) return;
               permissions.observe(event.update);
               const update = event.update;
+              const notice = update?._meta?.jetbrains?.air?.sessionFailure;
+              if (update?.sessionUpdate === "session_info_update" && notice) {
+                // Negotiated Codex notices are diagnostics, never assistant prose or a final answer.
+                // Do not log their title/details: transport errors can contain private URLs or tokens.
+                console.warn(JSON.stringify({type:"acp-session-notice",agentId:o.agentId,runId:input.runId,
+                  severity:notice.severity === "error" ? "error" : "warning"}));
+              }
               // Split commentary at the beginning of a new tool call, never on late completion
               // updates that may arrive while the final answer is already streaming.
               if (update?.toolCallId && !seenToolCalls.has(update.toolCallId) &&
@@ -95,7 +102,12 @@ export class AcpAgent extends AbstractAgent {
             },
           });
           phase = "initialize";
-          const init = await transport.request<{protocolVersion:number;agentCapabilities?:{loadSession?:boolean;mcpCapabilities?:{http?:boolean}}}>("initialize",{protocolVersion:1,clientCapabilities:{},clientInfo:{name:"ownbot",version:"0.1.0"}});
+          // codex-acp 1.10 negotiates typed notices through this extension; without it, provider
+          // warnings arrive as agent_message_chunk and permanently contaminate chat/history.
+          const clientCapabilities = (o.profile.provider ?? "codex") === "codex"
+            ? {_meta:{jetbrains:{air:{version:1,capabilities:["sessionFailure"]}}}}
+            : {};
+          const init = await transport.request<{protocolVersion:number;agentCapabilities?:{loadSession?:boolean;mcpCapabilities?:{http?:boolean}}}>("initialize",{protocolVersion:1,clientCapabilities,clientInfo:{name:"ownbot",version:"0.1.0"}});
           if (init.protocolVersion !== 1) throw new Error("Versão ACP não suportada");
           if (!init.agentCapabilities?.mcpCapabilities?.http) throw new Error("Este agente ACP não oferece MCP HTTP para as ferramentas do ownbot.");
           phase = "session";
