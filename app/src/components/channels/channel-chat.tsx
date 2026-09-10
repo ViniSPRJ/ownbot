@@ -26,6 +26,7 @@ import {
 import { useActiveBot } from "@/lib/copilot/active-bot";
 import { ConversationProvider } from "@/lib/copilot/conversation";
 import { afterMs, joinWithin } from "@/lib/copilot/join-thread";
+import { mergeThreadHistory } from "@/lib/copilot/merge-history";
 import { repairUnansweredToolCalls } from "@/lib/copilot/repair-history";
 import { stoppedReason } from "@/lib/copilot/stopped-turn";
 import { readThreadMessages } from "@/lib/copilot/thread-messages";
@@ -161,26 +162,19 @@ export function ChannelChat({
           channel.threadId,
           runtimeAgentId,
         );
-        /*
-         * MERGED BY ID, NOT GATED ON AN EMPTY TRANSCRIPT. The earlier guard applied history only
-         * when nothing local existed yet, and a join that resolved after the deadline could still
-         * land a snapshot on the transcript — observed in Safari: the footer counted the unreadable
-         * turns, so the read had run, and the readable ones were not on screen after leaving the
-         * channel and coming back. History is prepended to whatever is local, minus ids already
-         * shown, and re-applied a few times so a late snapshot cannot erase it.
-         */
-        const restore = () => {
-          if (!current || stored.messages.length === 0) return;
-          const seen = new Set(agent.messages.map((message) => message.id));
-          const missing = stored.messages.filter((message) => !seen.has(message.id));
-          if (missing.length === 0) return;
-          agent.setMessages([...missing, ...agent.messages]);
+        // A reconnect can replace the transcript with a partial snapshot. Restore stored order
+        // and complete content, including ids already present in that snapshot.
+        const restore = (history: typeof stored) => {
+          if (!current || history.messages.length === 0) return;
+          const merged = mergeThreadHistory(history.messages, agent.messages);
+          if (merged !== agent.messages) agent.setMessages(merged);
         };
-        restore();
+        restore(stored);
         void (async () => {
           for (const delayMs of [1500, 3000, 6000]) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
-            restore();
+            if (!current) return;
+            restore(await readThreadMessages(channel.threadId, runtimeAgentId));
           }
         })();
         /*
@@ -215,12 +209,9 @@ export function ChannelChat({
    * than a second subscription means "the sidebar updated" and "the transcript refreshes" are the
    * one signal, and cannot drift apart.
    *
-   * APPENDED BY ID, NOT COMPARED BY LENGTH. The stored history is not the local transcript: it
-   * keeps only what `readableTurns` can parse, and the local side keeps tool lines the platform
-   * does not hand back — so after a headless turn the stored read can be shorter than the screen
-   * and still hold the news. What is new is exactly the messages whose ids this transcript has
-   * never seen; appending them leaves everything local intact, and this tab's own turns echo back
-   * with ids already on screen and append nothing.
+   * Merge using durable order, retaining local-only tool lines and newer streamed content.
+   * Appending only unseen ids misplaced older history after a headless callback and kept stale
+   * partial text forever when both versions used the same message id.
    *
    * Retried briefly, because the roster is patched when the turn is on record with the runner and
    * the platform's read of the thread can be a beat behind it.
@@ -239,6 +230,7 @@ export function ChannelChat({
     };
 
     let lastSeen = authoredAt();
+    let active = true;
 
     const pull = () => {
       void (async () => {
@@ -246,29 +238,32 @@ export function ChannelChat({
           if (delayMs > 0) {
             await new Promise((resolve) => setTimeout(resolve, delayMs));
           }
+          if (!active) return;
           const stored = await readThreadMessages(
             channel.threadId,
             runtimeAgentId,
           );
+          if (!active) return;
           const current = agentRef.current;
-          const seen = new Set(current.messages.map((message) => message.id));
-          const fresh = stored.messages.filter(
-            (message) => !seen.has(message.id),
-          );
-          if (fresh.length === 0) continue;
-          current.setMessages([...current.messages, ...fresh]);
+          const merged = mergeThreadHistory(stored.messages, current.messages);
+          if (merged === current.messages) continue;
+          current.setMessages(merged);
           return;
         }
       })();
     };
 
-    return queryClient.getQueryCache().subscribe(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
       const at = authoredAt();
       if (at && at !== lastSeen) {
         lastSeen = at;
         pull();
       }
     });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [channel.id, channel.threadId, runtimeAgentId]);
 
   // Tool calls from this conversation act on this coworker's own computer.

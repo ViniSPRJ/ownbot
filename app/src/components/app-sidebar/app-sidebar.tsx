@@ -20,10 +20,11 @@ import {
   type LinkOptions,
   useNavigate,
   useParams,
+  useRouter,
 } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type * as React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +46,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
@@ -208,6 +210,13 @@ function ChannelRow({
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const router = useRouter();
+  const { setOpenMobile } = useSidebar();
+  // Reveal the destination after navigating from the narrow-screen drawer.
+  useEffect(
+    () => router.subscribe("onResolved", () => setOpenMobile(false)),
+    [router, setOpenMobile],
+  );
   const { data: currentUser } = useQuery(currentUserQueryOptions());
   const queryClient = useQueryClient();
   const navigate = useNavigate();
