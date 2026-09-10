@@ -240,12 +240,14 @@ test("a saved research marker installs a fresh budget and preserves the complete
   await expect(configured.run()).rejects.toThrow("editorial_coverage_incomplete");
   expect(configured.calls.built[0]?.researchBudget).toBeDefined();
   const text = String(configured.calls.runs[0]?.persistedInputMessages?.[0]?.content);
-  expect(text).toContain(instruction);
-  expect(text).toContain("browser calls remain");
+  expect(text).toBe(instruction);
+  expect(text).not.toContain("browser calls remain");
+  const modelTurn = configured.calls.runs[0]?.input.messages.at(-1) as { content?: unknown };
+  expect(String(modelTurn.content)).toContain("browser calls remain");
   const ordinary = harness({});
   await ordinary.run();
   expect(ordinary.calls.built[0]?.researchBudget).toBeUndefined();
-  expect(String(ordinary.calls.runs[0]?.persistedInputMessages?.[0]?.content)).toBe(frameFiring(INSTRUCTION));
+  expect(String(ordinary.calls.runs[0]?.persistedInputMessages?.[0]?.content)).toBe(INSTRUCTION);
 });
 
 const THREE_ROWS: HistoryRow[] = [
@@ -376,7 +378,7 @@ describe("the turn's message is framed as a firing happening now", () => {
     expect(content).toContain("routine");
   });
 
-  test("the framed message is what persists, so the transcript shows what was asked", async () => {
+  test("only the original instruction persists while the model receives the firing frame", async () => {
     const { run, calls } = harness({ history: THREE_ROWS });
 
     await run();
@@ -384,12 +386,15 @@ describe("the turn's message is framed as a firing happening now", () => {
     const [request] = calls.runs;
     expect(request?.persistedInputMessages).toHaveLength(1);
     const persisted = String(request?.persistedInputMessages?.[0]?.content);
-    expect(persisted).toContain(FRAME_MARK);
-    expect(persisted).toContain(INSTRUCTION);
+    expect(persisted).toBe(INSTRUCTION);
+    expect(persisted).not.toContain(FRAME_MARK);
+    const modelTurn = request?.input.messages.at(-1) as { id: string; content?: unknown };
+    expect(String(modelTurn.content)).toContain(FRAME_MARK);
+    expect(request?.persistedInputMessages?.[0]?.id).toBe(modelTurn.id);
   });
 
   test("a prior firing's framed message, arriving back as history, is not framed again", async () => {
-    // The framed text persists, so the NEXT firing reads it back as history. Only the new message is
+    // Legacy framed text can still arrive as history. Only the new model message is
     // framed; history is seeded exactly as the platform handed it over. Without that, an instruction
     // would grow a fresh paragraph of frame on every single firing until the turn is mostly frame.
     const alreadyFramed = frameFiring(

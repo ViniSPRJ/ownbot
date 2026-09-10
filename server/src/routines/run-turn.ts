@@ -379,11 +379,9 @@ function assistantText(message: Message): string | undefined {
  * {@link TurnRunner}'s signature: the row keeps what the person asked for, and this is how it is put
  * to the model.
  *
- * ONLY THE NEW MESSAGE IS FRAMED, and that matters twice. The framed text is what
- * `persistedInputMessages` writes to the transcript — correctly, since the transcript should show
- * what the turn was actually asked — so it comes back as HISTORY on the next firing. History is
- * converted and seeded exactly as the platform handed it over and nothing re-frames it; a test holds
- * that, because the alternative is a message that grows a fresh paragraph of frame every night.
+ * Only the new model input is framed. The visible transcript keeps the person's instruction,
+ * without scheduling machinery or research-budget diagnostics. Existing history, including legacy
+ * framed rows, is seeded as stored and never framed again.
  */
 /**
  * The tool calls in these messages that no tool message answers. After a run these are the frontend
@@ -530,7 +528,7 @@ export function createTurnRunner(options: {
     /*
      * This turn's own message — and the ONLY message that is framed. See {@link frameFiring} for the
      * firing it did nothing on. The seeded history above is untouched, which is what keeps a previous
-     * firing's framed message (it persisted, so it is back here as history) from being framed twice.
+     * firing's legacy framed message from being framed twice.
      */
     const turn = {
       id: crypto.randomUUID(),
@@ -548,9 +546,13 @@ export function createTurnRunner(options: {
      * unreadable.
      */
     const historicIds = new Set(history.messages.map((message) => message.id));
-    const persistedInputMessages = messages.filter(
-      (message) => !historicIds.has(message.id),
-    );
+    const persistedInputMessages = messages
+      .filter((message) => !historicIds.has(message.id))
+      .map((message) =>
+        message.id === turn.id
+          ? ({ ...message, content: instruction } as Message)
+          : message,
+      );
 
     /*
      * The Bot, resolved as its owner, and pointed at this thread.
