@@ -58,12 +58,13 @@ export function createNewsEvidence(now = Date.now()) {
       sources.set(url, { url, title: typeof value.title === "string" ? value.title : "", text: value.text.slice(0, 100_000), publishedAt: structuredPublicationTime(value.publishedAt) ?? publicationTime(value.text) });
     } catch { /* Refusals, stale refs and unreadable responses are not article evidence. */ }
   }
-  function assess(): string[] {
+  function assess(cited?: Set<string>): string[] {
     const entries = [...evidence.values()]; const issues: string[] = [];
-    if (!entries.some(e => e.kind === "opinion" && new URL(e.url).hostname === "valor.globo.com")) issues.push("coluna de opinião do Valor sem trecho e autoria verificados");
+    const covered = cited ? entries.filter(item => cited.has(item.url)) : entries;
+    if (!covered.some(e => e.kind === "opinion" && new URL(e.url).hostname === "valor.globo.com")) issues.push("coluna de opinião do Valor sem trecho e autoria verificados");
     // FT reporting only: the subscription does not cover FT columnists, so an opinion column there
     // is a paywall shell, never evidence. Any verified FT article satisfies the FT requirement.
-    if (!entries.some(e => /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) issues.push("matéria do FT sem trecho e autoria verificados");
+    if (!covered.some(e => /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) issues.push("matéria do FT sem trecho e autoria verificados");
     for (const item of entries) if (item.useAs === "current" && item.freshness !== "current") issues.push(`${item.url}: ${item.freshness === "old" ? "fonte com mais de 24h usada como atual" : "data de publicação não verificada para uso como atual"}`);
     return issues;
   }
@@ -75,9 +76,12 @@ export function createNewsEvidence(now = Date.now()) {
       const parsed = evidenceInput.safeParse(args);
       if (!parsed.success) return "Refused. Provide url, title, kind, author, literal excerpt and useAs (current/context).";
       const input = parsed.data, url = canonical(input.url), source = sources.get(url);
-      if (!source || !normal(source.text).includes(normal(input.excerpt)) || !normal(source.text).includes(normal(input.author)) || !normal(`${source.title}\n${source.text}`).includes(normal(input.title)))
+      if (!source || normal(input.excerpt).length < 120 || !normal(source.text).includes(normal(input.excerpt)) || !normal(source.text).includes(normal(input.author)) || !normal(`${source.title}\n${source.text}`).includes(normal(input.title)))
         return "Refused. The article body, literal excerpt, title or author was not verified in this run's browser responses. A click/homepage link is not a read article.";
       const parsedUrl = new URL(url);
+      // FT section pages can contain titles, bylines and snippets but are not read articles.
+      if (/(^|\.)ft\.com$/.test(parsedUrl.hostname) && !/^\/content\/[^/]+\/?$/.test(parsedUrl.pathname))
+        return "Refused. This FT URL is not an article. Open and read the actual /content/ article.";
       if (input.kind === "opinion" && parsedUrl.hostname === "valor.globo.com" && !/^\/opiniao\/coluna\/[^/]+/.test(parsedUrl.pathname))
         return "Refused. This Valor URL is not an opinion column. Open and read the actual /opiniao/coluna/ article before claiming opinion coverage.";
       if (input.kind === "opinion" && /(^|\.)ft\.com$/.test(parsedUrl.hostname) && (!parsedUrl.pathname.startsWith("/content/") || !/\bopinion\b/i.test(source.text)))
@@ -90,11 +94,11 @@ export function createNewsEvidence(now = Date.now()) {
   return {
     capture, tool,
     finalise(report: string, resultMessageId?: string): string {
-      const issues = assess();
       // Trailing prose/markdown punctuation is not part of the address. Without this a backtick or
       // an asterisk around a link survives into `canonical`, which percent-encodes it (`…%60`), so a
       // URL the Bot really did read and register reads as an invented citation.
       const citations = [...report.matchAll(/https?:\/\/[^\s<>"\])]+/g)].map(m => canonical(m[0].replace(/[.,;:!?'"`*[\]()<>]+$/, "")));
+      const issues = assess(new Set(citations));
       for (const url of new Set(citations)) if (!evidence.has(url)) issues.push(`${url}: citação sem registro de evidência nesta execução`);
       if (citations.length === 0) issues.push("relatório sem citações registradas");
       const entries = [...evidence.values()];

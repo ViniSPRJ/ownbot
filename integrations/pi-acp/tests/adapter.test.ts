@@ -1,12 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PiAcpAdapter } from "../src/adapter";
 import { configSchema, tailnetUrl } from "../src/config";
 import { createToolBridge } from "../../../server/src/acp/tool-bridge";
 import { AcpPermissionGate } from "../../../server/src/acp/permissions";
 import { z } from "zod";
+import { fixtureCommand } from "./fixture-command";
 const adapters: PiAcpAdapter[] = [],
   roots: string[] = [],
   bridges: Awaited<ReturnType<typeof createToolBridge>>[] = [];
@@ -63,7 +64,7 @@ async function setup({
   bridges.push(bridge);
   const a = new PiAcpAdapter({
     config: {
-      piCommand: resolve(import.meta.dir, "fixture-pi.ts"),
+      piCommand: await fixtureCommand(cwd),
       defaultModel: "m4",
       models,
     },

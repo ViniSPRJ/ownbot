@@ -876,6 +876,42 @@ function auditRetentionDays(environment: Environment): number | undefined {
   return days;
 }
 
+/**
+ * A whole number an operator supplied, or nothing.
+ *
+ * Refused rather than coerced, like everything else here, and for a sharper reason than most: these
+ * two settings are read straight into arithmetic. `Number("8m")` is `NaN`, `setTimeout(fn, NaN)`
+ * fires on the next tick, and `calls >= NaN` is false forever, so a typo did not disable a limit: it
+ * stopped every routine turn on its first millisecond and removed the browser-call budget at the
+ * same time, silently, with a bare "NaN" left in the guidance the model was reading. The worker
+ * already refused to believe such a value; the server was the half that did not.
+ */
+/**
+ * The longest delay `setTimeout` can hold.
+ *
+ * Past this a timer does not become a long one: the delay overflows a signed 32-bit integer and Node
+ * falls back to 1ms, which is the same failure as `NaN` wearing a plausible number. A deployment that
+ * asked for a very long turn would have had every turn stopped immediately instead.
+ */
+export const MAX_TIMER_MS = 2_147_483_647;
+
+export function wholeNumberEnv(
+  environment: Environment,
+  name: string,
+  max: number = Number.MAX_SAFE_INTEGER,
+): number | undefined {
+  const raw = optional(environment, name);
+  if (!raw) return undefined;
+
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > max) {
+    throw new Error(
+      `${name} must be a whole number between 1 and ${max}. Leave it unset to use the default.`,
+    );
+  }
+  return value;
+}
+
 function agentStallTimeoutMs(environment: Environment): number {
   const raw = optional(environment, "AGENT_STALL_TIMEOUT_MS");
   if (!raw) {

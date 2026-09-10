@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ChannelPage, ChannelSummary } from "../src/lib/channels/queries";
 import {
   applyChannelEvent,
+  parseChannelSocketMessage,
   type ChannelActivityEvent,
 } from "../src/lib/channels/use-channel-events";
 
@@ -221,4 +222,69 @@ describe("a busy signal", () => {
       data,
     );
   });
+});
+
+describe("delayed and duplicate activity", () => {
+  const latest = {
+    lastMessage: "Latest answer",
+    lastMessageAt: "2026-09-09T12:00:00.000Z",
+    lastMessageAgentId: "coord",
+  };
+  test.each(["2026-09-09T11:59:00Z", "2026-09-09T08:59:00-03:00", null])(
+    "does not replace a newer preview with %s",
+    (lastMessageAt) => {
+      const data = cache([channel("a", latest)]);
+      expect(
+        applyChannelEvent(
+          data,
+          event({ channelId: "a", lastMessageAt, lastMessage: "Old answer" }),
+        ),
+      ).toBe(data);
+    },
+  );
+  test("a duplicate preserves cache identity", () => {
+    const data = cache([channel("a", latest)]);
+    expect(applyChannelEvent(data, event({ channelId: "a", ...latest }))).toBe(
+      data,
+    );
+  });
+  test("an equal-time correction still updates the text", () => {
+    const data = cache([channel("a", latest)]);
+    const updated = applyChannelEvent(
+      data,
+      event({ channelId: "a", ...latest, lastMessage: "Corrected answer" }),
+    );
+    expect(updated).not.toBe("unknown");
+    if (updated !== "unknown")
+      expect(updated.pages[0]?.channels[0]?.lastMessage).toBe(
+        "Corrected answer",
+      );
+  });
+});
+
+test("malformed socket payloads are ignored without throwing", () => {
+  for (const value of [
+    null,
+    [],
+    42,
+    "text",
+    {},
+    { channelId: "a" },
+    event({ channelId: "a", busy: "yes" as never }),
+    event({ channelId: "a", lastMessageAt: "invalid" }),
+  ]) {
+    expect(parseChannelSocketMessage(value)).toBeNull();
+  }
+});
+test("resync and ordinary control/activity socket frames remain accepted", () => {
+  expect(parseChannelSocketMessage({ resync: true })).toEqual({ resync: true });
+  for (const flags of [
+    {},
+    { deleted: true as const },
+    { pinned: false },
+    { busy: true },
+  ]) {
+    const value = event({ channelId: "a", ...flags });
+    expect(parseChannelSocketMessage(value)).toEqual(value);
+  }
 });

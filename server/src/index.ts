@@ -54,7 +54,7 @@ import {
   describeComputerIsolation,
 } from "./computer/provider";
 import { createSnapshotStore } from "./computer/snapshot-store";
-import { loadConfig } from "./config";
+import { loadConfig, MAX_TIMER_MS, wholeNumberEnv } from "./config";
 import {
   type IdentifyActor,
   type IdentifyUser,
@@ -77,7 +77,7 @@ import { useRoutineTools } from "./plugins/builtin-routines";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { grantedSkills, grantedTools } from "./plugins/tools";
-import { createTurnRunner } from "./routines/run-turn";
+import { createTurnRunner, DEFAULT_ABORT_GRACE_MS } from "./routines/run-turn";
 import type { RoutineResearchBudget } from "./routines/research-budget";
 import { createHeadlessComputer } from "./routines/headless-computer";
 import { createRoutineRunner } from "./routines/runner";
@@ -875,6 +875,19 @@ const routineAgentRunner = routineIntelligence
     })
   : undefined;
 
+// Read before the runner is built so a malformed value is refused at boot, where an operator sees
+// it, rather than becoming a NaN that ends every routine turn a millisecond after it starts.
+const routineTurnTimeoutMs = wholeNumberEnv(
+  process.env,
+  "ROUTINE_TURN_TIMEOUT_MS",
+  // The backstop timer is this deadline plus the abort grace, and it must not overflow either.
+  MAX_TIMER_MS - DEFAULT_ABORT_GRACE_MS,
+);
+const routineResearchMaxCalls = wholeNumberEnv(
+  process.env,
+  "ROUTINE_RESEARCH_MAX_CALLS",
+);
+
 const routineRunner = createRoutineRunner({
   routineStore,
   channelStore,
@@ -899,11 +912,9 @@ const routineRunner = createRoutineRunner({
           }),
         }
       : {}),
-    ...(process.env.ROUTINE_TURN_TIMEOUT_MS
-      ? { turnTimeoutMs: Number(process.env.ROUTINE_TURN_TIMEOUT_MS) }
-      : {}),
-    ...(process.env.ROUTINE_RESEARCH_MAX_CALLS
-      ? { researchMaxCalls: Number(process.env.ROUTINE_RESEARCH_MAX_CALLS) }
+    ...(routineTurnTimeoutMs ? { turnTimeoutMs: routineTurnTimeoutMs } : {}),
+    ...(routineResearchMaxCalls
+      ? { researchMaxCalls: routineResearchMaxCalls }
       : {}),
   }),
 });

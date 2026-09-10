@@ -20,10 +20,12 @@ export type ChannelResyncEvent = { resync: true };
 /** What arrives on the socket. `resync` is the discriminant; an activity event never carries it. */
 export type ChannelSocketMessage = ChannelActivityEvent | ChannelResyncEvent;
 
-export function isResync(
-  message: ChannelSocketMessage,
-): message is ChannelResyncEvent {
-  return (message as ChannelResyncEvent).resync === true;
+export function isResync(message: unknown): message is ChannelResyncEvent {
+  return (
+    !!message &&
+    typeof message === "object" &&
+    (message as ChannelResyncEvent).resync === true
+  );
 }
 
 export type ChannelActivityEvent = {
@@ -48,6 +50,31 @@ export type ChannelActivityEvent = {
    */
   busy?: boolean;
 };
+
+/** Ignore malformed frames without letting them overwrite the roster cache. */
+export function parseChannelSocketMessage(
+  value: unknown,
+): ChannelSocketMessage | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (isResync(value)) return { resync: true };
+  const row = value as Record<string, unknown>;
+  const nullableString = (field: unknown) =>
+    field === null || typeof field === "string";
+  if (
+    typeof row.channelId !== "string" ||
+    !row.channelId ||
+    !nullableString(row.lastMessage) ||
+    !nullableString(row.lastMessageAt) ||
+    !nullableString(row.lastMessageAgentId) ||
+    (typeof row.lastMessageAt === "string" &&
+      !Number.isFinite(Date.parse(row.lastMessageAt))) ||
+    (row.deleted !== undefined && row.deleted !== true) ||
+    (row.pinned !== undefined && typeof row.pinned !== "boolean") ||
+    (row.busy !== undefined && typeof row.busy !== "boolean")
+  )
+    return null;
+  return value as ChannelActivityEvent;
+}
 
 /** The infinite query's cache, which holds pages rather than one array. */
 type ChannelCache = { pages: ChannelPage[]; pageParams: unknown[] };
@@ -127,9 +154,29 @@ export function applyChannelEvent(
     return { ...data, pages };
   }
 
+  // HTTP refreshes and other tabs can race socket delivery. An older event must not
+  // roll the preview back; equal timestamps may still carry a corrected final answer.
+  if (
+    previous.lastMessageAt &&
+    (!activity.lastMessageAt ||
+      Date.parse(activity.lastMessageAt) < Date.parse(previous.lastMessageAt))
+  )
+    return data;
+  if (
+    previous.lastMessage === activity.lastMessage &&
+    previous.lastMessageAt === activity.lastMessageAt &&
+    previous.lastMessageAgentId === activity.lastMessageAgentId
+  )
+    return data;
+
   // Preserve object identity for unchanged rows so memoized rows do not re-render.
   const next = page.channels.slice();
-  next[index] = { ...previous, ...activity };
+  next[index] = {
+    ...previous,
+    lastMessage: activity.lastMessage,
+    lastMessageAt: activity.lastMessageAt,
+    lastMessageAgentId: activity.lastMessageAgentId,
+  };
   next.sort(byRecency);
 
   // An event that changes nothing visible, a duplicate, or a report the server ignored as stale,
@@ -171,12 +218,16 @@ export function useChannelEvents() {
       };
 
       socket.onmessage = (message) => {
-        let parsed: ChannelSocketMessage;
+        let parsed: ChannelSocketMessage | null;
         try {
-          parsed = JSON.parse(message.data as string);
+          parsed = parseChannelSocketMessage(
+            JSON.parse(message.data as string),
+          );
         } catch {
           return;
         }
+
+        if (!parsed) return;
 
         // Refetch rather than patch: there is no delta to apply. Checked before anything reads
         // `channelId`, because this message has none.

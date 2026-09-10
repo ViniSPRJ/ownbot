@@ -71,7 +71,7 @@ import { createRoutineResearchBudget, RESEARCH_BUDGET_MARKER, type RoutineResear
  *
  * Injectable only so the test can exercise the backstop without waiting five real seconds for it.
  */
-const DEFAULT_ABORT_GRACE_MS = 5_000;
+export const DEFAULT_ABORT_GRACE_MS = 5_000;
 
 /** How long one headless turn may take before it is stopped. */
 const DEFAULT_TURN_TIMEOUT_MS = 5 * 60_000;

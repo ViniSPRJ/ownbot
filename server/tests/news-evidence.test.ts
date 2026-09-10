@@ -116,3 +116,25 @@ test("FT reporting satisfies FT coverage; an FT opinion claim still needs an opi
  expect(JSON.parse(await e.tool.execute(ft)).coverageIssues).toEqual([]);
  expect(e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toContain("Notícia: Bonds and inflation");
 });
+
+
+test.each(["https://www.ft.com/", "https://www.ft.com/markets", "https://www.ft.com/content/"])("FT landing pages cannot impersonate a read article: %s", async url => {
+  const e = createNewsEvidence(now);
+  const listing = {...ft, url};
+  capture(e, listing);
+  expect(await e.tool.execute(listing)).toStartWith("Refused.");
+});
+
+test("whitespace padding cannot turn a short snippet into article evidence", async () => {
+  const e = createNewsEvidence(now);
+  capture(e, ft);
+  expect(await e.tool.execute({...ft, excerpt: "A análise" + " ".repeat(130)})).toStartWith("Refused.");
+});
+
+test("registered but uncited required sources do not certify report coverage", async () => {
+  const e = createNewsEvidence(now);
+  capture(e); await e.tool.execute(valor);
+  capture(e, ft); await e.tool.execute(ft);
+  expect(() => e.finalise(`[FT](${ft.url})`)).toThrow("coluna de opinião do Valor");
+  expect(() => e.finalise(`[Valor](${valor.url})`)).toThrow("matéria do FT");
+});

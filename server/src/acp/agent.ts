@@ -1,4 +1,5 @@
 import { AcpPermissionGate } from "./permissions";
+import { acpFailureCause } from "./failure";
 import { acpEnvironment, selectSessionModel } from "./models";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
@@ -142,8 +143,10 @@ export class AcpAgent extends AbstractAgent {
           if (ownsLock) running.delete(key); transport?.close(); await bridge?.close();
           if(this.stop===stop)this.stop=undefined;
         }
-      })().catch(() => {
-        console.warn(JSON.stringify({type:"acp-run-failed",agentId:o.agentId,runId:input.runId,phase,stopReason}));
+      })().catch((error) => {
+        // The cause is one word from a fixed set, derived only from our own guards: the CLI's error
+        // text can carry prompt content, paths and credential-helper output, and is never logged.
+        console.warn(JSON.stringify({type:"acp-run-failed",agentId:o.agentId,runId:input.runId,phase,stopReason,cause:acpFailureCause(error)}));
         if (!cancelled) subscriber.error(new Error("A execução ACP não foi concluída. Verifique autenticação, perfil e disponibilidade da CLI; não houve fallback para API."));
       });
       return stop;

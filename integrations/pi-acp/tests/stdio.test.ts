@@ -6,6 +6,7 @@ import { AcpStdioTransport } from "../../../server/src/acp/transport";
 import { AcpPermissionGate } from "../../../server/src/acp/permissions";
 import { createToolBridge } from "../../../server/src/acp/tool-bridge";
 import { z } from "zod";
+import { fixtureCommand } from "./fixture-command";
 
 test("adapter executable speaks Ownbot ACP stdio including granted-tool permission and resume", async () => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-acp-stdio-"));
@@ -16,7 +17,7 @@ test("adapter executable speaks Ownbot ACP stdio including granted-tool permissi
   await writeFile(
     config,
     JSON.stringify({
-      piCommand: resolve(import.meta.dir, "fixture-pi.ts"),
+      piCommand: await fixtureCommand(cwd),
       defaultModel: "m4",
       models: [
         {
