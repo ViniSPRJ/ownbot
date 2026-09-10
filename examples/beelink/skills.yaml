@@ -84,8 +84,8 @@ skills:
     summary: Hand coding subtasks to the Pi coding agents on the M4 and M5 Macs, several in parallel.
     instructions: >-
       Split work into independent coding subtasks. The current local workers are pi-m4
-      (Nemotron-3-Super-120B) and pi-m5 (qwen3.8-flash-next), each with up to four concurrent
-      jobs. Read pi_status for live capacity and model identity; do not change their models.
+      (Qwen3.8-27B-oQ8e-mtp, up to eight concurrent jobs) and pi-m5 (qwen3.8-flash-next, up to four
+      concurrent jobs). Read pi_status for live capacity and model identity; do not change their models.
       Always submit coding jobs with background: true and a stable idempotencyKey per logical
       task. The immediate response is acceptance, not completion. Preserve jobId. When ownbot
       confirms durable completion tracking, end the turn: completed, failed or interrupted jobs
@@ -133,17 +133,6 @@ skills:
       - quantbrasil/quantbrasil_list_screening_universes
       - quantbrasil/quantbrasil_screen_candidates
       - quantbrasil/quantbrasil_cointegration_pair
-
-  - slug: notify-owner
-    title: Notificar o dono quando solicitado
-    summary: Notificações internas por padrão; aviso externo somente com pedido explícito.
-    instructions: >-
-      Routine completion summaries are delivered by the internal notification service. Do not
-      call notify/send for routine output or spontaneously page the owner. Use this external
-      tool only when the current user explicitly asks for that message, after the finding is
-      posted in its channel. Keep it under 400 characters and identify the channel.
-    tools:
-      - notify/send
 
   - slug: vps-health
     title: VPS health (vps-ops)

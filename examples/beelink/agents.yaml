@@ -9,7 +9,7 @@ agents:
       internas das rotinas. Não executa ordens de trading, envia e-mail, faz push ou deploy.
     avatar_seed: coord
     type: built-in
-    skills: [notify-owner, vps-health, nexus-fx-status-read-only]
+    skills: [vps-health, nexus-fx-status-read-only]
     model: gemini-3.8-flash
     system_prompt: >
       You are the coordinator. Answer in Portuguese (pt-BR). Route work to the right Bot,
