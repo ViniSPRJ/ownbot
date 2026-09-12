@@ -493,7 +493,23 @@ describe("ACP roles sharing one CLI keep their model bound to their own session"
     ]);
     const thinking = run.find((r) => r.method === "session/new")!;
     expect(thinking.sessionId).not.toBe(large.sessionId);
-    expect(thinking.cwd).not.toBe(large.cwd);
+    /*
+     * CHANGED ON PURPOSE, and it is the one line in this change that is not a bug fix.
+     *
+     * This asserted `thinking.cwd).not.toBe(large.cwd)`: the workspace moved with the model, because
+     * the model was folded into the directory's hash. In a coding cockpit that is the wrong trade. The
+     * person asks Codex for a change, then asks Claude to carry on with it, in the same repository. A
+     * model switch that orphaned the folder handed the second model an empty project and left the first
+     * model's work in a directory nothing pointed at.
+     *
+     * The isolation this test is actually about is kept: the session is not retuned, which the two
+     * `sessions[large]` assertions at the bottom prove. What changed is that the workspace belongs to
+     * the conversation now, and not to the model that happened to be selected when it started.
+     *
+     * To revert the decision, restore the assertion below and fold the model back into the workspace key
+     * in server/src/acp/session-state.ts `resolveWorkspaceDirectory`.
+     */
+    expect(thinking.cwd).toBe(large.cwd);
     expect(
       run.find((r) => r.method === "session/set_config_option"),
     ).toMatchObject({
