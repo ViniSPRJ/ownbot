@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { acpModelSelectionFor } from "../src/acp/config";
 import { createAcpConversationModelRoutes } from "../src/acp/conversation-model-routes";
 import type { ConversationModelStore } from "../src/acp/conversation-models";
-import { resolveConversationModel } from "../src/acp/conversation-models";
+import {
+  createConversationModelStore,
+  resolveConversationModel,
+} from "../src/acp/conversation-models";
 
 const original = {
   config: process.env.OPENBOT_ACP_CONFIG,
@@ -332,4 +335,81 @@ test("resolution drops a foreign connection and a lost membership, and honours n
       current,
     }),
   ).toEqual({ model: null });
+});
+
+test("the trail says whether the turn continued the session, with the model that answered", async () => {
+  // Only the audit half of the store is exercised here, so the database half is a planted failure: if
+  // recording a turn ever starts needing the selection table, this fails loudly rather than quietly
+  // writing nothing.
+  const rows: Record<string, unknown>[] = [];
+  const store = createConversationModelStore(
+    {
+      insert: () => {
+        throw new Error("recording a turn must not touch the selection table");
+      },
+    } as never,
+    {
+      insert: async (event) => {
+        void rows.push(event);
+      },
+    },
+  );
+
+  await store.recordTurnSession?.({
+    threadId: "thread-1",
+    agentId: "coord",
+    actorUserId: "owner",
+    resumed: true,
+    model: "gpt-5.1",
+    provider: "codex",
+    profileId: "codex",
+  });
+  await store.recordTurnSession?.({
+    threadId: "thread-1",
+    agentId: "coord",
+    actorUserId: "owner",
+    resumed: false,
+    freshReason: "anchor_dead",
+    model: null,
+    provider: "codex",
+    profileId: "codex",
+  });
+
+  expect(rows.map((row) => row.eventType)).toEqual([
+    "session.resumed",
+    "session.started",
+  ]);
+  expect(rows[0]).toMatchObject({ targetType: "thread", targetId: "thread-1" });
+  expect(
+    (rows[0] as { payload: Record<string, unknown> }).payload,
+  ).toMatchObject({
+    agentId: "coord",
+    model: "gpt-5.1",
+  });
+  // A new session names why. A resumed one has no reason to give, and must not invent one.
+  expect((rows[1] as { payload: Record<string, unknown> }).payload.reason).toBe(
+    "anchor_dead",
+  );
+  expect(
+    "reason" in (rows[0] as { payload: Record<string, unknown> }).payload,
+  ).toBe(false);
+});
+
+test("a trail that cannot take the row still answers the person", async () => {
+  const store = createConversationModelStore({} as never, {
+    insert: async () => {
+      throw new Error("the audit table is unreachable");
+    },
+  });
+  // Resolves rather than throwing: the turn already answered, and a trail that is late is not a reason
+  // to take the answer back.
+  await store.recordTurnSession?.({
+    threadId: "thread-1",
+    agentId: "coord",
+    actorUserId: "owner",
+    resumed: true,
+    model: null,
+    provider: "codex",
+    profileId: "codex",
+  });
 });

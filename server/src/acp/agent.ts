@@ -31,6 +31,8 @@ const running = new Set<string>();
 
 /** What the person sees when a turn does not continue the session they were in. */
 export type AcpSessionNotice = {
+  /** The notice describes one turn, and a turn belongs to a thread. */
+  threadId: string;
   resumed: boolean;
   freshReason?: FreshReason;
   model: string | null;
@@ -396,6 +398,7 @@ export class AcpAgent extends AbstractAgent {
            * of those has its history in front of the model.
            */
           o.onSession?.({
+            threadId: input.threadId,
             resumed,
             freshReason,
             model: selection.model,

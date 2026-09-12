@@ -1,4 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { type AuditStore, recordAuditEvent } from "../audit";
 import type { Database } from "../db/client";
 import {
   acpConversationModels,
@@ -43,6 +44,25 @@ export type ConversationModelStore = {
   /** Insert or replace. One conversation has one current choice per coworker. */
   set(selection: ConversationModelSelection, selectedBy: string): Promise<void>;
   clear(threadId: string, agentId: string): Promise<void>;
+  /**
+   * Whether this turn continued the ACP session or opened one, in the trail.
+   *
+   * On the store rather than on a separate audit handle because the store is already the threaded
+   * thing with database access, and because this fact belongs beside the conversation it describes. It is
+   * optional so a deployment without it keeps working; it is not optional in the sense of unimportant.
+   * A conversation that restarted quietly is indistinguishable from one that never did, and this row is
+   * the only thing that later says which.
+   */
+  recordTurnSession?(input: {
+    threadId: string;
+    agentId: string;
+    actorUserId: string | null;
+    resumed: boolean;
+    freshReason?: string;
+    model: string | null;
+    provider: string;
+    profileId: string;
+  }): Promise<void>;
 };
 
 const providers: readonly AcpProvider[] = ["codex", "claude", "grok", "pi"];
@@ -55,6 +75,7 @@ function asProvider(value: unknown): AcpProvider {
 
 export function createConversationModelStore(
   database: Database,
+  auditStore: AuditStore,
 ): ConversationModelStore {
   return {
     async channelForThread(actor, threadId) {
@@ -154,6 +175,31 @@ export function createConversationModelStore(
             eq(acpConversationModels.agentId, agentId),
           ),
         );
+    },
+
+    /**
+     * Written straight into the trail, not into a table of its own.
+     *
+     * The questions people ask of this data are trail questions — "did the model that answered this
+     * conversation have its own history in front of it, on this turn" — and a second place to look is a
+     * second place to forget. The redaction in audit.ts already drops anything that looks like content.
+     */
+    async recordTurnSession(input) {
+      await recordAuditEvent(auditStore, {
+        eventType: input.resumed ? "session.resumed" : "session.started",
+        targetType: "thread",
+        targetId: input.threadId,
+        actorUserId: input.actorUserId ?? undefined,
+        payload: {
+          agentId: input.agentId,
+          provider: input.provider,
+          profileId: input.profileId,
+          model: input.model,
+          ...(input.resumed
+            ? {}
+            : { reason: input.freshReason ?? "first_turn" }),
+        },
+      }).catch(() => {});
     },
   };
 }

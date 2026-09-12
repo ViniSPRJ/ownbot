@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
+
 const processText = z
   .string()
   .refine((value) => !value.includes("\0"), "NUL is not allowed");

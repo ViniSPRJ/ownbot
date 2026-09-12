@@ -1,7 +1,3 @@
-import { AcpAgent } from "./acp/agent";
-import { acpModelSelectionFor, acpProfileFor } from "./acp/config";
-import { resolveConversationModel, type ConversationModelStore } from "./acp/conversation-models";
-import { isPrivateAgent, privateModelRoute, privateModelFetch, PRIVATE_BOUNDARY } from "./privacy/policy";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -22,13 +18,16 @@ import {
   COMPUTER_GUIDANCE,
   PROVENANCE_GUIDANCE,
 } from "../../shared/bot-prompt";
+import { AcpAgent } from "./acp/agent";
+import { acpModelSelectionFor, acpProfileFor } from "./acp/config";
+import {
+  type ConversationModelStore,
+  resolveConversationModel,
+} from "./acp/conversation-models";
 import type { AgentActor } from "./agents/profile-types";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
-import {
-  withConnectDefaults,
-  type LocalThreadStore,
-} from "./local-threads";
+import { type LocalThreadStore, withConnectDefaults } from "./local-threads";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -37,6 +36,12 @@ import {
 } from "./plugins/selection";
 import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance } from "./plugins/tools";
+import {
+  isPrivateAgent,
+  PRIVATE_BOUNDARY,
+  privateModelFetch,
+  privateModelRoute,
+} from "./privacy/policy";
 
 /**
  * The CopilotKit runtime, always in Intelligence mode.
@@ -250,7 +255,12 @@ export function builtInAgentConfiguration(
       agent.model?.trim() || model.defaultModel,
       apiKey,
     ),
-    prompt: builtInAgentPrompt(agent, tools, computerGuidance, connectedVendors),
+    prompt: builtInAgentPrompt(
+      agent,
+      tools,
+      computerGuidance,
+      connectedVendors,
+    ),
     apiKey,
     /*
      * A run stops after one step unless told otherwise, which for a Bot with tools means it calls
@@ -529,21 +539,36 @@ async function buildAgent(
   if (isPrivateAgent(agent.id)) {
     try {
       const route = privateModelRoute();
-      if (agent.type !== "built_in") throw new Error("Bots privados exigem o runtime local integrado.");
+      if (agent.type !== "built_in")
+        throw new Error("Bots privados exigem o runtime local integrado.");
       const local = new BuiltInAgent({
-        model: createOpenAI({ baseURL: route.baseURL, apiKey: "local-private", fetch: privateModelFetch(route.baseURL) }).chat(route.model),
+        model: createOpenAI({
+          baseURL: route.baseURL,
+          apiKey: "local-private",
+          fetch: privateModelFetch(route.baseURL),
+        }).chat(route.model),
         apiKey: "local-private",
         prompt: agent.systemPrompt + "\n\n" + PRIVATE_BOUNDARY,
       });
-      return new RunBuiltAgent({ agentId: agent.id, description: agent.name }, local, async () => local);
+      return new RunBuiltAgent(
+        { agentId: agent.id, description: agent.name },
+        local,
+        async () => local,
+      );
     } catch (error) {
-      return new UnavailableAgent({ id: agent.id, name: agent.name, type: "unavailable", reason: error instanceof Error ? error.message : PRIVATE_BOUNDARY });
+      return new UnavailableAgent({
+        id: agent.id,
+        name: agent.name,
+        type: "unavailable",
+        reason: error instanceof Error ? error.message : PRIVATE_BOUNDARY,
+      });
     }
   }
 
   const acp = acpProfileFor(agent.id);
   if (acp) {
-    if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
+    if (!agent.acpOwnerId)
+      throw new Error("ACP requires an authenticated owner");
     /*
      * The same instructions the API path composes, with the tools the CLI is actually bridged.
      *
@@ -556,10 +581,15 @@ async function buildAgent(
     const ownerId = agent.acpOwnerId;
     // The operator's ACP mapping replaces execution, including a managed remote Bot such as
     // Desk. Its standing role already contains the owner's saved memory; retain that profile.
-    const promptAgent = agent.type === "built_in" ? agent : {
-      id: agent.id, name: agent.name, type: "built_in" as const,
-      systemPrompt: agent.standingMessage.content,
-    };
+    const promptAgent =
+      agent.type === "built_in"
+        ? agent
+        : {
+            id: agent.id,
+            name: agent.name,
+            type: "built_in" as const,
+            systemPrompt: agent.standingMessage.content,
+          };
     const granted = await loadTools(agent.id);
     /*
      * What this conversation asked for, re-decided on every turn.
@@ -577,10 +607,19 @@ async function buildAgent(
             actor: { userId: ownerId, admin: false },
             threadId,
             agentId: agent.id,
-            current: { profileId: acp.profileId, revision: acpModelSelectionFor(agent.id)?.revision ?? "" },
+            current: {
+              profileId: acp.profileId,
+              revision: acpModelSelectionFor(agent.id)?.revision ?? "",
+            },
           });
           if ("dropped" in resolved) {
-            console.info(JSON.stringify({ type: "acp-model-choice-dropped", agentId: agent.id, reason: resolved.dropped }));
+            console.info(
+              JSON.stringify({
+                type: "acp-model-choice-dropped",
+                agentId: agent.id,
+                reason: resolved.dropped,
+              }),
+            );
             return null;
           }
           return resolved.model;
@@ -591,10 +630,31 @@ async function buildAgent(
         agentId: agent.id,
         name: agent.name,
         ownerId,
-        prompt: builtInAgentPrompt(promptAgent, tools, computerGuidance, connectedVendors),
+        prompt: builtInAgentPrompt(
+          promptAgent,
+          tools,
+          computerGuidance,
+          connectedVendors,
+        ),
         profile: acp,
-        tools: async (input) => observeTools ? observeTools(agent.id, input, tools) : tools,
+        tools: async (input) =>
+          observeTools ? observeTools(agent.id, input, tools) : tools,
         ...(resolveModel ? { resolveModel } : {}),
+        // Whether this turn continued the session or opened one, into the trail. Best-effort by design:
+        // the turn already answers either way, and a trail that could not take this row must not be the
+        // reason a person gets no answer.
+        onSession: (notice) => {
+          void conversationModels?.recordTurnSession?.({
+            threadId: notice.threadId,
+            agentId: agent.id,
+            actorUserId: ownerId,
+            resumed: notice.resumed,
+            ...(notice.freshReason ? { freshReason: notice.freshReason } : {}),
+            model: notice.model,
+            provider: notice.provider,
+            profileId: notice.profileId,
+          });
+        },
       });
     const whole = acpAgentFor(granted);
     if (!handoff) return whole;
@@ -605,7 +665,9 @@ async function buildAgent(
         const passing = await handoff(agent.id, input);
         // A fresh agent per run either way: the ACP agent keeps its stop handle on the instance,
         // so sharing one across runs would let aborting this run cancel another.
-        return acpAgentFor(passing.length > 0 ? [...granted, ...passing] : granted);
+        return acpAgentFor(
+          passing.length > 0 ? [...granted, ...passing] : granted,
+        );
       },
     );
   }
@@ -710,10 +772,14 @@ async function buildAgent(
        */
       const passing = (await handoff?.(agent.id, input)) ?? [];
       const rawTools = passing.length > 0 ? [...offered, ...passing] : offered;
-      const tools = observeTools ? [...await observeTools(agent.id, input, rawTools)] : rawTools;
+      const tools = observeTools
+        ? [...(await observeTools(agent.id, input, rawTools))]
+        : rawTools;
       // Nothing added and nothing narrowed means nothing to rebuild, and reusing the agent already
       // built for this request keeps that path allocation-for-allocation what it was.
-      return !observeTools && tools.length === granted.length && passing.length === 0
+      return !observeTools &&
+        tools.length === granted.length &&
+        passing.length === 0
         ? whole
         : withTools(tools);
     },
@@ -972,7 +1038,11 @@ class RunBuiltAgent extends AbstractAgent {
       from(this.build(input)).pipe(
         switchMap((agent) => {
           this.inner = agent;
-          return agent.run(isPrivateAgent(this.agentId ?? "") ? { ...input, tools: [] } : input);
+          return agent.run(
+            isPrivateAgent(this.agentId ?? "")
+              ? { ...input, tools: [] }
+              : input,
+          );
         }),
       ),
     );
@@ -1070,7 +1140,12 @@ export async function resolveRuntimeAgents(
   // what that means, exactly as it would have from a roster that did not contain it.
   if (registered.length === 0) return {};
 
-  const apiKey = registered.some((agent) => agent.type === "built_in" && !isPrivateAgent(agent.id) && !acpProfileFor(agent.id))
+  const apiKey = registered.some(
+    (agent) =>
+      agent.type === "built_in" &&
+      !isPrivateAgent(agent.id) &&
+      !acpProfileFor(agent.id),
+  )
     ? await resolveModelApiKey()
     : null;
   return buildAgents(
@@ -1090,7 +1165,11 @@ export async function resolveRuntimeAgents(
   );
 }
 
-export type ToolObserverForRun = (botId: string, input: RunAgentInput, tools: readonly GrantedTool[]) => Promise<readonly GrantedTool[]>;
+export type ToolObserverForRun = (
+  botId: string,
+  input: RunAgentInput,
+  tools: readonly GrantedTool[],
+) => Promise<readonly GrantedTool[]>;
 
 /** What one Bot may call, for the person whose request this is. */
 export type LoadToolsForBot = (botId: string) => Promise<GrantedTool[]>;
