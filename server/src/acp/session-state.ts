@@ -125,7 +125,14 @@ export function legacySessionKey(
   profile: AcpProfile,
 ): string {
   return createHash("sha256")
-    .update(JSON.stringify([identity.ownerId, identity.agentId, identity.threadId, profile]))
+    .update(
+      JSON.stringify([
+        identity.ownerId,
+        identity.agentId,
+        identity.threadId,
+        profile,
+      ]),
+    )
     .digest("hex");
 }
 
@@ -145,7 +152,8 @@ export async function resolveWorkspaceDirectory(input: {
 }): Promise<{ directory: string; migrated: boolean }> {
   const current = join(input.workspaceRoot, input.identityKey);
   const legacy = join(input.workspaceRoot, input.legacyKey);
-  if (await input.exists(current)) return { directory: current, migrated: false };
+  if (await input.exists(current))
+    return { directory: current, migrated: false };
   if (await input.exists(legacy)) return { directory: legacy, migrated: true };
   return { directory: current, migrated: false };
 }
@@ -155,7 +163,8 @@ export function selectionFromProfile(profile: AcpProfile): SessionSelection {
   return {
     profileId: profile.profileId,
     provider: profile.provider ?? "codex",
-    model: typeof profile.model === "string" && profile.model ? profile.model : null,
+    model:
+      typeof profile.model === "string" && profile.model ? profile.model : null,
   };
 }
 
@@ -174,7 +183,10 @@ function isProvider(value: unknown): value is AcpProvider {
 export function parseSessionState(
   raw: string | null,
   current: SessionSelection,
-): { state: AcpSessionState | undefined; freshReason: FreshReason | undefined } {
+): {
+  state: AcpSessionState | undefined;
+  freshReason: FreshReason | undefined;
+} {
   if (raw === null) return { state: undefined, freshReason: undefined };
   let parsed: unknown;
   try {
@@ -195,7 +207,9 @@ export function parseSessionState(
     const replies = Array.isArray(value.replyMessageIds)
       ? value.replyMessageIds.filter(identifier)
       : [];
-    const legacy = identifier(value.replyMessageId) ? value.replyMessageId : undefined;
+    const legacy = identifier(value.replyMessageId)
+      ? value.replyMessageId
+      : undefined;
     return {
       state: {
         version: 2,

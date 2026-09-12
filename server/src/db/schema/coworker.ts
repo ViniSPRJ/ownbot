@@ -9,12 +9,12 @@ import {
   index,
   integer,
   jsonb,
-  uniqueIndex,
   pgEnum,
   pgTable,
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { agents, users } from "./core";
 

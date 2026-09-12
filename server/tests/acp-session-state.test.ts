@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, chmod, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AcpProfile } from "../src/acp/config";
 import {
+  type AcpSessionState,
   legacySessionKey,
   parseSessionState,
   planSessionAnchor,
@@ -11,9 +20,7 @@ import {
   serializeSessionState,
   sessionIdentityKey,
   writeSessionState,
-  type AcpSessionState,
 } from "../src/acp/session-state";
-import type { AcpProfile } from "../src/acp/config";
 
 const profile = (overrides: Partial<AcpProfile> = {}): AcpProfile => ({
   profileId: "codex",
@@ -36,7 +43,11 @@ describe("ACP session identity is independent of selection", () => {
     for (const other of [
       profile({ model: "gpt-5.1-codex" }),
       profile({ model: "gpt-5.1-codex-mini" }),
-      profile({ profileId: "claude", provider: "claude", command: "/opt/ownbot/bin/claude-agent-acp" }),
+      profile({
+        profileId: "claude",
+        provider: "claude",
+        command: "/opt/ownbot/bin/claude-agent-acp",
+      }),
       profile({ env: { INITIAL_AGENT_MODE: "auto-edit" } }),
       profile({ args: ["--acp"] }),
       profile({ timeoutMs: 900000 }),
@@ -49,9 +60,13 @@ describe("ACP session identity is independent of selection", () => {
 
   test("owner, bot and thread each move the key", () => {
     const base = sessionIdentityKey(identity);
-    expect(sessionIdentityKey({ ...identity, ownerId: "owner-2" })).not.toBe(base);
+    expect(sessionIdentityKey({ ...identity, ownerId: "owner-2" })).not.toBe(
+      base,
+    );
     expect(sessionIdentityKey({ ...identity, agentId: "news" })).not.toBe(base);
-    expect(sessionIdentityKey({ ...identity, threadId: "thread-2" })).not.toBe(base);
+    expect(sessionIdentityKey({ ...identity, threadId: "thread-2" })).not.toBe(
+      base,
+    );
   });
 
   test("the profile selection defaults provider and carries the operator model", () => {
@@ -116,14 +131,23 @@ describe("reading a stored anchor", () => {
       "[]",
       '"a string"',
       JSON.stringify({ sessionId: 7, lastMessageId: null }),
-      JSON.stringify({ version: 2, sessionId: "s", resumable: true, lastMessageId: null }),
+      JSON.stringify({
+        version: 2,
+        sessionId: "s",
+        resumable: true,
+        lastMessageId: null,
+      }),
       JSON.stringify({
         version: 2,
         sessionId: "s",
         resumable: true,
         lastMessageId: null,
         replyMessageIds: [],
-        selection: { profileId: "codex", provider: "not-a-provider", model: null },
+        selection: {
+          profileId: "codex",
+          provider: "not-a-provider",
+          model: null,
+        },
       }),
       JSON.stringify({
         version: 2,
@@ -133,16 +157,25 @@ describe("reading a stored anchor", () => {
         replyMessageIds: [],
         selection: { profileId: "codex", provider: "codex" },
       }),
-      JSON.stringify({ version: 2, ...state(), transcript: "x".repeat(64 * 1024) }),
+      JSON.stringify({
+        version: 2,
+        ...state(),
+        transcript: "x".repeat(64 * 1024),
+      }),
     ]) {
-      expect(parseSessionState(raw, current).freshReason).toBe("record_unreadable");
+      expect(parseSessionState(raw, current).freshReason).toBe(
+        "record_unreadable",
+      );
       expect(parseSessionState(raw, current).state).toBeUndefined();
     }
   });
 
   test("an anchor cleared on purpose stays cleared", () => {
     const cleared = state({ sessionId: null, resumable: false });
-    const { state: parsed } = parseSessionState(serializeSessionState(cleared), current);
+    const { state: parsed } = parseSessionState(
+      serializeSessionState(cleared),
+      current,
+    );
     expect(parsed?.sessionId).toBeNull();
     expect(parsed?.resumable).toBe(false);
   });
@@ -162,7 +195,11 @@ describe("reading a stored anchor", () => {
 
   test("a record big enough to be a transcript is refused before it reaches disk", () => {
     expect(() =>
-      serializeSessionState(state({ replyMessageIds: Array.from({ length: 4000 }, (_, i) => `reply-${i}`) })),
+      serializeSessionState(
+        state({
+          replyMessageIds: Array.from({ length: 4000 }, (_, i) => `reply-${i}`),
+        }),
+      ),
     ).toThrow(/size limit/);
   });
 });
@@ -174,14 +211,21 @@ describe("writing the anchor", () => {
       const file = join(dir, ".ownbot-session.json");
       await writeSessionState(file, state());
       expect((await stat(file)).mode & 0o777).toBe(0o600);
-      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe("session-abc");
+      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe(
+        "session-abc",
+      );
 
       // A v1 predecessor written 0644 must not survive this write still readable by others.
       await chmod(file, 0o644);
-      await writeSessionState(file, state({ sessionId: "session-next", resumable: true }));
+      await writeSessionState(
+        file,
+        state({ sessionId: "session-next", resumable: true }),
+      );
       expect((await stat(file)).mode & 0o777).toBe(0o600);
-      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe("session-next");
-      expect((await readdirNames(dir))).toEqual([".ownbot-session.json"]);
+      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe(
+        "session-next",
+      );
+      expect(await readdirNames(dir)).toEqual([".ownbot-session.json"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -196,11 +240,18 @@ describe("writing the anchor", () => {
       await expect(
         writeSessionState(
           file,
-          state({ replyMessageIds: Array.from({ length: 4000 }, (_, i) => `reply-${i}`) }),
+          state({
+            replyMessageIds: Array.from(
+              { length: 4000 },
+              (_, i) => `reply-${i}`,
+            ),
+          }),
         ),
       ).rejects.toThrow(/size limit/);
-      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe("session-abc");
-      expect((await readdirNames(dir))).toEqual([".ownbot-session.json"]);
+      expect(JSON.parse(await readFile(file, "utf8")).sessionId).toBe(
+        "session-abc",
+      );
+      expect(await readdirNames(dir)).toEqual([".ownbot-session.json"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -214,8 +265,20 @@ async function readdirNames(dir: string): Promise<string[]> {
 
 describe("planning whether a turn continues a session", () => {
   const selection = selectionFromProfile(profile());
-  const messages = [{ id: "msg-1" }, { id: "msg-2" }, { id: "reply-1" }, { id: "msg-9" }, { id: "msg-10" }];
-  const support = { messages, selection, loadSupported: true, unreadable: false, restartRequested: false };
+  const messages = [
+    { id: "msg-1" },
+    { id: "msg-2" },
+    { id: "reply-1" },
+    { id: "msg-9" },
+    { id: "msg-10" },
+  ];
+  const support = {
+    messages,
+    selection,
+    loadSupported: true,
+    unreadable: false,
+    restartRequested: false,
+  };
 
   test("the first turn opens a session", () => {
     const plan = planSessionAnchor({ ...support, state: undefined });
@@ -225,7 +288,11 @@ describe("planning whether a turn continues a session", () => {
   });
 
   test("an adapter without loadSession never gets a load", () => {
-    const plan = planSessionAnchor({ ...support, loadSupported: false, state: state() });
+    const plan = planSessionAnchor({
+      ...support,
+      loadSupported: false,
+      state: state(),
+    });
     expect(plan.load).toBe(false);
     expect(plan.freshReason).toBe("load_unsupported");
   });
@@ -261,10 +328,14 @@ describe("planning whether a turn continues a session", () => {
   });
 
   test("changing the provider cannot reuse a foreign anchor", () => {
-    const stored = state({ selection: { profileId: "codex", provider: "codex", model: null } });
+    const stored = state({
+      selection: { profileId: "codex", provider: "codex", model: null },
+    });
     const plan = planSessionAnchor({
       ...support,
-      selection: selectionFromProfile(profile({ profileId: "claude", provider: "claude" })),
+      selection: selectionFromProfile(
+        profile({ profileId: "claude", provider: "claude" }),
+      ),
       state: stored,
     });
     expect(plan.load).toBe(false);
@@ -274,18 +345,29 @@ describe("planning whether a turn continues a session", () => {
   });
 
   test("an anchor whose cursor is gone is dead, not resumed", () => {
-    const plan = planSessionAnchor({ ...support, state: state({ lastMessageId: "msg-evicted" }) });
+    const plan = planSessionAnchor({
+      ...support,
+      state: state({ lastMessageId: "msg-evicted" }),
+    });
     expect(plan.load).toBe(false);
     expect(plan.freshReason).toBe("anchor_dead");
   });
 
   test("an unreadable record opens fresh and says so", () => {
-    const plan = planSessionAnchor({ ...support, state: undefined, unreadable: true });
+    const plan = planSessionAnchor({
+      ...support,
+      state: undefined,
+      unreadable: true,
+    });
     expect(plan.freshReason).toBe("record_unreadable");
   });
 
   test("a requested restart drops the anchor and resends everything", () => {
-    const plan = planSessionAnchor({ ...support, state: state(), restartRequested: true });
+    const plan = planSessionAnchor({
+      ...support,
+      state: state(),
+      restartRequested: true,
+    });
     expect(plan.load).toBe(false);
     expect(plan.freshReason).toBe("requested");
     expect(plan.fromIndex).toBe(0);
@@ -305,11 +387,17 @@ describe("the workspace follows the conversation, not the selection", () => {
       legacyKey: "legacy",
       exists: exists(new Set<string>()),
     });
-    expect(resolved).toEqual({ directory: `/var/lib/ownbot/acp/${key}`, migrated: false });
+    expect(resolved).toEqual({
+      directory: `/var/lib/ownbot/acp/${key}`,
+      migrated: false,
+    });
   });
 
   test("a conversation that already has a folder keeps it, anchor and files together", async () => {
-    const legacy = legacySessionKey(identity, profile({ model: "gpt-5.1-codex" }));
+    const legacy = legacySessionKey(
+      identity,
+      profile({ model: "gpt-5.1-codex" }),
+    );
     const resolved = await resolveWorkspaceDirectory({
       workspaceRoot: "/var/lib/ownbot/acp",
       identityKey: sessionIdentityKey(identity),
@@ -326,14 +414,25 @@ describe("the workspace follows the conversation, not the selection", () => {
       workspaceRoot: "/var/lib/ownbot/acp",
       identityKey: key,
       legacyKey: "legacy",
-      exists: exists(new Set([`/var/lib/ownbot/acp/${key}`, "/var/lib/ownbot/acp/legacy"])),
+      exists: exists(
+        new Set([`/var/lib/ownbot/acp/${key}`, "/var/lib/ownbot/acp/legacy"]),
+      ),
     });
-    expect(resolved).toEqual({ directory: `/var/lib/ownbot/acp/${key}`, migrated: false });
+    expect(resolved).toEqual({
+      directory: `/var/lib/ownbot/acp/${key}`,
+      migrated: false,
+    });
   });
 
   test("the legacy key still moves with the model, which is why it is only ever read", () => {
-    const before = legacySessionKey(identity, profile({ model: "gpt-5.1-codex" }));
-    const after = legacySessionKey(identity, profile({ model: "gpt-5.1-codex-mini" }));
+    const before = legacySessionKey(
+      identity,
+      profile({ model: "gpt-5.1-codex" }),
+    );
+    const after = legacySessionKey(
+      identity,
+      profile({ model: "gpt-5.1-codex-mini" }),
+    );
     expect(before).not.toBe(after);
     expect(sessionIdentityKey(identity)).not.toBe(before);
   });

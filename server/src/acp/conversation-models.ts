@@ -64,7 +64,10 @@ export function createConversationModelStore(
         .innerJoin(
           channelMemberships,
           and(
-            eq(channelMemberships.channelId, intelligenceChannelMappings.channelId),
+            eq(
+              channelMemberships.channelId,
+              intelligenceChannelMappings.channelId,
+            ),
             eq(channelMemberships.userId, intelligenceChannelMappings.userId),
           ),
         )
@@ -172,7 +175,10 @@ export async function resolveConversationModel(input: {
   /** The operator mapping currently in force for this coworker. */
   current: { profileId: string; revision: string };
 }): Promise<{ model: string | null } | { dropped: "membership" | "stale" }> {
-  const membership = await input.store.channelForThread(input.actor, input.threadId);
+  const membership = await input.store.channelForThread(
+    input.actor,
+    input.threadId,
+  );
   if (!membership) return { dropped: "membership" };
   const stored = await input.store.get(input.threadId, input.agentId);
   if (!stored) return { model: null };
