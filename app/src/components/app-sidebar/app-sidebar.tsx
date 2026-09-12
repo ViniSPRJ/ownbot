@@ -48,6 +48,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { agentListQueryOptions } from "@/lib/agents/queries";
 import { signOutMutationOptions } from "@/lib/auth/mutations";
 import { currentUserQueryOptions } from "@/lib/auth/queries";
 import {
@@ -59,9 +60,18 @@ import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { inboxQuery } from "@/lib/notifications/queries";
 import { relativeTime } from "@/lib/relative-time";
+import {
+  type RuntimeKind,
+  type WorkspaceMode,
+  channelsForMode,
+  readWorkspaceMode,
+  workspaceSwitchView,
+  writeWorkspaceMode,
+} from "@/lib/workspace/mode";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { Channel } from "./channel";
+import { WorkspaceSwitch } from "./workspace-switch";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
 const adminLinkOptions = { to: "/admin" } satisfies LinkOptions;
@@ -227,15 +237,37 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   useChannelEvents();
   const [search, setSearch] = useState("");
   const searching = search.trim().length > 0;
-  const visibleChannels = pinnedFirst(matchingChannels(channels.data, search));
+  /*
+   * WHICH HALF OF THE ROSTER IS OPEN, and what decides it.
+   *
+   * The coworker list is here only for each coworker's runtime kind: whether it runs a CLI over ACP is
+   * what puts its conversations in the cockpit. It is the same query the agents screen uses, so this is
+   * a cache read on any page a person has already been through rather than a second fetch.
+   */
+  const [mode, setMode] = useState<WorkspaceMode>(readWorkspaceMode);
+  const agents = useQuery(agentListQueryOptions());
+  const runtimeKindOf = (agentId: string): RuntimeKind | undefined =>
+    agents.data?.find((agent) => agent.id === agentId)?.runtime?.kind;
+  const workspace = workspaceSwitchView({
+    stored: mode,
+    channels: channels.data,
+    runtimeKindOf,
+    hasCodingCoworker:
+      agents.data?.some((agent) => agent.runtime?.kind === "acp") ?? false,
+  });
+  const inMode = channelsForMode(workspace.mode, channels.data, runtimeKindOf);
+  const visibleChannels = pinnedFirst(matchingChannels(inMode, search));
+  const chooseMode = (next: WorkspaceMode) => {
+    setMode(next);
+    writeWorkspaceMode(next);
+  };
   /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
    * list thrashing under somebody who is still typing — and the moving target is the very thing
    * they are trying to read. Order animation is for a channel that was just spoken in, which is
    * occasional; this is not.
    */
-  const animateOrder =
-    !searching && (channels.data?.length ?? 0) <= MAX_ANIMATED_ROWS;
+  const animateOrder = !searching && inMode.length <= MAX_ANIMATED_ROWS;
 
   const handleSignOut = async () => {
     await signOut.mutateAsync();
@@ -276,6 +308,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent className="scroll-fade-b">
         <SidebarMenu>
           <SidebarGroup className="gap-px">
+            {/*
+             * Above the search box, because it changes what the search searches. Underneath it, the
+             * same query would appear to lose and regain results on a click nobody connected to it.
+             */}
+            {workspace.available ? (
+              <SidebarMenuItem className="pb-1.5">
+                <WorkspaceSwitch
+                  counts={workspace.counts}
+                  mode={workspace.mode}
+                  onChange={chooseMode}
+                />
+              </SidebarMenuItem>
+            ) : null}
             <SidebarMenuItem>
               <InputGroup className="bg-background text-sm rounded-lg h-9">
                 <InputGroupInput
@@ -309,14 +354,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </Empty>
               </div>
             ) : null}
-            {!searching && channels.data?.length === 0 ? (
+            {/*
+             * A THIRD NOTHING, for the same reason there are already two. An empty cockpit in a
+             * deployment full of Ownbot conversations is not "you don't have channels yet", and being
+             * told that while holding a roster is how somebody concludes the switch lost their work.
+             */}
+            {!searching && inMode.length === 0 ? (
               <div className="py-4">
                 <Empty className="border border-dashed min-h-[40dvh]">
                   <EmptyHeader>
-                    <EmptyTitle>You don't have channels yet</EmptyTitle>
+                    <EmptyTitle>
+                      {workspace.mode === "cowork"
+                        ? "Nothing in Cowork yet"
+                        : "You don't have channels yet"}
+                    </EmptyTitle>
                     <EmptyDescription className="text-pretty">
-                      Start talking to agents and your channels will appear
-                      here.
+                      {workspace.mode === "cowork"
+                        ? "Conversas com um coding agent aparecem aqui, com a sessão da CLI e o modelo escolhido para cada uma."
+                        : "Start talking to agents and your channels will appear here."}
                     </EmptyDescription>
                   </EmptyHeader>
                 </Empty>
