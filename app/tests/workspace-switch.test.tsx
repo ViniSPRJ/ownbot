@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { CoworkCoworkers } from "@/components/app-sidebar/cowork-coworkers";
 import { WorkspaceSwitch } from "@/components/app-sidebar/workspace-switch";
 import {
   WorkspaceModeProvider,
@@ -112,4 +113,34 @@ test("the shared mode is remembered where the next visit will read it", () => {
       value: original,
     });
   }
+});
+
+test("naming a coding agent reports the coworker, and shows which are named", () => {
+  // The control that fixes the empty cockpit. Only ACP coworkers reach it — the caller filters — and a
+  // marked one has to be visibly different from an offered one, or somebody cannot tell what they did.
+  const toggled: string[] = [];
+  const { container } = render(
+    <CoworkCoworkers
+      coding={new Set(["codeexec"])}
+      coworkers={[
+        { id: "coord", name: "Coord" },
+        { id: "codeexec", name: "Code" },
+      ]}
+      onToggle={(id) => toggled.push(id)}
+    />,
+  );
+  const buttons = [...container.querySelectorAll("button")];
+  expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual([
+    "false",
+    "true",
+  ]);
+  fireEvent.click(buttons[0]!);
+  expect(toggled).toEqual(["coord"]);
+});
+
+test("an empty cockpit with no ACP coworker offers nothing rather than an empty list", () => {
+  const { container } = render(
+    <CoworkCoworkers coding={new Set()} coworkers={[]} onToggle={() => {}} />,
+  );
+  expect(container.firstElementChild).toBeNull();
 });

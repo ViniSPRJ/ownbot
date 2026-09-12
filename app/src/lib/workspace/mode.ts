@@ -1,15 +1,19 @@
 /**
  * Which half of the roster a person is working in.
  *
- * Ownbot is the assistant surface: coworkers that answer through the API, a hosted endpoint, or the
- * private local runtime. Cowork is the coding cockpit: coworkers that run a CLI over ACP, which is
- * the only kind that has a session on disk, a workspace directory, and a model that can be chosen
- * for one conversation.
+ * Ownbot is everything by default. Cowork is the coding cockpit, and it holds the conversations of the
+ * coworkers a person has named as their coding agents.
  *
- * The split is read off how each coworker runs, never off a new flag somebody has to set. A mode a
- * person must configure before it contains anything is a mode that stays empty, and a second column
- * saying "this one is a coding agent" would be a second place to disagree with the operator's ACP
- * mapping about what a coworker actually is.
+ * IT WAS DERIVED, AND THAT WAS WRONG. The first version read the split off how each coworker runs:
+ * ACP meant a CLI, a CLI meant a coding agent. The argument was that a mode nobody has to configure
+ * cannot sit there empty. On a deployment where the operator maps every coworker to a CLI — and that
+ * is the deployment this was written for, ten of ten on Codex, Claude and Grok — the rule was true of
+ * everything, so Cowork swallowed the whole roster and Ownbot went empty. `coord` answering through
+ * Codex is not a coding agent; it is an assistant that happens to run on one.
+ *
+ * Nothing in the operator's mapping distinguishes the two, so nothing derived can. The marks are the
+ * person's, and the default is no marks at all: Ownbot holds everything, exactly as it did before
+ * there was a switch, until somebody says otherwise.
  */
 
 export type WorkspaceMode = "ownbot" | "cowork";
@@ -22,7 +26,8 @@ export type RuntimeKind =
   | "remote"
   | "unavailable";
 
-const STORAGE_KEY = "openbot.workspace-mode";
+const MODE_KEY = "openbot.workspace-mode";
+const CODING_KEY = "openbot.cowork-coworkers";
 
 export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
   return value === "ownbot" || value === "cowork";
@@ -38,7 +43,7 @@ export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
  */
 export function readWorkspaceMode(): WorkspaceMode {
   try {
-    const stored = globalThis.localStorage?.getItem(STORAGE_KEY);
+    const stored = globalThis.localStorage?.getItem(MODE_KEY);
     return isWorkspaceMode(stored) ? stored : "ownbot";
   } catch {
     return "ownbot";
@@ -47,7 +52,7 @@ export function readWorkspaceMode(): WorkspaceMode {
 
 export function writeWorkspaceMode(mode: WorkspaceMode): void {
   try {
-    globalThis.localStorage?.setItem(STORAGE_KEY, mode);
+    globalThis.localStorage?.setItem(MODE_KEY, mode);
   } catch {
     // A preference that cannot be written is still honoured for this session; the switch holds it in
     // React state either way. Losing it on reload is a smaller failure than refusing the click.
@@ -55,15 +60,57 @@ export function writeWorkspaceMode(mode: WorkspaceMode): void {
 }
 
 /**
- * Where a conversation with this one coworker will appear.
+ * The coworkers this person treats as coding agents.
+ *
+ * Per browser for now, for the same reason the mode is: it decides what somebody sees, not what the
+ * runtime does. A turn answers identically whether or not its coworker is marked — no prompt, no
+ * session and no model selection reads this. That is what makes a local answer honest here rather
+ * than merely convenient, and it is also why moving it to the server later changes no behaviour.
+ */
+export function readCodingCoworkers(): ReadonlySet<string> {
+  try {
+    const raw = globalThis.localStorage?.getItem(CODING_KEY);
+    if (!raw) return new Set();
+    const parsed: unknown = JSON.parse(raw);
+    return new Set(
+      Array.isArray(parsed)
+        ? parsed.filter((id): id is string => typeof id === "string")
+        : [],
+    );
+  } catch {
+    // Unreadable, or not an array: no marks, which is the safe reading. Guessing here would file
+    // somebody's conversations under a half they never chose.
+    return new Set();
+  }
+}
+
+export function writeCodingCoworkers(ids: ReadonlySet<string>): void {
+  try {
+    globalThis.localStorage?.setItem(CODING_KEY, JSON.stringify([...ids]));
+  } catch {}
+}
+
+/** Add or remove one coworker, returning a new set rather than mutating the old one. */
+export function toggleCodingCoworker(
+  ids: ReadonlySet<string>,
+  agentId: string,
+): Set<string> {
+  const next = new Set(ids);
+  if (!next.delete(agentId)) next.add(agentId);
+  return next;
+}
+
+/**
+ * Where a conversation with this one coworker belongs.
  *
  * Used when the conversation does not exist yet and there is nothing to filter: somebody has picked a
- * recipient, and the roster they are about to be returned to should be the one holding the result. A
- * coworker whose runtime the browser does not know yet is Ownbot, the same way an unknown runtime does
- * not pull an existing channel into the cockpit.
+ * recipient, and the roster they are about to be returned to should be the one holding the result.
  */
-export function modeForCoworker(kind: RuntimeKind | undefined): WorkspaceMode {
-  return kind === "acp" ? "cowork" : "ownbot";
+export function modeForCoworker(
+  agentId: string,
+  coding: ReadonlySet<string>,
+): WorkspaceMode {
+  return coding.has(agentId) ? "cowork" : "ownbot";
 }
 
 /** Just enough of a channel to place it, so the roster's own type stays the caller's business. */
@@ -72,49 +119,47 @@ type PlaceableChannel = { agentIds: string[] };
 /**
  * Whether a conversation belongs to the cockpit.
  *
- * Any ACP coworker in the channel puts it there, including a channel that also holds an API one. The
- * cockpit is where a CLI session, its workspace and its model selection are visible, so a channel
- * that has one of those and is filed under Ownbot is a channel whose session nobody can see.
- *
- * A coworker whose runtime is unknown to the browser — a roster that has not loaded, an id the agent
- * list does not carry — is not ACP as far as this is concerned. Guessing the other way would move
- * conversations into the cockpit every time the agents query is in flight.
+ * Any marked coworker in the channel puts it there, including a channel that also holds an unmarked
+ * one: the cockpit is where that coworker's session, workspace and model selection are visible, and a
+ * channel holding one of those filed under Ownbot is a channel whose session nobody can see.
  */
 export function isCoworkChannel(
   channel: PlaceableChannel,
-  runtimeKindOf: (agentId: string) => RuntimeKind | undefined,
+  coding: ReadonlySet<string>,
 ): boolean {
-  return channel.agentIds.some((agentId) => runtimeKindOf(agentId) === "acp");
+  return channel.agentIds.some((agentId) => coding.has(agentId));
 }
 
 /**
  * What the switch offers, and which mode is actually in force.
  *
- * `available` is false for a deployment with no ACP coworker at all: there is no cockpit to enter,
- * and offering the door to an empty room is the same lie as an empty dropdown. It turns true on its
- * own the moment the operator maps a CLI to a coworker — nothing here needs to be turned on.
+ * `available` asks whether a cockpit is POSSIBLE, not whether it is populated — any coworker on an
+ * ACP connection can have one, because that is what gives it a session and a workspace to show. It
+ * has to be true before anything is marked, or the door into Cowork would only appear once somebody
+ * had already walked through it.
  *
- * `mode` is the effective one, which is not always the stored one. Someone left in Cowork whose last
- * ACP coworker has since been unmapped is shown Ownbot rather than an empty cockpit they cannot leave
- * by reloading.
+ * `mode` is the effective one, which is not always the stored one. Someone left in Cowork on a
+ * deployment that has since lost its ACP coworkers is shown Ownbot rather than an empty cockpit they
+ * cannot leave by reloading. An empty Cowork somebody can still fill is not that case: it stays, and
+ * says how to fill it.
  */
 export function workspaceSwitchView(input: {
   stored: WorkspaceMode;
   channels: readonly PlaceableChannel[] | undefined;
-  runtimeKindOf: (agentId: string) => RuntimeKind | undefined;
-  /** Whether any coworker in the roster runs over ACP, regardless of having a channel yet. */
-  hasCodingCoworker: boolean;
+  coding: ReadonlySet<string>;
+  /** Whether any coworker in the roster runs over ACP, marked or not. */
+  hasAcpCoworker: boolean;
 }): {
   mode: WorkspaceMode;
   available: boolean;
   counts: { ownbot: number; cowork: number };
 } {
-  const available = input.hasCodingCoworker;
+  const available = input.hasAcpCoworker;
   const mode = available ? input.stored : "ownbot";
   const channels = input.channels ?? [];
   let cowork = 0;
   for (const channel of channels) {
-    if (isCoworkChannel(channel, input.runtimeKindOf)) cowork += 1;
+    if (isCoworkChannel(channel, input.coding)) cowork += 1;
   }
   return {
     mode,
@@ -127,17 +172,17 @@ export function workspaceSwitchView(input: {
  * The roster, narrowed to the mode in force.
  *
  * Returns the input array unchanged when nothing is filtered out, for the same reason the search
- * filter does: handing `AnimatePresence` a fresh array identity restages every row, and switching
- * into a mode that happens to contain everything is not a reason to animate the whole list.
+ * filter does: handing `AnimatePresence` a fresh array identity restages every row, and Ownbot
+ * holding everything — which is the default — is not a reason to animate the whole list.
  */
 export function channelsForMode<Channel extends PlaceableChannel>(
   mode: WorkspaceMode,
   channels: Channel[] | undefined,
-  runtimeKindOf: (agentId: string) => RuntimeKind | undefined,
+  coding: ReadonlySet<string>,
 ): Channel[] {
   if (!channels) return [];
   const wanted = channels.filter(
-    (channel) => isCoworkChannel(channel, runtimeKindOf) === (mode === "cowork"),
+    (channel) => isCoworkChannel(channel, coding) === (mode === "cowork"),
   );
   return wanted.length === channels.length ? channels : wanted;
 }

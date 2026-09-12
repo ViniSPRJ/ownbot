@@ -60,15 +60,12 @@ import { appConfig } from "@/lib/generated/application-config";
 import { EASE_OUT, ENTRANCE_SECONDS } from "@/lib/motion";
 import { inboxQuery } from "@/lib/notifications/queries";
 import { relativeTime } from "@/lib/relative-time";
-import {
-  type RuntimeKind,
-  channelsForMode,
-  workspaceSwitchView,
-} from "@/lib/workspace/mode";
+import { channelsForMode, workspaceSwitchView } from "@/lib/workspace/mode";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { useWorkspaceMode } from "@/components/workspace-mode-provider";
 import { Channel } from "./channel";
+import { CoworkCoworkers } from "./cowork-coworkers";
 import { WorkspaceSwitch } from "./workspace-switch";
 
 const appLinkOptions = { to: "/" } satisfies LinkOptions;
@@ -238,22 +235,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   /*
    * WHICH HALF OF THE ROSTER IS OPEN, and what decides it.
    *
-   * The coworker list is here only for each coworker's runtime kind: whether it runs a CLI over ACP is
-   * what puts its conversations in the cockpit. It is the same query the agents screen uses, so this is
-   * a cache read on any page a person has already been through rather than a second fetch.
+   * Placement comes from the marks, never from the runtime: see lib/workspace/mode.ts for what went
+   * wrong when it was derived. The coworker list is still read, for two narrower things — whether a
+   * cockpit is possible at all, and the names to offer when somebody is naming their coding agents. It
+   * is the same query the agents screen uses, so on any page a person has already been through this is
+   * a cache read rather than a second fetch.
    */
-  const { mode, setMode } = useWorkspaceMode();
+  const { mode, setMode, coding, toggleCoding } = useWorkspaceMode();
   const agents = useQuery(agentListQueryOptions());
-  const runtimeKindOf = (agentId: string): RuntimeKind | undefined =>
-    agents.data?.find((agent) => agent.id === agentId)?.runtime?.kind;
+  const acpCoworkers = (agents.data ?? []).filter(
+    (agent) => agent.runtime?.kind === "acp",
+  );
   const workspace = workspaceSwitchView({
     stored: mode,
     channels: channels.data,
-    runtimeKindOf,
-    hasCodingCoworker:
-      agents.data?.some((agent) => agent.runtime?.kind === "acp") ?? false,
+    coding,
+    hasAcpCoworker: acpCoworkers.length > 0,
   });
-  const inMode = channelsForMode(workspace.mode, channels.data, runtimeKindOf);
+  const inMode = channelsForMode(workspace.mode, channels.data, coding);
   const visibleChannels = pinnedFirst(matchingChannels(inMode, search));
   /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
@@ -368,6 +367,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                         : "Start talking to agents and your channels will appear here."}
                     </EmptyDescription>
                   </EmptyHeader>
+                  {workspace.mode === "cowork" ? (
+                    <CoworkCoworkers
+                      coding={coding}
+                      coworkers={acpCoworkers}
+                      onToggle={toggleCoding}
+                    />
+                  ) : null}
                 </Empty>
               </div>
             ) : null}

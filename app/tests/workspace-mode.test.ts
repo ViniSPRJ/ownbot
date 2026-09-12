@@ -1,108 +1,139 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
-  type RuntimeKind,
   channelsForMode,
   isCoworkChannel,
   modeForCoworker,
+  readCodingCoworkers,
   readWorkspaceMode,
+  toggleCodingCoworker,
   workspaceSwitchView,
+  writeCodingCoworkers,
   writeWorkspaceMode,
 } from "@/lib/workspace/mode";
 
-const runtimes: Record<string, RuntimeKind> = {
-  codex: "acp",
-  pi: "acp",
-  desk: "api",
-  relay: "remote",
-};
-const runtimeKindOf = (agentId: string) => runtimes[agentId];
-
 const channel = (...agentIds: string[]) => ({ agentIds });
+const coding = (...ids: string[]) => new Set(ids);
 
 describe("placing a conversation in one half of the roster", () => {
-  test("a coworker running a CLI puts its conversation in the cockpit", () => {
-    expect(isCoworkChannel(channel("codex"), runtimeKindOf)).toBe(true);
-    expect(isCoworkChannel(channel("desk"), runtimeKindOf)).toBe(false);
-    expect(isCoworkChannel(channel("relay"), runtimeKindOf)).toBe(false);
+  test("a marked coworker puts its conversation in the cockpit", () => {
+    expect(isCoworkChannel(channel("codeexec"), coding("codeexec"))).toBe(true);
+    expect(isCoworkChannel(channel("coord"), coding("codeexec"))).toBe(false);
   });
 
-  test("one coding agent in a mixed channel is enough", () => {
-    // The cockpit is where that CLI's session, workspace and model selection can be seen at all.
-    // Filing the channel under Ownbot because an API coworker is also in it would hide the only
-    // place its session state is visible.
-    expect(isCoworkChannel(channel("desk", "pi"), runtimeKindOf)).toBe(true);
+  test("NOTHING IS IN THE COCKPIT UNTIL SOMEBODY PUTS IT THERE", () => {
+    /*
+     * The regression this file exists for. Placement used to be derived from the runtime: ACP meant a
+     * CLI, a CLI meant a coding agent. On the deployment this shipped to, the operator maps all ten
+     * coworkers to Codex, Claude and Grok, so every channel matched, Cowork took the entire roster and
+     * Ownbot went empty. With no marks, every conversation is in Ownbot no matter how it runs.
+     */
+    const everything = [
+      channel("coord"),
+      channel("desk"),
+      channel("news"),
+      channel("codeexec"),
+    ];
+    expect(
+      everything.filter((c) => isCoworkChannel(c, coding())),
+    ).toEqual([]);
+    expect(channelsForMode("ownbot", everything, coding())).toBe(everything);
+    expect(channelsForMode("cowork", everything, coding())).toEqual([]);
   });
 
-  test("a coworker the roster has not loaded yet is not assumed to be a CLI", () => {
-    // Guessing the other way would walk conversations into the cockpit on every page load, while
-    // the agents query is still in flight, and walk them back out when it lands.
-    expect(isCoworkChannel(channel("unknown"), runtimeKindOf)).toBe(false);
-    expect(isCoworkChannel(channel(), runtimeKindOf)).toBe(false);
+  test("one marked coworker in a mixed channel is enough", () => {
+    // The cockpit is where that coworker's session, workspace and model selection can be seen at all.
+    expect(isCoworkChannel(channel("coord", "codeexec"), coding("codeexec"))).toBe(
+      true,
+    );
+  });
+
+  test("a channel with no coworkers is nobody's", () => {
+    expect(isCoworkChannel(channel(), coding("codeexec"))).toBe(false);
   });
 });
 
 describe("what the switch offers", () => {
-  const channels = [channel("desk"), channel("codex"), channel("desk", "pi")];
+  const channels = [channel("coord"), channel("codeexec"), channel("coord", "pi")];
 
-  test("a deployment with no ACP coworker is not offered a cockpit", () => {
+  test("the door into an empty cockpit is still a door", () => {
+    // `available` asks whether a cockpit is possible, not whether it is populated. Hiding the switch
+    // until something is marked would hide the only place to mark anything.
     const view = workspaceSwitchView({
       stored: "cowork",
       channels,
-      runtimeKindOf,
-      hasCodingCoworker: false,
+      coding: coding(),
+      hasAcpCoworker: true,
     });
-    // And somebody left in Cowork by a coworker that has since been unmapped is shown Ownbot rather
-    // than an empty cockpit that a reload cannot get them out of.
+    expect(view.available).toBe(true);
+    expect(view.mode).toBe("cowork");
+    expect(view.counts).toEqual({ ownbot: 3, cowork: 0 });
+  });
+
+  test("a deployment with no ACP coworker at all has no cockpit", () => {
+    const view = workspaceSwitchView({
+      stored: "cowork",
+      channels,
+      coding: coding("codeexec"),
+      hasAcpCoworker: false,
+    });
     expect(view.available).toBe(false);
+    // And somebody left in Cowork is shown Ownbot rather than a cockpit a reload cannot leave.
     expect(view.mode).toBe("ownbot");
   });
 
   test("both halves are counted, so each side can say what is on the other", () => {
     const view = workspaceSwitchView({
-      stored: "cowork",
+      stored: "ownbot",
       channels,
-      runtimeKindOf,
-      hasCodingCoworker: true,
+      coding: coding("codeexec", "pi"),
+      hasAcpCoworker: true,
     });
-    expect(view.available).toBe(true);
-    expect(view.mode).toBe("cowork");
     expect(view.counts).toEqual({ ownbot: 1, cowork: 2 });
   });
 
-  test("a roster that has not arrived counts nothing and still offers the switch", () => {
+  test("a roster that has not arrived counts nothing", () => {
     const view = workspaceSwitchView({
       stored: "ownbot",
       channels: undefined,
-      runtimeKindOf,
-      hasCodingCoworker: true,
+      coding: coding("codeexec"),
+      hasAcpCoworker: true,
     });
     expect(view.counts).toEqual({ ownbot: 0, cowork: 0 });
-    expect(view.available).toBe(true);
   });
 });
 
 describe("narrowing the roster to the mode in force", () => {
   test("each mode shows its own conversations and none of the other's", () => {
-    const channels = [channel("desk"), channel("codex"), channel("desk", "pi")];
-    expect(channelsForMode("ownbot", channels, runtimeKindOf)).toEqual([
-      channel("desk"),
+    const channels = [channel("coord"), channel("codeexec"), channel("coord", "pi")];
+    const marked = coding("codeexec", "pi");
+    expect(channelsForMode("ownbot", channels, marked)).toEqual([
+      channel("coord"),
     ]);
-    expect(channelsForMode("cowork", channels, runtimeKindOf)).toEqual([
-      channel("codex"),
-      channel("desk", "pi"),
+    expect(channelsForMode("cowork", channels, marked)).toEqual([
+      channel("codeexec"),
+      channel("coord", "pi"),
     ]);
   });
 
   test("filtering nothing out returns the same array, not a copy of it", () => {
-    // A fresh array identity restages every animated row. Switching into the mode that happens to
-    // hold everything is not a reason to animate the whole list.
-    const channels = [channel("codex"), channel("pi")];
-    expect(channelsForMode("cowork", channels, runtimeKindOf)).toBe(channels);
-    expect(channelsForMode("ownbot", undefined, runtimeKindOf)).toEqual([]);
+    // A fresh array identity restages every animated row, and Ownbot holding everything is the default.
+    const channels = [channel("codeexec"), channel("pi")];
+    expect(channelsForMode("cowork", channels, coding("codeexec", "pi"))).toBe(
+      channels,
+    );
+    expect(channelsForMode("ownbot", undefined, coding())).toEqual([]);
   });
 });
 
-describe("remembering the mode locally", () => {
+describe("placing a conversation that does not exist yet", () => {
+  test("a new conversation follows its recipient's mark, not its runtime", () => {
+    expect(modeForCoworker("codeexec", coding("codeexec"))).toBe("cowork");
+    expect(modeForCoworker("coord", coding("codeexec"))).toBe("ownbot");
+    expect(modeForCoworker("codeexec", coding())).toBe("ownbot");
+  });
+});
+
+describe("remembering the marks and the mode locally", () => {
   const original = globalThis.localStorage;
   const stub = (value: Partial<Storage>) => {
     Object.defineProperty(globalThis, "localStorage", {
@@ -125,8 +156,25 @@ describe("remembering the mode locally", () => {
     expect(readWorkspaceMode()).toBe("cowork");
     store.set("openbot.workspace-mode", "cockpit");
     expect(readWorkspaceMode()).toBe("ownbot");
-    store.delete("openbot.workspace-mode");
-    expect(readWorkspaceMode()).toBe("ownbot");
+  });
+
+  test("the marks survive a reload, and junk reads as no marks", () => {
+    const store = new Map<string, string>();
+    stub({
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    });
+    writeCodingCoworkers(coding("codeexec", "pi"));
+    expect([...readCodingCoworkers()].sort()).toEqual(["codeexec", "pi"]);
+    // Not an array, an array of the wrong thing, and not JSON at all: none of them invent a mark.
+    store.set("openbot.cowork-coworkers", '{"codeexec":true}');
+    expect([...readCodingCoworkers()]).toEqual([]);
+    store.set("openbot.cowork-coworkers", "[1,2,null]");
+    expect([...readCodingCoworkers()]).toEqual([]);
+    store.set("openbot.cowork-coworkers", "not json");
+    expect([...readCodingCoworkers()]).toEqual([]);
   });
 
   test("storage that throws is a default, never a blank sidebar", () => {
@@ -140,22 +188,18 @@ describe("remembering the mode locally", () => {
       },
     });
     expect(readWorkspaceMode()).toBe("ownbot");
+    expect([...readCodingCoworkers()]).toEqual([]);
     expect(() => writeWorkspaceMode("cowork")).not.toThrow();
-  });
-});
-
-describe("placing a conversation that does not exist yet", () => {
-  test("the half a new conversation will land in follows its recipient", () => {
-    expect(modeForCoworker("acp")).toBe("cowork");
-    expect(modeForCoworker("api")).toBe("ownbot");
-    expect(modeForCoworker("private_local")).toBe("ownbot");
-    expect(modeForCoworker("remote")).toBe("ownbot");
-    expect(modeForCoworker("unavailable")).toBe("ownbot");
+    expect(() => writeCodingCoworkers(coding("codeexec"))).not.toThrow();
   });
 
-  test("a recipient whose runtime has not loaded does not move anybody", () => {
-    // Same stance as an existing channel with an unknown coworker: Ownbot until the roster says
-    // otherwise, rather than a mode that flips when the agents query lands.
-    expect(modeForCoworker(undefined)).toBe("ownbot");
+  test("toggling a mark leaves the set it was given alone", () => {
+    const before = coding("codeexec");
+    expect([...toggleCodingCoworker(before, "pi")].sort()).toEqual([
+      "codeexec",
+      "pi",
+    ]);
+    expect([...toggleCodingCoworker(before, "codeexec")]).toEqual([]);
+    expect([...before]).toEqual(["codeexec"]);
   });
 });

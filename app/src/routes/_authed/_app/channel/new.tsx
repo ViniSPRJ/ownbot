@@ -41,7 +41,7 @@ function RouteComponent() {
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { start, pending } = useStartChannel();
-  const { setMode } = useWorkspaceMode();
+  const { setMode, coding } = useWorkspaceMode();
   const { data: profiles } = useQuery(agentListQueryOptions());
 
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +148,7 @@ function RouteComponent() {
              * a view over it rather than a constraint on it. Nothing is refused at the picker for the
              * same reason.
              */
-            setMode(modeForCoworker(chosen?.runtime?.kind));
+            setMode(modeForCoworker(recipient.id, coding));
           } catch (caught) {
             // Preserve the unsent draft when channel creation fails.
             setSent(null);
