@@ -20,7 +20,9 @@ import {
   agentListQueryOptions,
   agentQueryOptions,
 } from "@/lib/agents/queries";
+import { useWorkspaceMode } from "@/components/workspace-mode-provider";
 import { useStartChannel } from "@/lib/channels/start";
+import { modeForCoworker } from "@/lib/workspace/mode";
 import { useSkillCommands } from "@/lib/plugins/skill-commands";
 import { newId } from "../../../../lib/new-id";
 
@@ -39,6 +41,7 @@ function RouteComponent() {
   const { agent } = Route.useSearch();
   const navigate = Route.useNavigate();
   const { start, pending } = useStartChannel();
+  const { setMode } = useWorkspaceMode();
   const { data: profiles } = useQuery(agentListQueryOptions());
 
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +139,16 @@ function RouteComponent() {
 
           try {
             await start(recipient.id, draft.text);
+            /*
+             * Follow the conversation into whichever half of the roster it landed in.
+             *
+             * Starting one with a coding coworker from Ownbot filed it in Cowork and left the person
+             * looking at a roster it was not in — the conversation they had just created, missing. Moving
+             * the mode is the honest resolution: the recipient was a deliberate choice, and the roster is
+             * a view over it rather than a constraint on it. Nothing is refused at the picker for the
+             * same reason.
+             */
+            setMode(modeForCoworker(chosen?.runtime?.kind));
           } catch (caught) {
             // Preserve the unsent draft when channel creation fails.
             setSent(null);

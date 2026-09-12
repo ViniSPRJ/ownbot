@@ -1,6 +1,6 @@
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import type { AgentProfileStore } from "../agents/profile-store";
-import type { AuditStore } from "../audit";
+import type { AuditReader, AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
 import type { AppVariables } from "../auth/guards";
 import { isPrivateAgent } from "../privacy/policy";
@@ -19,12 +19,18 @@ import { discoverAcpModels, type ModelCatalogue } from "./models";
  * from here. An executable path, an argument list or an environment is not a choice a browser gets to
  * make, and the reason that has to be said out loud is that the model catalogue arrives from a CLI which
  * an operator installed and could have influenced.
+ *
+ * `/:threadId/acp-session/:agentId` is the other half: what the last turn did with the CLI's session. It
+ * reads the trail rather than a table, because the trail is where that fact is written and a second copy
+ * is a second thing to go stale.
  */
 export function createAcpConversationModelRoutes(
   store: AgentProfileStore,
   conversations: ConversationModelStore,
   requireUser: MiddlewareHandler<{ Variables: AppVariables }>,
   auditStore?: AuditStore,
+  /** Reads the session rows back. Absent means the session endpoint answers "nothing recorded". */
+  auditReader?: AuditReader,
   discover: typeof discoverAcpModels = discoverAcpModels,
 ) {
   const routes = new Hono<{ Variables: AppVariables }>();
@@ -101,6 +107,59 @@ export function createAcpConversationModelRoutes(
         503,
       );
     }
+  });
+
+  /**
+   * What the last turn did with this coworker's session, for the person reading the conversation.
+   *
+   * A conversation that quietly restarted looks exactly like one that never did: the thread is all
+   * there, the answer arrived, and only the CLI knows it had never heard of any of it. That is the one
+   * state worth surfacing, so this exists to be read beside the transcript rather than in the trail by
+   * an administrator who was not the one confused.
+   *
+   * Bounded on purpose. One thread can hold several coworkers, so the newest session row for the thread
+   * is not necessarily this coworker's, and the window is wide enough to step over the other coworkers'
+   * turns without paging the trail from a conversation view. A coworker that has not answered inside it
+   * reads as nothing recorded, which is what the interface shows for a first turn anyway.
+   */
+  routes.get("/:threadId/acp-session/:agentId", requireUser, async (c) => {
+    const authorized = await authorize(c);
+    if ("error" in authorized)
+      return c.json(
+        { error: authorized.message ?? "Não autorizado." },
+        authorized.error,
+      );
+    if (!auditReader) return c.json({ session: null });
+    let events: Awaited<ReturnType<AuditReader["list"]>>["events"];
+    try {
+      ({ events } = await auditReader.list({
+        limit: 20,
+        eventType: "session.resumed,session.started",
+        targetType: "thread",
+        targetId: authorized.threadId,
+      }));
+    } catch {
+      // The transcript is readable without this. A trail that cannot be read is not a reason to refuse
+      // the conversation, so it reads as nothing recorded.
+      return c.json({ session: null });
+    }
+    const latest = events.find(
+      (event) => event.payload.agentId === authorized.agentId,
+    );
+    if (!latest) return c.json({ session: null });
+    const reason = latest.payload.reason;
+    return c.json({
+      session: {
+        resumed: latest.eventType === "session.resumed",
+        reason: typeof reason === "string" ? reason : null,
+        model: typeof latest.payload.model === "string" ? latest.payload.model : null,
+        provider:
+          typeof latest.payload.provider === "string"
+            ? latest.payload.provider
+            : "codex",
+        at: latest.createdAt,
+      },
+    });
   });
 
   routes.put("/:threadId/acp-model/:agentId", requireUser, async (c) => {

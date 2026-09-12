@@ -3,6 +3,7 @@ import {
   type RuntimeKind,
   channelsForMode,
   isCoworkChannel,
+  modeForCoworker,
   readWorkspaceMode,
   workspaceSwitchView,
   writeWorkspaceMode,
@@ -140,5 +141,21 @@ describe("remembering the mode locally", () => {
     });
     expect(readWorkspaceMode()).toBe("ownbot");
     expect(() => writeWorkspaceMode("cowork")).not.toThrow();
+  });
+});
+
+describe("placing a conversation that does not exist yet", () => {
+  test("the half a new conversation will land in follows its recipient", () => {
+    expect(modeForCoworker("acp")).toBe("cowork");
+    expect(modeForCoworker("api")).toBe("ownbot");
+    expect(modeForCoworker("private_local")).toBe("ownbot");
+    expect(modeForCoworker("remote")).toBe("ownbot");
+    expect(modeForCoworker("unavailable")).toBe("ownbot");
+  });
+
+  test("a recipient whose runtime has not loaded does not move anybody", () => {
+    // Same stance as an existing channel with an unknown coworker: Ownbot until the roster says
+    // otherwise, rather than a mode that flips when the agents query lands.
+    expect(modeForCoworker(undefined)).toBe("ownbot");
   });
 });

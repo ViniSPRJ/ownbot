@@ -885,6 +885,9 @@ export function createApp(
           conversationModelStore,
           requireUser,
           auditStore,
+          // Reads the session rows back for the person in the conversation. The same reader the audit
+          // page uses, so there is one answer to "did this turn continue the session" and not two.
+          auditReader,
         ),
       );
     app.route(

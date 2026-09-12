@@ -8,6 +8,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
 import { ConversationModelPicker } from "@/components/channels/conversation-model-picker";
+import { ConversationSessionNote } from "@/components/channels/conversation-session-note";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
   seedMessage,
@@ -504,6 +505,15 @@ export function ChannelChat({
              * this thread answers with, not what the role answers with by default everywhere.
              */}
             <ConversationModelPicker
+              threadId={channel.threadId}
+              agentId={runtimeAgentId}
+            />
+            {/*
+             * And whether the last turn was still talking to the session this thread started in. Under
+             * the picker because changing the model is one of the things that ends a session, so the
+             * answer belongs directly beneath the control that caused it.
+             */}
+            <ConversationSessionNote
               threadId={channel.threadId}
               agentId={runtimeAgentId}
             />

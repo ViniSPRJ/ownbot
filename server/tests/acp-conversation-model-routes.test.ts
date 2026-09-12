@@ -63,6 +63,13 @@ function setup(
     storedRevision?: string;
     discoveryFails?: boolean;
     catalogModels?: { id: string; name: string }[];
+    /** Session rows the trail returns, newest first, as the reader orders them. */
+    sessionEvents?: {
+      eventType: string;
+      payload: Record<string, unknown>;
+      createdAt: string;
+    }[];
+    sessionReadFails?: boolean;
   } = {},
 ) {
   root = mkdtempSync(join(tmpdir(), "acp-conversation-models-"));
@@ -105,6 +112,12 @@ function setup(
       ],
     };
   };
+  const auditReader = {
+    list: async () => {
+      if (input.sessionReadFails) throw new Error("trail-unavailable");
+      return { events: input.sessionEvents ?? [] };
+    },
+  };
   const route = createAcpConversationModelRoutes(
     {
       get: async () => ({ id: "coord", systemOwned: true, deletedAt: null }),
@@ -121,6 +134,7 @@ function setup(
         void audits.push(event);
       },
     } as never,
+    auditReader as never,
     discover,
   );
   const call = (method: "GET" | "PUT", body?: unknown, agentId = "coord") =>
@@ -129,7 +143,9 @@ function setup(
       headers: body === undefined ? {} : { "content-type": "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  return { ...fake, audits, call, revision: () => currentRevision() };
+  const session = (agentId = "coord") =>
+    route.request(`/thread-1/acp-session/${agentId}`);
+  return { ...fake, audits, call, session, revision: () => currentRevision() };
 }
 
 function currentRevision() {
@@ -412,4 +428,85 @@ test("a trail that cannot take the row still answers the person", async () => {
     provider: "codex",
     profileId: "codex",
   });
+});
+
+const sessionRow = (
+  over: {
+    eventType?: string;
+    payload?: Record<string, unknown>;
+    createdAt?: string;
+  } = {},
+) => ({
+  eventType: over.eventType ?? "session.started",
+  payload: {
+    agentId: "coord",
+    provider: "codex",
+    profileId: "codex",
+    model: "gpt-5.1",
+    ...over.payload,
+  },
+  createdAt: over.createdAt ?? "2026-09-12T17:54:00.000Z",
+});
+
+test("the session row a conversation reads back is its own coworker's newest", async () => {
+  // One thread holds several coworkers, so the newest row for the thread is not necessarily the newest
+  // row for the coworker being asked about. Answering with another coworker's restart would tell this
+  // person their session was lost when it was not.
+  const h = setup({
+    sessionEvents: [
+      sessionRow({
+        payload: { agentId: "other", reason: "anchor_dead" },
+        createdAt: "2026-09-12T18:00:00.000Z",
+      }),
+      sessionRow({
+        eventType: "session.resumed",
+        createdAt: "2026-09-12T17:59:00.000Z",
+      }),
+      sessionRow({ payload: { reason: "first_turn" } }),
+    ],
+  });
+  const response = await h.session();
+  expect(response.status).toBe(200);
+  expect((await response.json()).session).toEqual({
+    resumed: true,
+    reason: null,
+    model: "gpt-5.1",
+    provider: "codex",
+    at: "2026-09-12T17:59:00.000Z",
+  });
+});
+
+test("a new session carries the reason it was opened", async () => {
+  const h = setup({
+    sessionEvents: [sessionRow({ payload: { reason: "anchor_dead" } })],
+  });
+  const body = (await (await h.session()).json()).session;
+  expect(body.resumed).toBe(false);
+  expect(body.reason).toBe("anchor_dead");
+});
+
+test("a coworker that has not answered in the window reads as nothing recorded", async () => {
+  const h = setup({ sessionEvents: [sessionRow({ payload: { agentId: "other" } })] });
+  expect((await (await h.session()).json()).session).toBeNull();
+  const empty = setup({ sessionEvents: [] });
+  expect((await (await empty.session()).json()).session).toBeNull();
+});
+
+test("a trail that cannot be read does not take the conversation down with it", async () => {
+  // The transcript is readable without this. Refusing the conversation because its footnote is
+  // unavailable would trade a missing sentence for a broken screen.
+  const h = setup({ sessionReadFails: true });
+  const response = await h.session();
+  expect(response.status).toBe(200);
+  expect((await response.json()).session).toBeNull();
+});
+
+test("the session row is behind the same membership gate as the choice", async () => {
+  const h = setup({ member: false, sessionEvents: [sessionRow()] });
+  expect((await h.session()).status).toBe(403);
+});
+
+test("a private coworker has no ACP session to report", async () => {
+  const h = setup({ sessionEvents: [sessionRow()] });
+  expect((await h.session("credito")).status).toBe(409);
 });

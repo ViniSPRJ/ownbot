@@ -62,14 +62,12 @@ import { inboxQuery } from "@/lib/notifications/queries";
 import { relativeTime } from "@/lib/relative-time";
 import {
   type RuntimeKind,
-  type WorkspaceMode,
   channelsForMode,
-  readWorkspaceMode,
   workspaceSwitchView,
-  writeWorkspaceMode,
 } from "@/lib/workspace/mode";
 import { Button } from "../ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { useWorkspaceMode } from "@/components/workspace-mode-provider";
 import { Channel } from "./channel";
 import { WorkspaceSwitch } from "./workspace-switch";
 
@@ -244,7 +242,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
    * what puts its conversations in the cockpit. It is the same query the agents screen uses, so this is
    * a cache read on any page a person has already been through rather than a second fetch.
    */
-  const [mode, setMode] = useState<WorkspaceMode>(readWorkspaceMode);
+  const { mode, setMode } = useWorkspaceMode();
   const agents = useQuery(agentListQueryOptions());
   const runtimeKindOf = (agentId: string): RuntimeKind | undefined =>
     agents.data?.find((agent) => agent.id === agentId)?.runtime?.kind;
@@ -257,10 +255,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   });
   const inMode = channelsForMode(workspace.mode, channels.data, runtimeKindOf);
   const visibleChannels = pinnedFirst(matchingChannels(inMode, search));
-  const chooseMode = (next: WorkspaceMode) => {
-    setMode(next);
-    writeWorkspaceMode(next);
-  };
   /*
    * FILTERING DOES NOT ANIMATE. Rows exit and relayout on every keystroke otherwise, which is a
    * list thrashing under somebody who is still typing — and the moving target is the very thing
@@ -317,7 +311,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <WorkspaceSwitch
                   counts={workspace.counts}
                   mode={workspace.mode}
-                  onChange={chooseMode}
+                  onChange={setMode}
                 />
               </SidebarMenuItem>
             ) : null}

@@ -54,6 +54,18 @@ export function writeWorkspaceMode(mode: WorkspaceMode): void {
   }
 }
 
+/**
+ * Where a conversation with this one coworker will appear.
+ *
+ * Used when the conversation does not exist yet and there is nothing to filter: somebody has picked a
+ * recipient, and the roster they are about to be returned to should be the one holding the result. A
+ * coworker whose runtime the browser does not know yet is Ownbot, the same way an unknown runtime does
+ * not pull an existing channel into the cockpit.
+ */
+export function modeForCoworker(kind: RuntimeKind | undefined): WorkspaceMode {
+  return kind === "acp" ? "cowork" : "ownbot";
+}
+
 /** Just enough of a channel to place it, so the roster's own type stays the caller's business. */
 type PlaceableChannel = { agentIds: string[] };
 
