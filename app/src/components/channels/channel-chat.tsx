@@ -7,7 +7,6 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toAgentOptions } from "@/components/channels/composer";
-import { ConversationModelPicker } from "@/components/channels/conversation-model-picker";
 import { ConversationView } from "@/components/channels/conversation-view";
 import {
   seedMessage,
@@ -498,15 +497,6 @@ export function ChannelChat({
            * it — and they are independent, so neither is an `else` for the other.
            */
           <>
-            {/*
-             * Which model is answering, and what this person may change about it. Beside the
-             * conversation rather than on the coworker's page, because this is a different question: what
-             * this thread answers with, not what the role answers with by default everywhere.
-             */}
-            <ConversationModelPicker
-              threadId={channel.threadId}
-              agentId={runtimeAgentId}
-            />
             {unreadable > 0 ? (
               <p className="pb-2 text-sm text-muted-foreground" role="status">
                 {unreadable === 1

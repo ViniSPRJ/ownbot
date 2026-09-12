@@ -1,14 +1,14 @@
 import { Hono, type MiddlewareHandler } from "hono";
+import type { AppVariables } from "../auth/guards";
 import type { AgentProfileStore } from "../agents/profile-store";
 import type { AuditStore } from "../audit";
 import { recordAuditEvent } from "../audit";
-import type { AppVariables } from "../auth/guards";
 import { isPrivateAgent } from "../privacy/policy";
 import {
-  type AcpProfile,
   acpProviderSelectionFor,
   configuredAcpProfile,
   saveAcpAgentProvider,
+  type AcpProfile,
 } from "./config";
 import { discoverAcpModels, type ModelCatalogue } from "./models";
 

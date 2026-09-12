@@ -9,12 +9,12 @@ import {
   index,
   integer,
   jsonb,
+  uniqueIndex,
   pgEnum,
   pgTable,
   primaryKey,
   text,
   timestamp,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { agents, users } from "./core";
 
@@ -191,47 +191,5 @@ export const routineNotifications = pgTable(
       table.status,
       table.nextAttemptAt,
     ),
-  ],
-);
-
-/**
- * Per-conversation model selection for ACP coworkers.
- *
- * The operator's file holds the standing decision: this role answers with this connection, by default.
- * That is one place, and it is the right one for a standing decision. A person in Cowork makes a passing
- * one — this model, for this task, in this conversation — and needs the other conversations left alone.
- *
- * The row is the second place. It carries the connection the choice was made against, because one model
- * id can exist on two connections and name two different things, and the operator revision it was
- * validated against, because a choice made against a catalogue the operator has since replaced is a choice
- * about a model that may no longer exist.
- */
-export const acpConversationModels = pgTable(
-  "acp_conversation_models",
-  {
-    threadId: text("thread_id").notNull(),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
-    ownerUserId: text("owner_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    /** The selection is meaningless without the connection it was read from. */
-    profileId: text("profile_id").notNull(),
-    // Plain text, as every other state column here: the CHECK lives in the migration, and a native enum
-    // type would put the vocabulary in two places that then drift apart.
-    provider: text("provider").notNull(),
-    /** Null follows the operator's default. The row still records that nobody overrode it. */
-    model: text("model"),
-    operatorRevision: text("operator_revision").notNull(),
-    selectedBy: text("selected_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    createdAt: createdAt(),
-    updatedAt: updatedAt(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.threadId, table.agentId] }),
-    index("acp_conversation_models_owner").on(table.ownerUserId),
   ],
 );

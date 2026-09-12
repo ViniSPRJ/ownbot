@@ -386,31 +386,6 @@ export const auditEventTypes = [
    * withholds; the offered credential never does.
    */
   "routines.dispatch_refused",
-  /**
-   * A turn continued the ACP session it was in, or opened a new one, and why it opened one.
-   *
-   * A conversation that restarted quietly is indistinguishable, from the outside, from one that never
-   * did. It looks fine. The person sees an answer, the interface shows the whole thread, and only the
-   * CLI knows it has never heard of any of it — which is exactly when a model answers from the re-seeded
-   * history ownbot sent rather than from a session it remembers.
-   *
-   * So the distinction is written down every turn, with the model and connection that answered. `reason`
-   * is one of: `first_turn`, `load_unsupported`, `anchor_dead`, `provider_changed`, `model_changed`,
-   * `record_unreadable`, `requested`. `anchor_dead` and `record_unreadable` are the two worth reading
-   * in volume: they say a session was lost and the turn went on without it, which is a fact about the
-   * deployment, not about the person.
-   */
-  "session.resumed",
-  "session.started",
-  /**
-   * The model answering one coworker changed, and which session it changed into.
-   *
-   * Selection used to live only in the operator's file, so this could not happen except by an
-   * administrator editing a role. Per-conversation selection makes it an ordinary thing a person does
-   * mid-thread, and an ordinary thing a person does needs its own trail: which conversation, from what
-   * model to what model, and whether the session continued or a new one opened beside it.
-   */
-  "session.model_changed",
 ] as const;
 
 export type AuditEventType = (typeof auditEventTypes)[number];

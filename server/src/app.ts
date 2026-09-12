@@ -15,8 +15,6 @@ import { authoriseAgentCall, sameToken } from "./agents/callback-token";
 import type { BotAccessCheck } from "./agents/profile-policy";
 import type { AgentProfileStore } from "./agents/profile-store";
 import { createAgentRoutes } from "./agents/routes";
-import { createAcpConversationModelRoutes } from "./acp/conversation-model-routes";
-import type { ConversationModelStore } from "./acp/conversation-models";
 import {
   type AuditReader,
   type AuditStore,
@@ -230,15 +228,6 @@ export function createApp(
   notifications?: NotificationsStore,
   localEnrollment?: Hono,
   push?: PushStore,
-  /**
-   * Which model a person chose for one conversation.
-   *
-   * Absent leaves every conversation answering on the operator's default for its coworker, which is the
-   * correct degraded behaviour: a choice that cannot be persisted is a choice that cannot be honoured on
-   * the next turn, and a runtime honouring one in memory alone would be running a model nobody can point
-   * at afterwards.
-   */
-  conversationModelStore?: ConversationModelStore,
 ) {
   const app = new Hono<{ Variables: AppVariables }>();
 
@@ -874,19 +863,6 @@ export function createApp(
   }
 
   if (agentProfileStore) {
-    // Choosing a model for one conversation. Mounted beside the agents' routes because it reads the same
-    // operator mapping, and separate from them because the authorisation is different: an administrator
-    // edits a role here, a person edits their own thread there, and neither can do the other's.
-    if (conversationModelStore)
-      app.route(
-        "/api/conversations",
-        createAcpConversationModelRoutes(
-          agentProfileStore,
-          conversationModelStore,
-          requireUser,
-          auditStore,
-        ),
-      );
     app.route(
       "/api/agents",
       createAgentRoutes(

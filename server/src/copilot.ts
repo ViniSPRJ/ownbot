@@ -1,3 +1,6 @@
+import { AcpAgent } from "./acp/agent";
+import { acpProfileFor } from "./acp/config";
+import { isPrivateAgent, privateModelRoute, privateModelFetch, PRIVATE_BOUNDARY } from "./privacy/policy";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/client";
 import { AbstractAgent, HttpAgent } from "@ag-ui/client";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -18,16 +21,13 @@ import {
   COMPUTER_GUIDANCE,
   PROVENANCE_GUIDANCE,
 } from "../../shared/bot-prompt";
-import { AcpAgent } from "./acp/agent";
-import { acpModelSelectionFor, acpProfileFor } from "./acp/config";
-import {
-  type ConversationModelStore,
-  resolveConversationModel,
-} from "./acp/conversation-models";
 import type { AgentActor } from "./agents/profile-types";
 import type { AgentFetch, StallGuard } from "./channels/stall-guard";
 import type { DeploymentConfig } from "./config";
-import { type LocalThreadStore, withConnectDefaults } from "./local-threads";
+import {
+  withConnectDefaults,
+  type LocalThreadStore,
+} from "./local-threads";
 import type { SelectableSkill, Selection } from "./plugins/selection";
 import {
   latestUserText,
@@ -36,12 +36,6 @@ import {
 } from "./plugins/selection";
 import type { GrantedTool } from "./plugins/tools";
 import { grantedToolGuidance } from "./plugins/tools";
-import {
-  isPrivateAgent,
-  PRIVATE_BOUNDARY,
-  privateModelFetch,
-  privateModelRoute,
-} from "./privacy/policy";
 
 /**
  * The CopilotKit runtime, always in Intelligence mode.
@@ -255,12 +249,7 @@ export function builtInAgentConfiguration(
       agent.model?.trim() || model.defaultModel,
       apiKey,
     ),
-    prompt: builtInAgentPrompt(
-      agent,
-      tools,
-      computerGuidance,
-      connectedVendors,
-    ),
+    prompt: builtInAgentPrompt(agent, tools, computerGuidance, connectedVendors),
     apiKey,
     /*
      * A run stops after one step unless told otherwise, which for a Bot with tools means it calls
@@ -481,15 +470,6 @@ export async function buildAgents(
   /** How a run gets its tool for handing work on. Absent means no Bot is offered one. */
   handoff?: HandoffForRun,
   observeTools?: ToolObserverForRun,
-  /**
-   * Which model each conversation chose.
-   *
-   * Absent means every conversation answers on the operator's default, which is how this worked before
-   * a person could choose at all. Passed down rather than read from a module global so that a deployment
-   * without the table simply does not offer the feature, instead of offering it and forgetting the choice
-   * between two turns.
-   */
-  conversationModels?: ConversationModelStore,
 ): Promise<Record<string, AbstractAgent>> {
   const vendors = await loadVendors().catch(() => [] as readonly string[]);
   return Object.fromEntries(
@@ -509,7 +489,6 @@ export async function buildAgents(
           agentFetch,
           handoff,
           observeTools,
-          conversationModels,
         ),
       ]),
     ),
@@ -529,8 +508,6 @@ async function buildAgent(
   agentFetch?: AgentFetch,
   handoff?: HandoffForRun,
   observeTools?: ToolObserverForRun,
-  /** Which model each conversation chose. See {@link buildAgents}. */
-  conversationModels?: ConversationModelStore,
 ): Promise<AbstractAgent> {
   if (agent.type === "unavailable") {
     return new UnavailableAgent(agent);
@@ -539,36 +516,21 @@ async function buildAgent(
   if (isPrivateAgent(agent.id)) {
     try {
       const route = privateModelRoute();
-      if (agent.type !== "built_in")
-        throw new Error("Bots privados exigem o runtime local integrado.");
+      if (agent.type !== "built_in") throw new Error("Bots privados exigem o runtime local integrado.");
       const local = new BuiltInAgent({
-        model: createOpenAI({
-          baseURL: route.baseURL,
-          apiKey: "local-private",
-          fetch: privateModelFetch(route.baseURL),
-        }).chat(route.model),
+        model: createOpenAI({ baseURL: route.baseURL, apiKey: "local-private", fetch: privateModelFetch(route.baseURL) }).chat(route.model),
         apiKey: "local-private",
         prompt: agent.systemPrompt + "\n\n" + PRIVATE_BOUNDARY,
       });
-      return new RunBuiltAgent(
-        { agentId: agent.id, description: agent.name },
-        local,
-        async () => local,
-      );
+      return new RunBuiltAgent({ agentId: agent.id, description: agent.name }, local, async () => local);
     } catch (error) {
-      return new UnavailableAgent({
-        id: agent.id,
-        name: agent.name,
-        type: "unavailable",
-        reason: error instanceof Error ? error.message : PRIVATE_BOUNDARY,
-      });
+      return new UnavailableAgent({ id: agent.id, name: agent.name, type: "unavailable", reason: error instanceof Error ? error.message : PRIVATE_BOUNDARY });
     }
   }
 
   const acp = acpProfileFor(agent.id);
   if (acp) {
-    if (!agent.acpOwnerId)
-      throw new Error("ACP requires an authenticated owner");
+    if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
     /*
      * The same instructions the API path composes, with the tools the CLI is actually bridged.
      *
@@ -581,80 +543,19 @@ async function buildAgent(
     const ownerId = agent.acpOwnerId;
     // The operator's ACP mapping replaces execution, including a managed remote Bot such as
     // Desk. Its standing role already contains the owner's saved memory; retain that profile.
-    const promptAgent =
-      agent.type === "built_in"
-        ? agent
-        : {
-            id: agent.id,
-            name: agent.name,
-            type: "built_in" as const,
-            systemPrompt: agent.standingMessage.content,
-          };
+    const promptAgent = agent.type === "built_in" ? agent : {
+      id: agent.id, name: agent.name, type: "built_in" as const,
+      systemPrompt: agent.standingMessage.content,
+    };
     const granted = await loadTools(agent.id);
-    /*
-     * What this conversation asked for, re-decided on every turn.
-     *
-     * Asked per thread because one agent answers many conversations, and re-checked every time rather
-     * than cached, because the two things that can invalidate it — whether this person is still in the
-     * channel, and whether the operator has replaced the catalogue the choice was validated against — both
-     * change while the process keeps running. A dropped choice falls back to the operator's default and
-     * says so in the audit trail, rather than either failing the turn or quietly running something else.
-     */
-    const resolveModel = conversationModels
-      ? async (threadId: string) => {
-          const resolved = await resolveConversationModel({
-            store: conversationModels,
-            actor: { userId: ownerId, admin: false },
-            threadId,
-            agentId: agent.id,
-            current: {
-              profileId: acp.profileId,
-              revision: acpModelSelectionFor(agent.id)?.revision ?? "",
-            },
-          });
-          if ("dropped" in resolved) {
-            console.info(
-              JSON.stringify({
-                type: "acp-model-choice-dropped",
-                agentId: agent.id,
-                reason: resolved.dropped,
-              }),
-            );
-            return null;
-          }
-          return resolved.model;
-        }
-      : undefined;
     const acpAgentFor = (tools: readonly GrantedTool[]) =>
       new AcpAgent({
         agentId: agent.id,
         name: agent.name,
         ownerId,
-        prompt: builtInAgentPrompt(
-          promptAgent,
-          tools,
-          computerGuidance,
-          connectedVendors,
-        ),
+        prompt: builtInAgentPrompt(promptAgent, tools, computerGuidance, connectedVendors),
         profile: acp,
-        tools: async (input) =>
-          observeTools ? observeTools(agent.id, input, tools) : tools,
-        ...(resolveModel ? { resolveModel } : {}),
-        // Whether this turn continued the session or opened one, into the trail. Best-effort by design:
-        // the turn already answers either way, and a trail that could not take this row must not be the
-        // reason a person gets no answer.
-        onSession: (notice) => {
-          void conversationModels?.recordTurnSession?.({
-            threadId: notice.threadId,
-            agentId: agent.id,
-            actorUserId: ownerId,
-            resumed: notice.resumed,
-            ...(notice.freshReason ? { freshReason: notice.freshReason } : {}),
-            model: notice.model,
-            provider: notice.provider,
-            profileId: notice.profileId,
-          });
-        },
+        tools: async (input) => observeTools ? observeTools(agent.id, input, tools) : tools,
       });
     const whole = acpAgentFor(granted);
     if (!handoff) return whole;
@@ -665,9 +566,7 @@ async function buildAgent(
         const passing = await handoff(agent.id, input);
         // A fresh agent per run either way: the ACP agent keeps its stop handle on the instance,
         // so sharing one across runs would let aborting this run cancel another.
-        return acpAgentFor(
-          passing.length > 0 ? [...granted, ...passing] : granted,
-        );
+        return acpAgentFor(passing.length > 0 ? [...granted, ...passing] : granted);
       },
     );
   }
@@ -772,14 +671,10 @@ async function buildAgent(
        */
       const passing = (await handoff?.(agent.id, input)) ?? [];
       const rawTools = passing.length > 0 ? [...offered, ...passing] : offered;
-      const tools = observeTools
-        ? [...(await observeTools(agent.id, input, rawTools))]
-        : rawTools;
+      const tools = observeTools ? [...await observeTools(agent.id, input, rawTools)] : rawTools;
       // Nothing added and nothing narrowed means nothing to rebuild, and reusing the agent already
       // built for this request keeps that path allocation-for-allocation what it was.
-      return !observeTools &&
-        tools.length === granted.length &&
-        passing.length === 0
+      return !observeTools && tools.length === granted.length && passing.length === 0
         ? whole
         : withTools(tools);
     },
@@ -1038,11 +933,7 @@ class RunBuiltAgent extends AbstractAgent {
       from(this.build(input)).pipe(
         switchMap((agent) => {
           this.inner = agent;
-          return agent.run(
-            isPrivateAgent(this.agentId ?? "")
-              ? { ...input, tools: [] }
-              : input,
-          );
+          return agent.run(isPrivateAgent(this.agentId ?? "") ? { ...input, tools: [] } : input);
         }),
       ),
     );
@@ -1123,8 +1014,6 @@ export async function resolveRuntimeAgents(
    */
   onlyBotId?: string,
   observeTools?: ToolObserverForRun,
-  /** Which model each conversation chose. See {@link buildAgents}. */
-  conversationModels?: ConversationModelStore,
 ): Promise<Record<string, AbstractAgent>> {
   const all = await loadAgents();
   if (all.length === 0) {
@@ -1140,12 +1029,7 @@ export async function resolveRuntimeAgents(
   // what that means, exactly as it would have from a roster that did not contain it.
   if (registered.length === 0) return {};
 
-  const apiKey = registered.some(
-    (agent) =>
-      agent.type === "built_in" &&
-      !isPrivateAgent(agent.id) &&
-      !acpProfileFor(agent.id),
-  )
+  const apiKey = registered.some((agent) => agent.type === "built_in" && !isPrivateAgent(agent.id) && !acpProfileFor(agent.id))
     ? await resolveModelApiKey()
     : null;
   return buildAgents(
@@ -1161,15 +1045,10 @@ export async function resolveRuntimeAgents(
     agentFetch,
     handoff,
     observeTools,
-    conversationModels,
   );
 }
 
-export type ToolObserverForRun = (
-  botId: string,
-  input: RunAgentInput,
-  tools: readonly GrantedTool[],
-) => Promise<readonly GrantedTool[]>;
+export type ToolObserverForRun = (botId: string, input: RunAgentInput, tools: readonly GrantedTool[]) => Promise<readonly GrantedTool[]>;
 
 /** What one Bot may call, for the person whose request this is. */
 export type LoadToolsForBot = (botId: string) => Promise<GrantedTool[]>;
@@ -1239,8 +1118,6 @@ export function createRequestAgents(
    */
   handoffForActor?: (actorId: string) => HandoffForRun,
   observeToolsForActor?: (actorId: string) => ToolObserverForRun,
-  /** Which model each conversation chose. See {@link buildAgents}. */
-  conversationModels?: ConversationModelStore,
 ) {
   return async ({ request }: { request: Request }) => {
     const actor = await identifyActor(request);
@@ -1258,7 +1135,6 @@ export function createRequestAgents(
       handoffForActor?.(actor.id),
       undefined,
       observeToolsForActor?.(actor.id),
-      conversationModels,
     );
   };
 }
@@ -1384,8 +1260,6 @@ export function mountCopilotRuntime(
    */
   localThreads?: LocalThreadStore,
   observeToolsForActor?: (actorId: string) => ToolObserverForRun,
-  /** Which model each conversation chose. See {@link buildAgents}. */
-  conversationModels?: ConversationModelStore,
 ) {
   if (config.runtime.mode === "sse" && !localThreads) {
     throw new Error(
@@ -1433,7 +1307,6 @@ export function mountCopilotRuntime(
       // what each of them was granted, on every delivery and again on every retry.
       input.botId,
       observeToolsForActor?.(actor.id),
-      conversationModels,
     );
     return agents[input.botId] ?? null;
   };
@@ -1458,7 +1331,6 @@ export function mountCopilotRuntime(
     agentFetch,
     handoffForActor,
     observeToolsForActor,
-    conversationModels,
   ) as never;
   const telemetry = config.accessibility
     ? { telemetryProperties: { accessibility_title: "OpenBot" as const } }

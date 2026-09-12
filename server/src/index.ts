@@ -1,22 +1,25 @@
+import { acpProfileFor } from "./acp/config";
+import { acpComputerTools } from "./acp/computer-tools";
+import { createNotificationsStore } from "./notifications/store";
+import { createPushStore } from "./notifications/push-store";
+import { startPushWorker } from "./notifications/push-worker";
+import { createLocalEnrollmentRoutes } from "./auth/local-enrollment";
+import { createRoutineEventStore } from "./routines/events";
+import { createHandoffStatusReader, handoffStatusTool } from "./agents/handoff-status-tool";
+import { createAgentMemoryStore } from "./memory/store";
+import { createOperationsStore } from "./operations/store";
 import { randomUUID } from "node:crypto";
 import { serve } from "bun";
 import { eq } from "drizzle-orm";
 import { COMPUTER_GUIDANCE } from "../../shared/bot-prompt";
-import { acpComputerTools } from "./acp/computer-tools";
-import { acpProfileFor } from "./acp/config";
-import { createConversationModelStore } from "./acp/conversation-models";
 import { mintRunAssertion, readRunAssertion } from "./agents/callback-token";
 import { createAgentFetch } from "./agents/endpoint";
 import { askTheirOwnPerson, escalationTool } from "./agents/escalation";
 import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
 import { createHandoffDelivery } from "./agents/handoff-delivery";
 import { createHandoffRunner } from "./agents/handoff-runner";
-import {
-  createHandoffStatusReader,
-  handoffStatusTool,
-} from "./agents/handoff-status-tool";
-import { handoffTool } from "./agents/handoff-tool";
 import { createPiWatcher } from "./agents/pi-watch";
+import { handoffTool } from "./agents/handoff-tool";
 import { createAgentProfileStore } from "./agents/profile-store";
 import type { AgentActor } from "./agents/profile-types";
 import { createRuntimeAgentLoader } from "./agents/runtime-agents";
@@ -27,7 +30,6 @@ import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
-import { createLocalEnrollmentRoutes } from "./auth/local-enrollment";
 import type { OpenBotRole } from "./auth/roles";
 import {
   createChannelEventHub,
@@ -37,6 +39,7 @@ import { createChannelStore } from "./channels/routes";
 import { websocket as channelSocket } from "./channels/socket";
 import { createStallGuard } from "./channels/stall-guard";
 import { createThreadIdentity } from "./channels/thread-identity";
+import { createLocalThreadStore } from "./local-threads";
 import { createSandboxedStore } from "./components/sandboxed";
 import { createComponentStore } from "./components/store";
 import { createComputerGateway } from "./computer/gateway";
@@ -53,13 +56,13 @@ import {
 import { createSnapshotStore } from "./computer/snapshot-store";
 import { loadConfig, MAX_TIMER_MS, wholeNumberEnv } from "./config";
 import {
-  type HandoffForRun,
   type IdentifyActor,
   type IdentifyUser,
   mountCopilotRuntime,
   resolveRuntimeAgents,
-  type ToolObserverForRun,
   type ToolSelection,
+  type HandoffForRun,
+  type ToolObserverForRun,
 } from "./copilot";
 import {
   createCredentialAdminService,
@@ -68,22 +71,15 @@ import {
 } from "./credentials";
 import { createDatabase } from "./db/client";
 import { intelligenceChannelMappings } from "./db/schema";
-import { createLocalThreadStore } from "./local-threads";
-import { createAgentMemoryStore } from "./memory/store";
-import { createPushStore } from "./notifications/push-store";
-import { startPushWorker } from "./notifications/push-worker";
-import { createNotificationsStore } from "./notifications/store";
-import { createOperationsStore } from "./operations/store";
 import { createOnboardingStore } from "./people/onboarding";
 import { createPeopleStore } from "./people/store";
 import { useRoutineTools } from "./plugins/builtin-routines";
 import { redirectUriFor } from "./plugins/oauth";
 import { createPluginStore } from "./plugins/store";
 import { grantedSkills, grantedTools } from "./plugins/tools";
-import { createRoutineEventStore } from "./routines/events";
-import { createHeadlessComputer } from "./routines/headless-computer";
-import type { RoutineResearchBudget } from "./routines/research-budget";
 import { createTurnRunner, DEFAULT_ABORT_GRACE_MS } from "./routines/run-turn";
+import type { RoutineResearchBudget } from "./routines/research-budget";
+import { createHeadlessComputer } from "./routines/headless-computer";
 import { createRoutineRunner } from "./routines/runner";
 import { createRoutineStore } from "./routines/store";
 import { createIntentRouter } from "./routing/classify";
@@ -263,10 +259,7 @@ if (computerProvider?.warm) {
   // Not awaited so startup is not held on the computer fleet; a failure is still reported rather
   // than left to surface as an unhandled rejection.
   computerProvider.warm().catch((error) => {
-    console.warn(
-      "Computer provider warm-up failed; computers start on first use.",
-      error,
-    );
+    console.warn("Computer provider warm-up failed; computers start on first use.", error);
   });
 }
 // What Bots may do on their computers. Configuration supplies the deployment's default; an
@@ -539,15 +532,13 @@ const resolveRuntimeModelApiKey = () =>
 
 // Tools run here, not in the browser. Each one still executes through the plugin store, so the
 // grant, the policy and the audit row are exactly where they were.
-const acpComputer = computerGateway
-  ? createHeadlessComputer({
-      gateway: computerGateway,
-      actorFor: (ownerUserId) => ({
-        id: ownerUserId,
-        ...(ownerUserId === DEV_ACTOR.id ? {} : { userId: ownerUserId }),
-      }),
-    })
-  : undefined;
+const acpComputer = computerGateway ? createHeadlessComputer({
+  gateway: computerGateway,
+  actorFor: ownerUserId => ({
+    id: ownerUserId,
+    ...(ownerUserId === DEV_ACTOR.id ? {} : { userId: ownerUserId }),
+  }),
+}) : undefined;
 const loadToolsForActor = (actorId: string) => async (botId: string) => {
   const tools = await grantedTools({ store: pluginStore, botId, actorId });
   // API agents retain their existing frontend/routine execution path.
@@ -653,21 +644,14 @@ const agentFetch = createAgentFetch({
 });
 
 // Shared by interactive turns, inbound handoffs and unattended routines.
-const handoffForActor =
-  (actorId: string): HandoffForRun =>
-  async (botId, input) => {
+const handoffForActor = (actorId: string): HandoffForRun => async (botId, input) => {
     const supplied = readRunAssertion(
       (input.forwardedProps as { openbotRun?: unknown } | undefined)
         ?.openbotRun,
       config.keyEncryptionKey,
     );
-    const from =
-      supplied?.botId === botId &&
-      supplied.actorId === actorId &&
-      supplied.runId === input.runId &&
-      supplied.threadId === input.threadId
-        ? supplied
-        : null;
+    const from = supplied?.botId === botId && supplied.actorId === actorId &&
+      supplied.runId === input.runId && supplied.threadId === input.threadId ? supplied : null;
     const run = {
       botId,
       actorId,
@@ -756,70 +740,39 @@ const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
 };
 
 const piWatcher = createPiWatcher({
-  queue: createWorkQueue(database),
-  store: pluginStore,
+  queue: createWorkQueue(database), store: pluginStore,
   owner: `pi-watch/${randomUUID()}`,
   authorised: async (work) => {
     try {
-      if (config.handoff.maxDepth <= 0 || config.handoff.maxPerRun <= 0)
-        return false;
+      if (config.handoff.maxDepth <= 0 || config.handoff.maxPerRun <= 0) return false;
       const actor = await actorFor(work.actorId);
       const [executor, requester, grants] = await Promise.all([
         agentProfileStore.get(actor, work.botId),
         agentProfileStore.get(actor, work.originRequest.botId),
         pluginStore.listForAgent(work.botId),
       ]);
-      if (
-        !executor ||
-        !requester ||
-        !grants.tools.some((t) => t.ref === `${work.worker}/pi_status`)
-      )
-        return false;
+      if (!executor || !requester || !grants.tools.some(t => t.ref === `${work.worker}/pi_status`)) return false;
       // This is a receipt returning through an already-authorized, signed delegation, not a new
       // direct handoff. Requiring a shortcut grant would break valid Coord -> Research -> Code chains.
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   },
 });
-const observeToolsForActor =
-  (actorId: string): ToolObserverForRun =>
-  async (botId, input, tools) => {
-    const supplied = readRunAssertion(
-      (input.forwardedProps as { openbotRun?: unknown } | undefined)
-        ?.openbotRun,
-      config.keyEncryptionKey,
-    );
-    const bound =
-      supplied?.botId === botId &&
-      supplied.actorId === actorId &&
-      supplied.runId === input.runId &&
-      supplied.threadId === input.threadId
-        ? supplied
-        : null;
-    return piWatcher.observe(
-      {
-        botId,
-        actorId,
-        runId: input.runId,
-        threadId: input.threadId,
-        depth: bound?.depth ?? 0,
-        ...(bound?.originRequest ? { originRequest: bound.originRequest } : {}),
-      },
-      tools,
-    );
-  };
+const observeToolsForActor = (actorId: string): ToolObserverForRun => async (botId, input, tools) => {
+  const supplied = readRunAssertion(
+    (input.forwardedProps as { openbotRun?: unknown } | undefined)?.openbotRun,
+    config.keyEncryptionKey,
+  );
+  const bound = supplied?.botId === botId && supplied.actorId === actorId &&
+    supplied.runId === input.runId && supplied.threadId === input.threadId ? supplied : null;
+  return piWatcher.observe({ botId, actorId, runId: input.runId, threadId: input.threadId,
+    depth: bound?.depth ?? 0, ...(bound?.originRequest ? {originRequest: bound.originRequest} : {}),
+  }, tools);
+};
 const piWatchLoop = repeatAfterEach(async () => {
-  try {
-    await piWatcher.sweep();
-  } catch {
-    console.warn("Pi completion tracking will retry.");
-  }
+  try { await piWatcher.sweep(); } catch { console.warn("Pi completion tracking will retry."); }
 }, 5_000);
-const piWatchRetention = repeatAfterEach(async () => {
-  await piWatcher.reap();
-}, 3_600_000);
+const piWatchRetention = repeatAfterEach(async () => { await piWatcher.reap(); }, 3_600_000);
 
 /**
  * One Bot, built for a routine's turn, as its owner.
@@ -1006,9 +959,6 @@ const copilotRuntime = mountCopilotRuntime(
   },
   localThreads,
   observeToolsForActor,
-  // Which model each conversation chose. The same database the channel and the membership live in, so
-  // a turn and the choice it honours are reading the same answer to "is this person still in here".
-  createConversationModelStore(database, bootAuditStore),
 );
 
 /**
@@ -1060,23 +1010,12 @@ if (config.handoff.maxDepth > 0 && config.handoff.maxPerRun > 0) {
         config.keyEncryptionKey,
       ),
     delivery: createHandoffDelivery({
-      signRun: ({ work, runId, threadId }) =>
-        mintRunAssertion(
-          {
-            botId: work.toBotId,
-            actorId: work.actorId,
-            runId,
-            threadId,
-            depth: work.depth,
-            originRequest: work.answerIn
-              ? { botId: work.toBotId, threadId: work.answerIn }
-              : (work.originRequest ?? {
-                  botId: work.fromBotId,
-                  threadId: work.threadId,
-                }),
-          },
-          config.keyEncryptionKey,
-        ),
+      signRun: ({ work, runId, threadId }) => mintRunAssertion({
+        botId: work.toBotId, actorId: work.actorId, runId, threadId, depth: work.depth,
+        originRequest: work.answerIn
+          ? { botId: work.toBotId, threadId: work.answerIn }
+          : work.originRequest ?? { botId: work.fromBotId, threadId: work.threadId },
+      }, config.keyEncryptionKey),
       deadlineMs: config.handoff.deliveryDeadlineMs,
       /*
        * Built as the person, WITH THEIR ROLE. The desk resolved it to decide the hop was allowed; a
@@ -1301,9 +1240,6 @@ const app = createApp(
   createNotificationsStore(database),
   auth ? createLocalEnrollmentRoutes(database, auth, config) : undefined,
   pushStore,
-  // Which model a person chose for one conversation. Reads the same Postgres everything else decides
-  // against, so a choice and the turn that honours it cannot disagree about who is in the channel.
-  createConversationModelStore(database, bootAuditStore),
 );
 
 /**
