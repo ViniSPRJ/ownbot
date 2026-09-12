@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { getTableName, is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "../src/db/schema";
 import {
   accounts,
+  acpConversationModels,
   agentPreferences,
   agentProfiles,
   agents,
@@ -407,6 +408,98 @@ describe("OpenBot database schema", () => {
     );
     expect(normalizedMigration).toContain(
       `CREATE INDEX "agent_profiles_visibility_deleted_idx" ON "agent_profiles" USING btree ("visibility","deleted_at")`,
+    );
+  });
+
+  /**
+   * A table the code can import and the database has never heard of.
+   *
+   * This is the failure that gets all the way to a deployment. `tsc` is satisfied — the export
+   * exists — every test that fakes the store passes, and the first thing to notice is a query
+   * against a real Postgres saying the relation does not exist. The journal test next door catches a
+   * migration file and a journal entry disagreeing; nothing caught a schema and a migration folder
+   * disagreeing.
+   *
+   * One direction only, deliberately. The reverse — a `CREATE TABLE` with no table in the schema —
+   * is ordinary here: documents, chunks, the connector tables and three others are created by
+   * migrations and managed in raw SQL rather than through Drizzle, so asserting that way round would
+   * be eight false failures and a test somebody turns off.
+   */
+  test("creates every table the schema declares, in some migration", async () => {
+    const directory = new URL("../drizzle/", import.meta.url);
+    const files = (await readdir(directory)).filter((name) =>
+      name.endsWith(".sql"),
+    );
+    const applied = (
+      await Promise.all(
+        files.map((name) => readFile(new URL(name, directory), "utf8")),
+      )
+    )
+      .join("\n")
+      .replace(/\s+/g, " ");
+
+    const declared = Object.values(schema)
+      .filter((value): value is PgTable => is(value, PgTable))
+      .map(getTableName);
+    // Quoted or not: the generated migrations quote every identifier and the hand-written ones do not.
+    const uncreated = declared.filter(
+      (name) =>
+        !new RegExp(`CREATE TABLE (IF NOT EXISTS )?"?${name}"?`, "i").test(
+          applied,
+        ),
+    );
+
+    expect(uncreated).toEqual([]);
+  });
+
+  test("keeps the per-conversation model table aligned with its migration", async () => {
+    const table = getTableConfig(acpConversationModels);
+    expect(table.name).toBe("acp_conversation_models");
+    expect(table.columns.map((column) => column.name)).toEqual([
+      "thread_id",
+      "agent_id",
+      "owner_user_id",
+      "profile_id",
+      "provider",
+      "model",
+      "operator_revision",
+      "selected_by",
+      "created_at",
+      "updated_at",
+    ]);
+    // One conversation, one choice per coworker: the pair is the identity, not a surrogate key.
+    expect(
+      table.primaryKeys.flatMap((key) =>
+        key.columns.map((column) => column.name),
+      ),
+    ).toEqual(["thread_id", "agent_id"]);
+
+    /*
+     * Comments stripped before the whitespace is flattened. This migration is hand-written and
+     * explains itself between its own columns, so the column list is only contiguous text once the
+     * prose is out of the way.
+     */
+    const migration = (
+      await readFile(
+        new URL("../drizzle/0031_acp_conversation_models.sql", import.meta.url),
+        "utf8",
+      )
+    )
+      .replace(/--[^\n]*/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    expect(migration).toContain(
+      "CREATE TABLE acp_conversation_models ( thread_id text NOT NULL, agent_id text NOT NULL REFERENCES agents(id) ON DELETE CASCADE, owner_user_id text REFERENCES users(id) ON DELETE SET NULL, profile_id text NOT NULL,",
+    );
+    // The vocabulary lives in the CHECK rather than in a native enum, so the database is the one
+    // place it is written down. A provider the runtime does not know cannot be stored at all.
+    expect(migration).toContain(
+      "provider text NOT NULL CHECK (provider IN ('codex','claude','grok','pi')), model text, operator_revision text NOT NULL, selected_by text REFERENCES users(id) ON DELETE SET NULL,",
+    );
+    expect(migration).toContain("PRIMARY KEY (thread_id, agent_id)");
+    expect(migration).toContain(
+      "CREATE INDEX acp_conversation_models_owner ON acp_conversation_models(owner_user_id)",
     );
   });
 });
