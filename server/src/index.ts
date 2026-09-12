@@ -1,5 +1,6 @@
 import { acpProfileFor } from "./acp/config";
 import { acpComputerTools } from "./acp/computer-tools";
+import { createConversationModelStore } from "./acp/conversation-models";
 import { createNotificationsStore } from "./notifications/store";
 import { createPushStore } from "./notifications/push-store";
 import { startPushWorker } from "./notifications/push-worker";
@@ -959,6 +960,9 @@ const copilotRuntime = mountCopilotRuntime(
   },
   localThreads,
   observeToolsForActor,
+  // Which model each conversation chose. The same database the channel and the membership live in, so
+  // a turn and the choice it honours are reading the same answer to "is this person still in here".
+  createConversationModelStore(database, bootAuditStore),
 );
 
 /**
@@ -1240,6 +1244,9 @@ const app = createApp(
   createNotificationsStore(database),
   auth ? createLocalEnrollmentRoutes(database, auth, config) : undefined,
   pushStore,
+  // Which model a person chose for one conversation. Reads the same Postgres everything else decides
+  // against, so a choice and the turn that honours it cannot disagree about who is in the channel.
+  createConversationModelStore(database, bootAuditStore),
 );
 
 /**

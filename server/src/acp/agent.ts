@@ -1,31 +1,55 @@
 import { AcpPermissionGate } from "./permissions";
 import { acpFailureCause } from "./failure";
 import { acpEnvironment, selectSessionModel } from "./models";
+import { type AcpSessionState, type FreshReason, legacySessionKey, parseSessionState, planSessionAnchor,
+  resolveWorkspaceDirectory, type SessionSelection, selectionFromProfile, sessionIdentityKey, writeSessionState } from "./session-state";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
 import { Observable } from "rxjs";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { AcpStdioTransport } from "./transport";
+import { AcpRpcError, AcpStdioTransport } from "./transport";
 import { createToolBridge } from "./tool-bridge";
 import { acpToolsForProvider } from "./tool-names";
 import type { AcpProfile } from "./config";
 import type { GrantedTool } from "../plugins/tools";
 const running = new Set<string>();
 
-type SessionRecord = { sessionId: string; lastMessageId: string | null; replyMessageId?: string; replyMessageIds?: string[] };
+/** What the person sees when a turn does not continue the session they were in. */
+export type AcpSessionNotice = {
+  /** The notice describes one turn, and a turn belongs to a thread. */
+  threadId: string; resumed: boolean; freshReason?: FreshReason;
+  model: string | null; provider: string; profileId: string;
+};
 export class AcpAgent extends AbstractAgent {
   private stop?: () => void;
   constructor(private readonly options: {
     agentId: string; name: string; ownerId: string; prompt: string;
     profile: AcpProfile; tools: (input: RunAgentInput) => Promise<readonly GrantedTool[]>;
+    /** Drop the anchor and open a new session on this turn, keeping the conversation. */
+    restart?: boolean;
+    /** Reports, before the first token, whether this turn resumed or opened a session. */
+    onSession?: (notice: AcpSessionNotice) => void;
+    /**
+     * The model this conversation selected, if it selected one.
+     *
+     * Asked per thread rather than fixed at construction, because one agent instance answers many
+     * conversations. The resolver re-checks membership and the operator revision on the way in, and
+     * returns null for "follow the operator's default", which is what a dropped or absent choice means.
+     */
+    resolveModel?: (threadId: string) => Promise<string | null>;
   }) { super({ agentId: options.agentId, description: options.name }); }
   clone(): AcpAgent { return new AcpAgent(this.options); }
   abortRun(): void { this.stop?.(); }
   run(input: RunAgentInput): Observable<BaseEvent> {
     return new Observable(subscriber => {
       const o = this.options;
-      const key = createHash("sha256").update(JSON.stringify([o.ownerId,o.agentId,input.threadId,o.profile])).digest("hex");
+      // Identity only. The model is not part of the workspace, and changing it must not move the
+      // directory or discard the anchor: see session-state.ts.
+      const key = sessionIdentityKey({ ownerId:o.ownerId, agentId:o.agentId, threadId:input.threadId });
+      // The conversation's own choice if it made one and still may, otherwise the operator's. Assigned
+      // inside the async body, before the anchor is planned, because which model answers decides which
+      // session is hers.
+      let selection: SessionSelection = selectionFromProfile(o.profile);
       let transport: AcpStdioTransport | undefined;
       let bridge: Awaited<ReturnType<typeof createToolBridge>> | undefined;
       let sessionId: string | undefined;
@@ -53,12 +77,32 @@ export class AcpAgent extends AbstractAgent {
       void (async () => {
         if (running.has(key)) throw new Error("Este agente já está trabalhando nesta conversa.");
         running.add(key); ownsLock = true;
+        /*
+         * The workspace follows the conversation, not the model.
+         *
+         * A conversation that already has a directory keeps it, anchor and files together, under the name
+         * it was created with. Only new conversations get the identity key. Swapping the model mid-thread
+         * changes neither.
+         */
+        const cwd = (await resolveWorkspaceDirectory({
+          workspaceRoot: o.profile.workspaceRoot,
+          identityKey: key,
+          legacyKey: legacySessionKey({ ownerId:o.ownerId, agentId:o.agentId, threadId:input.threadId }, o.profile),
+          exists: async directory => stat(directory).then(() => true, () => false),
+        })).directory;
+        const stateFile = join(cwd, ".ownbot-session.json");
+        const persist = async (value: AcpSessionState) => writeSessionState(stateFile, value);
         try {
-          const cwd = join(o.profile.workspaceRoot, key);
+          const chosen = (await o.resolveModel?.(input.threadId).catch(() => null)) ?? null;
+          selection = { ...selection, model: chosen ?? o.profile.model ?? null };
           await mkdir(cwd, { recursive: true, mode: 0o700 });
-          const stateFile = join(cwd, ".ownbot-session.json");
-          let saved: SessionRecord | undefined;
-          try { saved = JSON.parse(await readFile(stateFile,"utf8")); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+          let saved: AcpSessionState | undefined;
+          let unreadable = false;
+          try {
+            const parsed = parseSessionState(await readFile(stateFile,"utf8"), selection);
+            saved = parsed.state;
+            unreadable = parsed.freshReason === "record_unreadable";
+          } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
           phase = "tools";
           const { tools, guidance: toolGuidance } = acpToolsForProvider(o.profile.provider ?? "codex", await o.tools(input));
           const permissions = new AcpPermissionGate(o.profile.provider ?? "codex", new Set(tools.map(tool=>tool.name)));
@@ -111,24 +155,60 @@ export class AcpAgent extends AbstractAgent {
           if (init.protocolVersion !== 1) throw new Error("Versão ACP não suportada");
           if (!init.agentCapabilities?.mcpCapabilities?.http) throw new Error("Este agente ACP não oferece MCP HTTP para as ferramentas do ownbot.");
           phase = "session";
-          let fromIndex = 0;
+          const plan = planSessionAnchor({ state:saved, unreadable,
+            loadSupported: init.agentCapabilities?.loadSession === true,
+            selection, messages:input.messages, restartRequested: o.restart === true });
           let sessionConfiguration: { configOptions?: unknown; models?: unknown } = {};
-          const previous = saved ? input.messages.findIndex(m=>m.id===saved.lastMessageId) : -1;
-          if (saved && previous >= 0 && init.agentCapabilities?.loadSession) {
-            sessionConfiguration = await transport.request("session/load",{sessionId:saved.sessionId,cwd,mcpServers:[bridge.descriptor]});
-            sessionId=saved.sessionId;
-            if (previous>=0) fromIndex=previous+1;
-          } else {
+          let resumed = false;
+          let freshReason = plan.freshReason;
+          if (plan.load && plan.sessionId) {
+            try {
+              sessionConfiguration = await transport.request("session/load",{sessionId:plan.sessionId,cwd,mcpServers:[bridge.descriptor]});
+              sessionId = plan.sessionId;
+              resumed = true;
+            } catch (error) {
+              /*
+               * A dead anchor is cleared here, and the run continues in a new session.
+               *
+               * It used to fail. That was not merely unfriendly: the anchor stayed on disk, so every
+               * later turn tried to load the same dead session and failed the same way, and the person
+               * watched the same error on a conversation whose history was perfectly intact in ownbot. The
+               * anchor outliving the CLI's ability to open it is the one state that must not persist.
+               *
+               * Clearing it before opening the replacement is the point. Clearing it only after success
+               * would leave the poison in place for whatever fails between the two.
+               */
+              if (!(error instanceof AcpRpcError) && !(error instanceof Error)) throw error;
+              freshReason = "anchor_dead";
+              await persist({ version:2, sessionId:null, resumable:false, selection,
+                lastMessageId: saved?.lastMessageId ?? null,
+                ...(saved?.replyMessageId ? {replyMessageId:saved.replyMessageId} : {}),
+                replyMessageIds: saved?.replyMessageIds ?? [], updatedAt: new Date().toISOString() });
+              sessionId = undefined;
+            }
+          }
+          if (!resumed) {
             const session=await transport.request<{sessionId:string;configOptions?:unknown;models?:unknown}>("session/new",{cwd,mcpServers:[bridge.descriptor]});
             sessionConfiguration = session;
             sessionId=session.sessionId;
           }
           if (!sessionId) throw new Error("Agente ACP não retornou uma sessão");
           if (o.profile.mode) await transport.request("session/set_mode",{sessionId,modeId:o.profile.mode});
-          if (o.profile.model) await selectSessionModel(transport, sessionId, sessionConfiguration, o.profile.model);
+          if (selection.model) await selectSessionModel(transport, sessionId, sessionConfiguration, selection.model);
           if (cancelled) return;
           emit({type:"RUN_STARTED",threadId:input.threadId,runId:input.runId});
-          const previousReplies = new Set([...(saved?.replyMessageIds ?? []), saved?.replyMessageId].filter((id): id is string => typeof id === "string"));
+          /*
+           * Whether this turn continued the session or opened one, reported out of band.
+           *
+           * Deliberately not an event in the AG-UI stream: every consumer of that stream would have to
+           * learn to ignore it, and a stream is a poor place to learn a fact you need even when the stream
+           * never opened. The caller audits it, and the interface reads it back from the session endpoint.
+           * A conversation that quietly restarted looks exactly like one that never restarted, and only one
+           * of those has its history in front of the model.
+           */
+          o.onSession?.({ threadId:input.threadId, resumed, freshReason, model:selection.model,
+            provider: o.profile.provider ?? "codex", profileId: o.profile.profileId });
+          const { fromIndex, previousReplyIds: previousReplies } = plan;
           const messages=input.messages.slice(fromIndex).filter(m=>m.role!=="system" && !(fromIndex > 0 && previousReplies.has(m.id)));
           const context=messages.map(m=>`${m.role}: ${typeof m.content==="string"?m.content:JSON.stringify(m.content??"")}`).join("\n\n");
           accepting=true;
@@ -142,9 +222,9 @@ export class AcpAgent extends AbstractAgent {
           endText();
           emit({type:"CUSTOM",name:"ownbot.acp.final-message",value:{messageId}});
           phase = "persist";
-          const temporary=stateFile+".tmp";
-          await writeFile(temporary,JSON.stringify({sessionId,lastMessageId:input.messages.at(-1)?.id??null,replyMessageId:messageId,replyMessageIds}),{mode:0o600});
-          await rename(temporary,stateFile);
+          await persist({ version:2, sessionId, resumable:true, selection,
+            lastMessageId: input.messages.at(-1)?.id ?? null, replyMessageId: messageId, replyMessageIds,
+            updatedAt: new Date().toISOString() });
           finished = true;
           transport.close(); transport = undefined;
           await bridge.close(); bridge = undefined;
