@@ -42,6 +42,14 @@ export class AcpAgent extends AbstractAgent {
     restart?: boolean;
     /** Reports, before the first token, whether this turn resumed or opened a session. */
     onSession?: (notice: AcpSessionNotice) => void;
+    /**
+     * The model this conversation selected, if it selected one.
+     *
+     * Asked per thread rather than fixed at construction, because one agent instance answers many
+     * conversations. The resolver re-checks membership and the operator revision on the way in, and
+     * returns null for "follow the operator's default", which is what a dropped or absent choice means.
+     */
+    resolveModel?: (threadId: string) => Promise<string | null>;
   }) { super({ agentId: options.agentId, description: options.name }); }
   clone(): AcpAgent { return new AcpAgent(this.options); }
   abortRun(): void { this.stop?.(); }
@@ -51,7 +59,10 @@ export class AcpAgent extends AbstractAgent {
       // Identity only. The model is not part of the workspace, and changing it must not move the
       // directory or discard the anchor: see session-state.ts.
       const key = sessionIdentityKey({ ownerId: o.ownerId, agentId: o.agentId, threadId: input.threadId });
-      const selection: SessionSelection = selectionFromProfile(o.profile);
+      // The conversation's own choice if it made one and still may, otherwise the operator's. Assigned
+      // inside the async body, before the anchor is planned, because which model answers decides which
+      // session is hers.
+      let selection: SessionSelection = selectionFromProfile(o.profile);
       let transport: AcpStdioTransport | undefined;
       let bridge: Awaited<ReturnType<typeof createToolBridge>> | undefined;
       let sessionId: string | undefined;
@@ -95,6 +106,8 @@ export class AcpAgent extends AbstractAgent {
         const stateFile = join(cwd, ".ownbot-session.json");
         const persist = async (value: AcpSessionState) => writeSessionState(stateFile, value);
         try {
+          const chosen = await o.resolveModel?.(input.threadId).catch(() => null) ?? null;
+          selection = { ...selection, model: chosen ?? o.profile.model ?? null };
           await mkdir(cwd, { recursive: true, mode: 0o700 });
           let saved: AcpSessionState | undefined;
           let unreadable = false;
