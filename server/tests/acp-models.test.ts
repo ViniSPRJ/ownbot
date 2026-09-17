@@ -128,7 +128,9 @@ test("selection uses the advertised config id, verifies acknowledgement and refu
       };
     },
   } as any;
-  await selectSessionModel(transport, "session-1", modern, "large");
+  expect(
+    await selectSessionModel(transport, "session-1", modern, "large"),
+  ).toBe("large");
   expect(calls).toEqual([
     [
       "session/set_config_option",
@@ -150,19 +152,66 @@ test("selection uses the advertised config id, verifies acknowledgement and refu
 });
 test("legacy adapters still use set_model without an API fallback", async () => {
   const calls: unknown[] = [];
-  await selectSessionModel(
-    {
-      request: async (...args: unknown[]) => {
-        calls.push(args);
-      },
-    } as any,
-    "session",
-    {},
-    "legacy",
-  );
+  expect(
+    await selectSessionModel(
+      {
+        request: async (...args: unknown[]) => {
+          calls.push(args);
+        },
+      } as any,
+      "session",
+      {},
+      "legacy",
+    ),
+  ).toBeNull();
   expect(calls).toEqual([
     ["session/set_model", { sessionId: "session", modelId: "legacy" }],
   ]);
+});
+test("a legacy empty ACK is not confirmation, even when the request matches a previously advertised current model", async () => {
+  const previous = {
+    models: {
+      currentModelId: "legacy",
+      availableModels: [{ modelId: "legacy", name: "Legacy" }],
+    },
+  };
+  expect(
+    await selectSessionModel(
+      { request: async () => ({}) } as any,
+      "session",
+      previous,
+      "legacy",
+    ),
+  ).toBeNull();
+  expect(
+    await selectSessionModel(
+      {
+        request: async () => ({
+          models: { currentModelId: "other" },
+        }),
+      } as any,
+      "session",
+      previous,
+      "legacy",
+    ),
+  ).toBeNull();
+});
+test("a legacy adapter that reports a matching current model has confirmed it", async () => {
+  expect(
+    await selectSessionModel(
+      {
+        request: async () => ({
+          models: {
+            currentModelId: "legacy",
+            availableModels: [{ modelId: "legacy", name: "Legacy" }],
+          },
+        }),
+      } as any,
+      "session",
+      {},
+      "legacy",
+    ),
+  ).toBe("legacy");
 });
 test("live discovery protocol never prompts or grants tools, coalesces duplicate requests and cleans its workspace", async () => {
   setup();

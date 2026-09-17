@@ -599,7 +599,8 @@ async function buildAgent(
           void conversationModels?.recordTurnSession?.({
             threadId: notice.threadId, agentId: agent.id, actorUserId: ownerId, resumed: notice.resumed,
             ...(notice.freshReason ? {freshReason:notice.freshReason} : {}),
-            model: notice.model, provider: notice.provider, profileId: notice.profileId,
+            model: notice.model, requestedModel: notice.requestedModel, resolvedModel: notice.resolvedModel,
+            executor: notice.executor, runId: notice.runId, provider: notice.provider, profileId: notice.profileId,
           });
         },
       });

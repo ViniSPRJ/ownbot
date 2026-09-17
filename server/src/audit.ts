@@ -358,11 +358,13 @@ export const auditEventTypes = [
    * `delivered` is the other Bot's turn being on record. `failed` is a hop that will be tried again.
    * `retried` is the one worth its own name: a hop on its second attempt may already have run that
    * Bot, spent a model call and posted an answer before its owner died, so a person looking at two
-   * similar answers can tell a duplicate from a mystery.
+   * similar answers can tell a duplicate from a mystery. `reconciled` is operator reconciliation
+   * closing the hop without replaying it.
    */
   "agent.handoff_delivered",
   "agent.handoff_failed",
   "agent.handoff_retried",
+  "agent.handoff_reconciled",
   /*
    * A Bot asking a person instead.
    *
@@ -399,6 +401,10 @@ export const auditEventTypes = [
    * `record_unreadable`, `requested`. `anchor_dead` and `record_unreadable` are the two worth reading
    * in volume: they say a session was lost and the turn went on without it, which is a fact about the
    * deployment, not about the person.
+   *
+   * `model` is the requested selection. `requestedModel` is the same fact under its own name.
+   * `resolvedModel` is the id the CLI confirmed, or null when it did not. Command, env and content
+   * never belong on these rows; `whitelistSessionAuditPayload` is what keeps them off.
    */
   "session.resumed",
   "session.started",
@@ -478,6 +484,34 @@ function isSensitiveKey(key: string) {
   );
 }
 
+/**
+ * Fields a `session.resumed` / `session.started` row may keep.
+ *
+ * The CLI session is where command, env and prompt content live. Those never belong in the trail,
+ * and a blocklist of secret-looking keys is not enough: an unexpected `env` or `command` would
+ * otherwise pass through because neither name is in `sensitiveKeys`.
+ */
+export const sessionAuditPayloadKeys = [
+  "agentId",
+  "provider",
+  "profileId",
+  "model",
+  "requestedModel",
+  "resolvedModel",
+  "executor",
+  "runId",
+  "reason",
+] as const;
+
+export function whitelistSessionAuditPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = new Set<string>(sessionAuditPayloadKeys);
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => allowed.has(key)),
+  );
+}
+
 export function redactAuditPayload(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactAuditPayload);
@@ -499,9 +533,16 @@ export async function recordAuditEvent(
   store: AuditStore,
   event: AuditEventInput,
 ) {
+  const sessionEvent =
+    event.eventType === "session.resumed" ||
+    event.eventType === "session.started";
   await store.insert({
     ...event,
-    payload: redactAuditPayload(event.payload) as Record<string, unknown>,
+    payload: redactAuditPayload(
+      sessionEvent
+        ? whitelistSessionAuditPayload(event.payload)
+        : event.payload,
+    ) as Record<string, unknown>,
   });
 }
 

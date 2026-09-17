@@ -10,7 +10,12 @@
 
 export type ConversationModelState = {
   models: { id: string; name: string }[];
-  /** What the session is answering with right now. */
+  /**
+   * What the CLI catalogue currently advertises as selected.
+   *
+   * Configuration for the next turn, not a confirmed record of what last answered. That
+   * confirmation lives on the session note, from the trail.
+   */
   currentModel: string | null;
   /** The operator's default for this coworker's connection. */
   operatorDefault: string | null;
@@ -29,19 +34,19 @@ export type ModelPickerView =
   | { kind: "unavailable"; message: string }
   | {
       kind: "picker";
-      /** What the control reads. The person's choice if it holds, otherwise what is running. */
+      /** The person's explicit choice, or undefined when following the operator default. */
       value: string | undefined;
       options: { id: string; name: string }[];
       /** Read-only because this person may read but not choose. */
       readOnly: boolean;
       /**
-       * Shown when what is running is not what was last picked.
+       * Shown when a stored choice is no longer the one that will run next.
        *
-       * Wording is deliberately plain: this is not an error and not a warning. The turn answered. It
-       * answered on a different model, and the person is entitled to know which one they are reading.
+       * Wording is about the next turn's configuration, not about what last answered. The catalogue
+       * is not a confirmed session model.
        */
       note: string | null;
-      /** The option label for the model actually answering. */
+      /** The option label for the model configured for the next turn. */
       answering: string;
     };
 
@@ -60,22 +65,42 @@ export function modelPickerView(
 ): ModelPickerView {
   if (!state) return { kind: "hidden" };
   if (state.models.length === 0) return { kind: "hidden" };
-  const answering =
-    state.selected ?? state.currentModel ?? state.operatorDefault;
+  const configured =
+    state.selected ?? state.operatorDefault ?? state.currentModel;
   return {
     kind: "picker",
-    value: state.selected ?? state.currentModel ?? undefined,
+    // Only a standing per-conversation choice is pinned in the control. Following the operator
+    // default must read as Default, not as the CLI catalogue's current id.
+    value: state.selected ?? undefined,
     options: state.models,
     readOnly: !state.canSelect,
-    // Only says something when a choice existed and is no longer the one running. A first turn with no
-    // choice is not a dropped choice, and saying "your choice no longer applies" there would be a lie.
+    // Only says something when a choice existed and is no longer the one configured. A first turn
+    // with no choice is not a dropped choice.
     note:
       state.dropped && state.dropped !== null
         ? state.dropped === "stale"
-          ? `Your earlier choice no longer applies to this coworker. This is answering with ${nameOf(state.models, answering)}.`
-          : `This coworker is on a different connection now, so your earlier choice does not carry over. This is answering with ${nameOf(state.models, answering)}.`
+          ? `Your earlier choice no longer applies to this coworker. Next turn uses ${nameOf(state.models, configured)}.`
+          : `This coworker is on a different connection now, so your earlier choice does not carry over. Next turn uses ${nameOf(state.models, configured)}.`
         : null,
-    answering: nameOf(state.models, answering),
+    answering: nameOf(state.models, configured),
+  };
+}
+
+/**
+ * Draft vs current value for the conversation model picker.
+ *
+ * Empty string is a deliberate Default. `undefined` means the control has not been touched, and
+ * must not be treated as Default: that was the bug that made Default look unsaved and unsavable.
+ */
+export function pickerDraftState(input: {
+  draft: string | undefined;
+  current: string | undefined;
+}): { value: string; dirty: boolean; modelToSave: string | null } {
+  const current = input.current ?? "";
+  return {
+    value: input.draft ?? current,
+    dirty: input.draft !== undefined && input.draft !== current,
+    modelToSave: input.draft === "" ? null : (input.draft ?? null),
   };
 }
 

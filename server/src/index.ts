@@ -20,6 +20,10 @@ import { askTheirOwnPerson, escalationTool } from "./agents/escalation";
 import { createHandoffDesk, HANDOFF_KIND } from "./agents/handoff";
 import { createHandoffDelivery } from "./agents/handoff-delivery";
 import { createHandoffRunner } from "./agents/handoff-runner";
+import {
+  loadDurableExecutors,
+  resolveWatchExecutor,
+} from "./agents/durable-executors";
 import { createPiWatcher } from "./agents/pi-watch";
 import { handoffTool } from "./agents/handoff-tool";
 import { createAgentProfileStore } from "./agents/profile-store";
@@ -157,6 +161,9 @@ const identifyActor: IdentifyActor = async (request) => {
 };
 
 const config = loadConfig();
+const durableExecutors = loadDurableExecutors(
+  process.env.OPENBOT_DURABLE_EXECUTORS_CONFIG,
+);
 const rawPort = process.env.PORT ?? process.env.SERVER_PORT ?? "3001";
 if (
   process.env.PORT &&
@@ -335,6 +342,7 @@ const pluginStore = createPluginStore({
   auditStore: bootAuditStore,
   credentials: credentialStore,
   encryptionKey: config.keyEncryptionKey,
+  executors: durableExecutors,
   policy: () => policyStore.get(),
   /*
    * Where a vendor sends people back, for a vendor whose client this deployment registers itself.
@@ -744,16 +752,19 @@ const actorFor = async (ownerUserId: string): Promise<AgentActor> => {
 const piWatcher = createPiWatcher({
   queue: createWorkQueue(database), store: pluginStore,
   owner: `pi-watch/${randomUUID()}`,
+  executors: durableExecutors,
   authorised: async (work) => {
     try {
       if (config.handoff.maxDepth <= 0 || config.handoff.maxPerRun <= 0) return false;
+      const resolved = resolveWatchExecutor(work, durableExecutors);
+      if (!resolved) return false;
       const actor = await actorFor(work.actorId);
       const [executor, requester, grants] = await Promise.all([
         agentProfileStore.get(actor, work.botId),
         agentProfileStore.get(actor, work.originRequest.botId),
         pluginStore.listForAgent(work.botId),
       ]);
-      if (!executor || !requester || !grants.tools.some(t => t.ref === `${work.worker}/pi_status`)) return false;
+      if (!executor || !requester || !grants.tools.some(t => t.ref === resolved.statusTool)) return false;
       // This is a receipt returning through an already-authorized, signed delegation, not a new
       // direct handoff. Requiring a shortcut grant would break valid Coord -> Research -> Code chains.
       return true;

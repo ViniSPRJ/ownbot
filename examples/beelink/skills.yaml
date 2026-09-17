@@ -81,21 +81,22 @@ skills:
 
   - slug: delegate-to-pi
     title: Delegate coding to Pi
-    summary: Hand coding subtasks to the Pi coding agents on the M4 and M5 Macs, several in parallel.
+    summary: Hand independent coding subtasks to the registered Pi workers, several in parallel.
     instructions: >-
-      Split work into independent coding subtasks. The current local workers are pi-m4
-      (Qwen3.8-27B-oQ8e-mtp, up to eight concurrent jobs) and pi-m5 (qwen3.8-flash-next, up to four
-      concurrent jobs). Read pi_status for live capacity and model identity; do not change their models.
-      Always submit coding jobs with background: true and a stable idempotencyKey per logical
-      task. The immediate response is acceptance, not completion. Preserve jobId. When ownbot
-      confirms durable completion tracking, end the turn: completed, failed or interrupted jobs
-      wake the requesting agent automatically. Use pi_status only for diagnosis or when tracking
-      could not be persisted. On an ambiguous timeout,
-      repeat only the identical request and idempotencyKey; never create a duplicate job.
-      When a subtask needs the repository, pass its absolute workspace path. Pi works on a copy
-      and returns a diff and staging path; it does not alter the original. Inspect every result,
-      changed file, diff, artifact and test before applying. Record failures and interrupted work
-      honestly. Do not claim execution from acceptance alone. Preserve existing Pi sessions.
+      Split work into independent coding subtasks. pi-m4 and pi-m5 are logical worker aliases,
+      not physical hosts. Consult live pi_status for current models and capacity before choosing
+      a worker. Report the model pi_status returns; do not infer it from the alias. Do not change
+      worker models. Always submit coding jobs with background: true and a stable idempotencyKey
+      per logical task. The immediate response is acceptance, not completion. Preserve jobId.
+      When ownbot confirms durable completion tracking, end the turn: completed, failed or
+      interrupted jobs wake the requesting agent automatically. Use pi_status only for diagnosis
+      or when tracking could not be persisted. On an ambiguous timeout, repeat only the identical
+      request and idempotencyKey; never create a duplicate job. When a subtask needs the
+      repository, pass its absolute workspace path. Pi works on a copy and returns a diff and
+      staging path; it does not alter the original. Inspect every result, changed file, diff,
+      artifact and test before applying. Record failures and interrupted work honestly. Do not
+      claim execution from acceptance alone. Preserve existing Pi sessions. These MCP runner
+      endpoints are separate from optional ACP profiles; do not conflate them.
     tools:
       - pi-m4/pi_run
       - pi-m4/pi_status

@@ -1,6 +1,6 @@
 import { AcpPermissionGate } from "./permissions";
 import { acpFailureCause } from "./failure";
-import { acpEnvironment, selectSessionModel } from "./models";
+import { acpEnvironment, selectSessionModel, sessionModels } from "./models";
 import { type AcpSessionState, type FreshReason, legacySessionKey, parseSessionState, planSessionAnchor,
   resolveWorkspaceDirectory, type SessionSelection, selectionFromProfile, sessionIdentityKey, writeSessionState } from "./session-state";
 import { AbstractAgent, type BaseEvent, type RunAgentInput } from "@ag-ui/client";
@@ -17,8 +17,23 @@ const running = new Set<string>();
 /** What the person sees when a turn does not continue the session they were in. */
 export type AcpSessionNotice = {
   /** The notice describes one turn, and a turn belongs to a thread. */
-  threadId: string; resumed: boolean; freshReason?: FreshReason;
-  model: string | null; provider: string; profileId: string;
+  threadId: string;
+  runId: string;
+  resumed: boolean;
+  freshReason?: FreshReason;
+  /**
+   * The selection asked of this turn, not the id the CLI confirmed.
+   *
+   * Kept so existing readers of `model` keep seeing the requested choice. The confirmed
+   * effective id, when the CLI actually reported one, is `resolvedModel`.
+   */
+  model: string | null;
+  requestedModel: string | null;
+  /** Confirmed effective id, or null when the CLI did not report a matching current model. */
+  resolvedModel: string | null;
+  executor: "acp";
+  provider: string;
+  profileId: string;
 };
 export class AcpAgent extends AbstractAgent {
   private stop?: () => void;
@@ -198,7 +213,15 @@ export class AcpAgent extends AbstractAgent {
           }
           if (!sessionId) throw new Error("Agente ACP não retornou uma sessão");
           if (o.profile.mode) await transport.request("session/set_mode",{sessionId,modeId:o.profile.mode});
-          if (selection.model) await selectSessionModel(transport, sessionId, sessionConfiguration, selection.model);
+          // A requested selection is confirmed only by the CLI's response to the change. With no
+          // selection, the current model advertised on session/new or session/load is the confirmation.
+          // After an unconfirmed legacy change, the previously advertised current value is not reused.
+          let resolvedModel: string | null = null;
+          if (selection.model) {
+            resolvedModel = await selectSessionModel(transport, sessionId, sessionConfiguration, selection.model);
+          } else {
+            resolvedModel = sessionModels(sessionConfiguration).currentModel;
+          }
           if (cancelled) return;
           emit({type:"RUN_STARTED",threadId:input.threadId,runId:input.runId});
           /*
@@ -210,8 +233,18 @@ export class AcpAgent extends AbstractAgent {
            * A conversation that quietly restarted looks exactly like one that never restarted, and only one
            * of those has its history in front of the model.
            */
-          o.onSession?.({ threadId:input.threadId, resumed, freshReason, model:selection.model,
-            provider: o.profile.provider ?? "codex", profileId: o.profile.profileId });
+          o.onSession?.({
+            threadId: input.threadId,
+            runId: input.runId,
+            resumed,
+            freshReason,
+            model: selection.model,
+            requestedModel: selection.model,
+            resolvedModel,
+            executor: "acp",
+            provider: o.profile.provider ?? "codex",
+            profileId: o.profile.profileId,
+          });
           const { fromIndex, previousReplyIds: previousReplies } = plan;
           const messages=input.messages.slice(fromIndex).filter(m=>m.role!=="system" && !(fromIndex > 0 && previousReplies.has(m.id)));
           const context=messages.map(m=>`${m.role}: ${typeof m.content==="string"?m.content:JSON.stringify(m.content??"")}`).join("\n\n");

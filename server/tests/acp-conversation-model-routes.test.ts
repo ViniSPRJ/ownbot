@@ -377,6 +377,10 @@ test("the trail says whether the turn continued the session, with the model that
     actorUserId: "owner",
     resumed: true,
     model: "gpt-5.1",
+    requestedModel: "gpt-5.1",
+    resolvedModel: "gpt-5.1",
+    executor: "acp",
+    runId: "run-1",
     provider: "codex",
     profileId: "codex",
   });
@@ -387,6 +391,10 @@ test("the trail says whether the turn continued the session, with the model that
     resumed: false,
     freshReason: "anchor_dead",
     model: null,
+    requestedModel: null,
+    resolvedModel: null,
+    executor: "acp",
+    runId: "run-2",
     provider: "codex",
     profileId: "codex",
   });
@@ -401,6 +409,11 @@ test("the trail says whether the turn continued the session, with the model that
   ).toMatchObject({
     agentId: "coord",
     model: "gpt-5.1",
+    requestedModel: "gpt-5.1",
+    resolvedModel: "gpt-5.1",
+    executor: "acp",
+    runId: "run-1",
+    profileId: "codex",
   });
   // A new session names why. A resumed one has no reason to give, and must not invent one.
   expect((rows[1] as { payload: Record<string, unknown> }).payload.reason).toBe(
@@ -425,6 +438,10 @@ test("a trail that cannot take the row still answers the person", async () => {
     actorUserId: "owner",
     resumed: true,
     model: null,
+    requestedModel: null,
+    resolvedModel: null,
+    executor: "acp",
+    runId: "run-1",
     provider: "codex",
     profileId: "codex",
   });
@@ -471,8 +488,61 @@ test("the session row a conversation reads back is its own coworker's newest", a
     resumed: true,
     reason: null,
     model: "gpt-5.1",
+    requestedModel: "gpt-5.1",
+    resolvedModel: null,
+    executor: null,
+    runId: null,
+    profileId: "codex",
     provider: "codex",
     at: "2026-09-12T17:59:00.000Z",
+  });
+});
+
+test("older trail rows fall requestedModel back to model and leave confirmation unknown", async () => {
+  const h = setup({
+    sessionEvents: [
+      {
+        eventType: "session.resumed",
+        payload: { agentId: "coord", provider: "codex", model: "gpt-5.1" },
+        createdAt: "2026-09-12T17:54:00.000Z",
+      },
+    ],
+  });
+  expect((await (await h.session()).json()).session).toEqual({
+    resumed: true,
+    reason: null,
+    model: "gpt-5.1",
+    requestedModel: "gpt-5.1",
+    resolvedModel: null,
+    executor: null,
+    runId: null,
+    profileId: null,
+    provider: "codex",
+    at: "2026-09-12T17:54:00.000Z",
+  });
+});
+
+test("a confirmed session row keeps requested and resolved distinct", async () => {
+  const h = setup({
+    sessionEvents: [
+      sessionRow({
+        eventType: "session.resumed",
+        payload: {
+          model: "gpt-5.1",
+          requestedModel: "gpt-5.1",
+          resolvedModel: "gpt-5.1-codex",
+          executor: "acp",
+          runId: "run-9",
+        },
+      }),
+    ],
+  });
+  expect((await (await h.session()).json()).session).toMatchObject({
+    model: "gpt-5.1",
+    requestedModel: "gpt-5.1",
+    resolvedModel: "gpt-5.1-codex",
+    executor: "acp",
+    runId: "run-9",
   });
 });
 
@@ -486,7 +556,9 @@ test("a new session carries the reason it was opened", async () => {
 });
 
 test("a coworker that has not answered in the window reads as nothing recorded", async () => {
-  const h = setup({ sessionEvents: [sessionRow({ payload: { agentId: "other" } })] });
+  const h = setup({
+    sessionEvents: [sessionRow({ payload: { agentId: "other" } })],
+  });
   expect((await (await h.session()).json()).session).toBeNull();
   const empty = setup({ sessionEvents: [] });
   expect((await (await empty.session()).json()).session).toBeNull();

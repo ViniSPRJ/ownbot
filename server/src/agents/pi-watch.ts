@@ -4,7 +4,14 @@ import type { GrantedTool } from "../plugins/tools";
 import type { PluginStore } from "../plugins/store";
 import type { WorkQueue } from "../work/queue";
 import type { RunAssertion } from "./callback-token";
+import {
+  DEFAULT_DURABLE_EXECUTORS,
+  type DurableExecutorRegistry,
+  resolveWatchExecutor,
+} from "./durable-executors";
 import { HANDOFF_KIND } from "./handoff";
+
+export { resolveWatchExecutor } from "./durable-executors";
 
 export const PI_WATCH_KIND = "pi.watch";
 export const PI_WATCH_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -20,11 +27,20 @@ const jobSchema = z.object({
   error: z.string().optional(),
 });
 const originSchema = z.object({ botId: z.string().min(1), threadId: z.string().min(1) });
+const toolRefSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9_-]{1,64}$/);
 const watchSchema = z.object({
   actorId: z.string().min(1), botId: z.string().min(1), threadId: z.string().min(1),
   runId: z.string().min(1), depth: z.number().int().nonnegative(),
-  worker: z.enum(["pi-m4", "pi-m5"]), jobId: z.string().regex(/^[a-f0-9]{32}$/),
+  worker: z.string().min(1).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+  jobId: z.string().regex(/^[a-f0-9]{32}$/),
   originRequest: originSchema, createdAt: z.number().finite(),
+  protocolVersion: z.literal(1).optional(),
+  submitTool: toolRefSchema.optional(),
+  statusTool: toolRefSchema.optional(),
+}).refine((value) => {
+  const count = [value.protocolVersion, value.submitTool, value.statusTool]
+    .filter((field) => field !== undefined).length;
+  return count === 0 || count === 3;
 });
 export type PiWatchWork = z.infer<typeof watchSchema>;
 function receipt(text: string) {
@@ -53,11 +69,11 @@ function evidenceChecksum(evidence: unknown) {
     sha256: createHash("sha256").update(canonicalJson(evidence)).digest("hex"),
   };
 }
-function inlineReceipt(work: PiWatchWork, key: string, state: string, evidence: unknown) {
+function inlineReceipt(work: PiWatchWork, key: string, state: string, evidence: unknown, statusTool: string) {
   const checksum = evidenceChecksum(evidence);
   const base = {
     worker: work.worker, jobId: work.jobId, state, evidenceChecksum: checksum,
-    retrieve: { tool: `${work.worker}/pi_status`, jobId: work.jobId },
+    retrieve: { tool: statusTool, jobId: work.jobId },
     queue: { kind: PI_WATCH_KIND, key },
     retention: PI_RECEIPT_RETENTION,
   };
@@ -94,12 +110,17 @@ export function createPiWatcher(options: {
   authorised: (work: PiWatchWork) => Promise<boolean>;
   now?: () => number;
   statusTimeoutMs?: number;
+  /** Defaults to the shared logical registry. Startup should inject the same registry as the plugin store. */
+  executors?: DurableExecutorRegistry;
 }) {
-  const { queue, store, owner, authorised, now = Date.now, statusTimeoutMs = 20_000 } = options;
-  async function finish(key: string, work: PiWatchWork, state: string, evidence: unknown) {
+  const {
+    queue, store, owner, authorised, now = Date.now, statusTimeoutMs = 20_000,
+    executors = DEFAULT_DURABLE_EXECUTORS,
+  } = options;
+  async function finish(key: string, work: PiWatchWork, state: string, evidence: unknown, statusTool: string) {
     // A grant can be revoked while a status request is in flight.
     if (!await authorised(work)) return queue.finish({ kind: PI_WATCH_KIND, key, owner, result: { state: "access_revoked" } });
-    const inline = inlineReceipt(work, key, state, evidence);
+    const inline = inlineReceipt(work, key, state, evidence, statusTool);
     const truncatedNote = inline.truncated
       ? " The inline receipt is truncated. Retrieve the complete evidence with the worker pi_status tool and this jobId; retrieval remains subject to existing tool grants. Retention is finite (worker receipts default 7 days; queue records are reaped 7 days after finish) and is not promised forever. If full evidence is unavailable, report that; do not infer success from this partial preview."
       : "";
@@ -118,26 +139,27 @@ export function createPiWatcher(options: {
     });
   }
   return {
-    /** Wrap only the two submission tools, after their grant/policy/vendor execution succeeds. */
+    /** Wrap only registered durable submit tools, after their grant/policy/vendor execution succeeds. */
     observe(from: RunAssertion, tools: readonly GrantedTool[]): readonly GrantedTool[] {
       if (!from.threadId) return tools;
       return tools.map((tool) => {
-        if (tool.ref !== "pi-m4/pi_run" && tool.ref !== "pi-m5/pi_run") return tool;
+        const executor = executors.findBySubmitTool(tool.ref);
+        if (!executor) return tool;
         return { ...tool, execute: async (args: unknown) => {
           const text = await tool.execute(args);
           if (!args || typeof args !== "object" || (args as Record<string, unknown>).background !== true) return text;
           const parsed = receipt(text);
           if (!parsed.success) return text;
-          const worker = tool.ref.split("/")[0] as "pi-m4" | "pi-m5";
           const work: PiWatchWork = {
             actorId: from.actorId, botId: from.botId, threadId: from.threadId!,
-            runId: from.runId, depth: from.depth ?? 0, worker, jobId: parsed.data.jobId,
+            runId: from.runId, depth: from.depth ?? 0, worker: executor.id, jobId: parsed.data.jobId,
             originRequest: from.originRequest ?? { botId: from.botId, threadId: from.threadId! }, createdAt: now(),
+            protocolVersion: 1, submitTool: executor.submitTool, statusTool: executor.statusTool,
           };
           try {
             if (!await authorised(work)) return `${text}\nAutomatic completion tracking is unavailable: access was revoked. Do not resubmit this job.`;
             const queued = await queue.offer({ kind: PI_WATCH_KIND,
-              key: piWatchKey(from.actorId, worker, work.jobId), payload: work,
+              key: piWatchKey(from.actorId, executor.id, work.jobId), payload: work,
               runAt: new Date(now() + 10_000),
             });
             if (queued === "refused") throw new Error("Watch admission refused");
@@ -155,14 +177,19 @@ export function createPiWatcher(options: {
         const parsed = watchSchema.safeParse(item.payload);
         if (!parsed.success) { await queue.finish({ kind: PI_WATCH_KIND, key: item.key, owner, result: { state: "invalid_watch" } }); continue; }
         const work = parsed.data;
+        const resolved = resolveWatchExecutor(work, executors);
+        if (!resolved) {
+          await queue.finish({ kind: PI_WATCH_KIND, key: item.key, owner, result: { state: "executor_unavailable" } });
+          continue;
+        }
         if (!await authorised(work)) { await queue.finish({ kind: PI_WATCH_KIND, key: item.key, owner, result: { state: "access_revoked" } }); continue; }
         if (now() - work.createdAt >= PI_WATCH_MAX_AGE_MS || item.attempts >= PI_WATCH_MAX_ATTEMPTS) {
-          await finish(item.key, work, "unknown", "Completion could not be verified within the 24-hour tracking window. The job was not rerun or cancelled."); continue;
+          await finish(item.key, work, "unknown", "Completion could not be verified within the 24-hour tracking window. The job was not rerun or cancelled.", resolved.statusTool); continue;
         }
         try {
           let timer: ReturnType<typeof setTimeout> | undefined;
           const result = await Promise.race([
-            store.callTool({ ref: `${work.worker}/pi_status`, args: { jobId: work.jobId }, botId: work.botId, actorId: work.actorId }),
+            store.callTool({ ref: resolved.statusTool, args: { jobId: work.jobId }, botId: work.botId, actorId: work.actorId }),
             new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("status_timeout")), statusTimeoutMs); }),
           ]).finally(() => { if (timer) clearTimeout(timer); });
           const status = result.isError ? null : receipt(result.text);
@@ -172,7 +199,7 @@ export function createPiWatcher(options: {
             await queue.release({ kind: PI_WATCH_KIND, key: item.key, owner, delayMs: 60_000 });
           } else {
             const state = job.state === "completed" && job.result?.ok !== true ? "unknown" : job.state;
-            await finish(item.key, work, state, job);
+            await finish(item.key, work, state, job, resolved.statusTool);
           }
         } catch {
           await queue.release({ kind: PI_WATCH_KIND, key: item.key, owner, delayMs: 60_000, reason: "Pi status unavailable; job not rerun." });

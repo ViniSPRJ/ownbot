@@ -1,37 +1,56 @@
 import { describe, expect, test } from "bun:test";
 import {
   type ConversationSession,
+  sessionNoticeTitle,
   sessionNoticeView,
 } from "@/lib/channels/conversation-session";
 
-const session = (over: Partial<ConversationSession> = {}): ConversationSession => ({
+const session = (
+  over: Partial<ConversationSession> = {},
+): ConversationSession => ({
   resumed: false,
   reason: "anchor_dead",
   model: "gpt-5.1",
+  requestedModel: "gpt-5.1",
+  resolvedModel: "gpt-5.1",
+  executor: "acp",
+  runId: "run-1",
+  profileId: "codex",
   provider: "codex",
   at: "2026-09-12T17:54:00.000Z",
   ...over,
 });
 
 describe("telling somebody their session did not carry over", () => {
-  test("an ordinary turn says nothing at all", () => {
-    // A notice on every turn is a notice nobody reads on the turn that mattered.
-    expect(sessionNoticeView(session({ resumed: true }))).toEqual({
-      kind: "hidden",
-    });
+  test("no session row is still nothing at all", () => {
     expect(sessionNoticeView(null)).toEqual({ kind: "hidden" });
     expect(sessionNoticeView(undefined)).toEqual({ kind: "hidden" });
   });
 
-  test("a first turn is not a restart", () => {
-    expect(sessionNoticeView(session({ reason: "first_turn" }))).toEqual({
-      kind: "hidden",
+  test("an ordinary turn names the confirmed model and is not a restart", () => {
+    const view = sessionNoticeView(session({ resumed: true }));
+    expect(view).toEqual({
+      kind: "notice",
+      text: "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
+      tone: "neutral",
     });
   });
 
-  test("a restart the person asked for is not news to them", () => {
-    expect(sessionNoticeView(session({ reason: "requested" }))).toEqual({
-      kind: "hidden",
+  test("a first turn is not a restart, and still names the confirmed model", () => {
+    const view = sessionNoticeView(session({ reason: "first_turn" }));
+    expect(view).toEqual({
+      kind: "notice",
+      text: "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
+      tone: "neutral",
+    });
+  });
+
+  test("a restart the person asked for is not news as a restart", () => {
+    const view = sessionNoticeView(session({ reason: "requested" }));
+    expect(view).toEqual({
+      kind: "notice",
+      text: "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
+      tone: "neutral",
     });
   });
 
@@ -42,6 +61,9 @@ describe("telling somebody their session did not carry over", () => {
       if (view.kind !== "notice") return;
       expect(view.tone).toBe("attention");
       expect(view.text).toContain("ownbot reenviou");
+      expect(view.text).toContain(
+        "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
+      );
     }
   });
 
@@ -58,6 +80,9 @@ describe("telling somebody their session did not carry over", () => {
       expect(view.kind).toBe("notice");
       if (view.kind !== "notice") return;
       expect(view.tone).toBe("neutral");
+      expect(view.text).toContain(
+        "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
+      );
     }
   });
 
@@ -69,6 +94,58 @@ describe("telling somebody their session did not carry over", () => {
       expect(view.kind).toBe("notice");
       if (view.kind !== "notice") return;
       expect(view.tone).toBe("attention");
+      expect(view.text).toContain("sessão nova");
     }
+  });
+
+  test("an unconfirmed last turn is said, never filled in from the requested selection", () => {
+    const view = sessionNoticeView(
+      session({
+        resumed: true,
+        model: "gpt-5.1",
+        requestedModel: "gpt-5.1",
+        resolvedModel: null,
+      }),
+    );
+    expect(view).toEqual({
+      kind: "notice",
+      text: "Modelo não confirmado pela CLI.",
+      tone: "neutral",
+    });
+  });
+
+  test("older audit rows stay honest: a legacy model is requested, not confirmed", () => {
+    const view = sessionNoticeView(
+      session({
+        resumed: true,
+        model: "gpt-5.1",
+        requestedModel: "gpt-5.1",
+        resolvedModel: null,
+        executor: null,
+        runId: null,
+        profileId: null,
+      }),
+    );
+    expect(view.kind).toBe("notice");
+    if (view.kind !== "notice") return;
+    expect(view.text).toBe("Modelo não confirmado pela CLI.");
+    expect(view.text).not.toContain("gpt-5.1");
+  });
+
+  test("the hover title names only known requested, executor, profile and run", () => {
+    expect(sessionNoticeTitle(session())).toBe(
+      "solicitado gpt-5.1 · executor acp · perfil codex · run run-1",
+    );
+    expect(
+      sessionNoticeTitle(
+        session({
+          requestedModel: null,
+          model: null,
+          executor: null,
+          profileId: null,
+          runId: null,
+        }),
+      ),
+    ).toBe("padrão");
   });
 });

@@ -8,6 +8,11 @@ import { acpModelSelectionFor } from "./config";
 import type { ConversationModelStore } from "./conversation-models";
 import { discoverAcpModels, type ModelCatalogue } from "./models";
 
+/** A non-empty string from the trail, otherwise unknown. Empty is not an id. */
+function asOptionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 /**
  * Choosing a model for one conversation.
  *
@@ -147,16 +152,23 @@ export function createAcpConversationModelRoutes(
       (event) => event.payload.agentId === authorized.agentId,
     );
     if (!latest) return c.json({ session: null });
-    const reason = latest.payload.reason;
+    const payload = latest.payload;
+    const reason = payload.reason;
+    const requested =
+      asOptionalString(payload.requestedModel) ??
+      asOptionalString(payload.model);
     return c.json({
       session: {
         resumed: latest.eventType === "session.resumed",
         reason: typeof reason === "string" ? reason : null,
-        model: typeof latest.payload.model === "string" ? latest.payload.model : null,
+        model: asOptionalString(payload.model),
+        requestedModel: requested,
+        resolvedModel: asOptionalString(payload.resolvedModel),
+        executor: payload.executor === "acp" ? "acp" : null,
+        runId: asOptionalString(payload.runId),
+        profileId: asOptionalString(payload.profileId),
         provider:
-          typeof latest.payload.provider === "string"
-            ? latest.payload.provider
-            : "codex",
+          typeof payload.provider === "string" ? payload.provider : "codex",
         at: latest.createdAt,
       },
     });

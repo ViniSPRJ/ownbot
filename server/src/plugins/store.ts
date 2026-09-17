@@ -1,5 +1,8 @@
-import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  DEFAULT_DURABLE_EXECUTORS,
+  type DurableExecutorRegistry,
+} from "../agents/durable-executors";
 import { type AuditStore, recordAuditEvent } from "../audit";
 import {
   type ActionPolicy,
@@ -28,6 +31,7 @@ import {
   skills,
   skillTools,
 } from "../db/schema";
+import { isPrivateAgent, PRIVATE_BOUNDARY } from "../privacy/policy";
 import {
   type CatalogueEntry,
   catalogueEntry,
@@ -553,10 +557,17 @@ export type PluginStoreOptions = {
   }) => Promise<OAuthClient | null>;
   /** Where the vendor sends people back; needed to (re)register a dynamic client. */
   redirectUri?: string;
+  /**
+   * Durable Pi-compatible submit tools this store will admit. Defaults to the
+   * shared shipped mapping. Startup should pass the same registry the Pi watcher
+   * receives; this store does not load configuration itself.
+   */
+  executors?: DurableExecutorRegistry;
 };
 
 export function createPluginStore(options: PluginStoreOptions) {
   const { database, auditStore, credentials, encryptionKey } = options;
+  const executors = options.executors ?? DEFAULT_DURABLE_EXECUTORS;
   /*
    * Held rather than resolved, because the transport is a property of the entry and is not known
    * until a call names one. An injected vendor still wins over both, which is what keeps a test able
@@ -2933,7 +2944,11 @@ export function createPluginStore(options: PluginStoreOptions) {
       // after the caller retries. Require the worker's durable admission contract before any
       // credential or network access. This is independent of policy dry-run and never rewrites
       // the task or invents an idempotency key on the person's behalf.
-      const admissionRefusal = piRunAdmissionRefusal(input.ref, args);
+      const admissionRefusal = piRunAdmissionRefusal(
+        input.ref,
+        args,
+        executors,
+      );
       if (admissionRefusal) {
         await recordAuditEvent(auditStore, {
           eventType: "mcp.call_rejected",

@@ -41,3 +41,16 @@ Transport failures report unverified reachability, timeout or cancellation rathe
 The Beelink headed-browser entrypoint uses `Xvfb -displayfd` instead of a fixed display and sleep. A stale X lock in the container's writable layer cannot prevent the next start. It waits for display allocation, watches Xvfb/VNC/websockify, forwards shutdown to Bun, and exits on dependency failure. Docker uses `init: true` and `restart: unless-stopped`. `/health` returns 503 when the headed display socket is unavailable. The socket probe is not proof of article access: always test navigation and reading through the News gateway, including login/paywall outcomes, before declaring coverage restored.
 
 Recovery never replays the morning briefing or resolves old unknown handoffs automatically. Do not change the provider to the coordinator's independently running container as a shortcut; preserve the configured endpoint, profiles, workspace, policy and grants.
+
+## Reconciling unknown handoffs (record-only)
+
+Two historical hops finished with `payload.result.outcome=unknown`. They were record-only requests. Do not replay them, do not mark them delivered, and do not forge an original success. The only allowed disposition is `internal_record_archived`: a new internal archive of the original alert, while delivery stays unconfirmed.
+
+1. Backup PostgreSQL first. Stop server and worker before restoring; this procedure only archives rows that are already finished.
+2. Inspect audit history (`agent.handoff_failed` / unknown outcome) and any tool receipts. Copy the current `payload.result` exactly; do not edit it.
+3. Write one receipt JSON per hop as a durable local archive, mode `0600`, regular file, not a symlink. Required fields: `workKey`, `originalResult` (deep-equal to the live result), `resolution: "internal_record_archived"`, `originalDeliveryOutcome: "unknown"`. Optional `id` and `note` (the original alert as an internal note).
+4. Write a version-1 operator manifest (also mode `0600`) with an absolute path, `operator`, and `entries[]` of `{ workKey, expectedResult, receiptPath, receiptSha256, resolution, evidenceRefs }`. `receiptPath` must be absolute. `receiptSha256` is the SHA-256 of the receipt file bytes.
+5. Dry-run (default): `bun server/scripts/reconcile-handoff.ts /absolute/manifest.json`. It prints work ids, receipt hash and resolution only. It does not print task text or secrets.
+6. Apply only after the dry-run matches: `bun server/scripts/reconcile-handoff.ts /absolute/manifest.json --apply`. Requires `DATABASE_URL` (no default). One transaction, all entries or none. Repeat with the same receipt reports `already_reconciled` and writes no second event. A different receipt or live conflict fails closed.
+
+The CLI never offers queue work, never creates a relay, never sends a message, and always stores `recipientDeliveryConfirmed: false`. `/ready` recovers because the unknown outcome is replaced by `reconciled`; the health query is unchanged. The original result is kept under `previousResult`. `finished_at` is left in place so the archive outlives queue retention.

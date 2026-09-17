@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   type ConversationSession,
+  sessionNoticeTitle,
   sessionNoticeView,
 } from "@/lib/channels/conversation-session";
 import { client } from "@/lib/client";
@@ -12,8 +13,10 @@ import { client } from "@/lib/client";
  * is also in the audit trail, which answers it for an administrator afterwards; this answers it for the
  * person who is about to follow up on something the model may no longer be holding.
  *
- * Renders nothing on an ordinary turn, nothing on a first turn, and nothing for a coworker that has no
- * ACP connection — the endpoint refuses those, and a refusal is not a notice.
+ * Renders nothing when there is no session row. When there is one, it names the model the CLI
+ * confirmed on the last session, or says it did not confirm one. Restart wording is added only when
+ * the session did not carry across. A coworker with no ACP connection is refused by the endpoint,
+ * and a refusal is not a notice.
  */
 export function ConversationSessionNote({
   threadId,
@@ -32,19 +35,24 @@ export function ConversationSessionNote({
       ),
     retry: false,
     /*
-     * Re-read when the window comes back, unlike the model picker.
+     * Re-read on an interval while this tab is visible, and when the window comes back.
      *
-     * The model is what this person last chose and changes when they change it. This is the outcome of
-     * the last turn, and the turn they are waiting on may have finished while they were in another tab.
+     * The picker is what this person last chose. This is the last session the CLI confirmed, written
+     * before the prompt, and a turn in flight in this tab should be able to surface it without a
+     * focus change. Background tabs stay quiet.
      */
     staleTime: 10_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
   });
-  const view = sessionNoticeView(query.data ?? null);
+  const session = query.data ?? null;
+  const view = sessionNoticeView(session);
   if (view.kind !== "notice") return null;
   return (
     <p
       className={`pb-2 text-xs ${view.tone === "attention" ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground"}`}
       role="status"
+      title={session ? sessionNoticeTitle(session) : undefined}
     >
       {view.text}
     </p>

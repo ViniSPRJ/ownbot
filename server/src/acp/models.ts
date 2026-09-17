@@ -72,12 +72,21 @@ export function acpEnvironment(profile: AcpProfile): NodeJS.ProcessEnv {
   return Object.assign(env, profile.env);
 }
 
+/**
+ * Ask the CLI to use `model`, and return the id it confirmed — or null.
+ *
+ * Confirmation is only an explicit matching `currentModel` on the response. A modern
+ * `session/set_config_option` that does not echo the selection is a failure. A legacy
+ * `session/set_model` empty ACK is not: the method is still supported, but the effective
+ * model stays unconfirmed. The request itself, and a current value advertised before the
+ * change, are never treated as confirmation.
+ */
 export async function selectSessionModel(
   transport: Pick<AcpStdioTransport, "request">,
   sessionId: string,
   session: SessionConfiguration,
   model: string,
-) {
+): Promise<string | null> {
   const catalogue = sessionModels(session);
   if (
     catalogue.models.length > 0 &&
@@ -89,11 +98,17 @@ export async function selectSessionModel(
       "session/set_config_option",
       { sessionId, configId: catalogue.configId, value: model },
     );
-    if (sessionModels(changed).currentModel !== model)
+    const confirmed = sessionModels(changed).currentModel;
+    if (confirmed !== model)
       throw new Error("A CLI não confirmou o modelo selecionado.");
-  } else {
-    await transport.request("session/set_model", { sessionId, modelId: model });
+    return confirmed;
   }
+  const changed = await transport.request<SessionConfiguration>(
+    "session/set_model",
+    { sessionId, modelId: model },
+  );
+  const reported = sessionModels(changed ?? {}).currentModel;
+  return reported === model ? reported : null;
 }
 
 const pending = new Map<string, Promise<ModelCatalogue>>();

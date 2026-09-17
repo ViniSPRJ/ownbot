@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { AcpAgent } from "../src/acp/agent";
+import { AcpAgent, type AcpSessionNotice } from "../src/acp/agent";
 import type { RunAgentInput, BaseEvent } from "@ag-ui/client";
 
 const fixture = `
@@ -23,9 +23,15 @@ createInterface({input:process.stdin}).on('line',async line=>{
   const r=await fetch(descriptor.url,{method:'POST',headers,body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/list'})});
   log({bridgeType:descriptor.type,bridgeHost:new URL(descriptor.url).hostname,tools:(await r.json()).result.tools.map(t=>t.name)});
   if(m.method==='session/load')chunk(m.params.sessionId,'REPLAY MUST BE IGNORED');
-  return ok({sessionId:m.params.sessionId||crypto.randomUUID()});
+  const extra=process.env.TEST_SESSION_RESULT?JSON.parse(process.env.TEST_SESSION_RESULT):{};
+  return ok({sessionId:m.params.sessionId||crypto.randomUUID(),...extra});
  }
  if(m.method==='session/set_model'){log({method:m.method,modelId:m.params.modelId});return ok({});}
+ if(m.method==='session/set_config_option'){
+  log({method:m.method,configId:m.params.configId,value:m.params.value});
+  if(process.env.TEST_CONFIRM==='no')return ok({configOptions:[{id:m.params.configId,category:'model',type:'select',currentValue:'other',options:[{value:'other',name:'Other'},{value:m.params.value,name:m.params.value}]}]});
+  return ok({configOptions:[{id:m.params.configId,category:'model',type:'select',currentValue:m.params.value,options:[{value:m.params.value,name:m.params.value}]}]});
+ }
  if(m.method==='session/prompt') {
   log({method:m.method,sessionId:m.params.sessionId,text:m.params.prompt[0].text});
   pending=m;
@@ -92,9 +98,12 @@ type HarnessOptions = {
  mode?: string;
  model?: string;
  resolveModel?: (threadId: string) => Promise<string | null>;
+ sessionResult?: Record<string, unknown>;
+ confirm?: "yes" | "no";
 };
 type MakeOptions = {
  resolveModel?: (threadId: string) => Promise<string | null>;
+ onSession?: (notice: AcpSessionNotice) => void;
  tools?: (input: RunAgentInput) => Promise<readonly {name:string;ref:string;description:string;parameters:z.ZodType;execute:(args:unknown)=>Promise<string>}[]>;
 };
 async function harness(modeOrOptions: string | HarnessOptions = "normal") {
@@ -102,7 +111,10 @@ async function harness(modeOrOptions: string | HarnessOptions = "normal") {
  const mode = options.mode ?? "normal";
  const root=await mkdtemp(join(tmpdir(),"ownbot-acp-agent-")); const log=join(root,"events.jsonl");
  const granted=async()=>[{name:"approved_lookup",ref:"test/lookup",description:"Lookup",parameters:z.object({}),execute:async()=>"ok" as const}];
- const make=(ownerId="owner",agentId="research",extra: MakeOptions = {})=>new AcpAgent({ownerId,agentId,name:agentId,prompt:"standing instructions",profile:{profileId:"fake",command:process.execPath,args:["-e",fixture],env:{TEST_LOG:log,TEST_MODE:mode},workspaceRoot:root,timeoutMs:1500,...(options.model?{model:options.model}:{})},tools:extra.tools??granted,...(extra.resolveModel!==undefined?{resolveModel:extra.resolveModel}:options.resolveModel!==undefined?{resolveModel:options.resolveModel}:{})});
+ const env: NodeJS.ProcessEnv = {TEST_LOG:log,TEST_MODE:mode};
+ if (options.sessionResult) env.TEST_SESSION_RESULT = JSON.stringify(options.sessionResult);
+ if (options.confirm) env.TEST_CONFIRM = options.confirm;
+ const make=(ownerId="owner",agentId="research",extra: MakeOptions = {})=>new AcpAgent({ownerId,agentId,name:agentId,prompt:"standing instructions",profile:{profileId:"fake",command:process.execPath,args:["-e",fixture],env,workspaceRoot:root,timeoutMs:1500,...(options.model?{model:options.model}:{})},tools:extra.tools??granted,...(extra.resolveModel!==undefined?{resolveModel:extra.resolveModel}:options.resolveModel!==undefined?{resolveModel:options.resolveModel}:{}),...(extra.onSession?{onSession:extra.onSession}:{})});
  return {make,log,read:async()=> (await readFile(log,"utf8")).trim().split("\n").map(line=>JSON.parse(line)),close:()=>rm(root,{recursive:true,force:true})};
 }
 
@@ -274,5 +286,110 @@ test("absent resolver and explicit null keep the profile default; an explicit ch
   await collect(h.make("owner", "research", { resolveModel: async () => "conversation-model" }), input("chosen"));
   const selected = (await h.read()).filter(r => r.method === "session/set_model").map(r => r.modelId);
   expect(selected).toEqual(["profile-default", "profile-default", "conversation-model"]);
+ } finally { await h.close(); }
+});
+
+const modernCatalogue = {
+ configOptions: [
+  {
+   id: "engine",
+   category: "model",
+   type: "select",
+   currentValue: "small",
+   options: [
+    { value: "small", name: "Small" },
+    { value: "large", name: "Large" },
+   ],
+  },
+ ],
+};
+
+test("with no requested model the session catalogue currentModel is the confirmation", async () => {
+ const notices: AcpSessionNotice[] = [];
+ const h = await harness({ sessionResult: modernCatalogue });
+ try {
+  const request = input("thread");
+  await collect(h.make("owner", "research", { onSession: (notice) => notices.push(notice) }), request);
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({
+   threadId: "thread",
+   runId: request.runId,
+   requestedModel: null,
+   model: null,
+   resolvedModel: "small",
+   executor: "acp",
+   profileId: "fake",
+   provider: "codex",
+  });
+  expect((await h.read()).some((r) => r.method === "session/set_model" || r.method === "session/set_config_option")).toBe(false);
+ } finally { await h.close(); }
+});
+
+test("an explicit config-option selection is confirmed only by the matching current value", async () => {
+ const notices: AcpSessionNotice[] = [];
+ const h = await harness({ sessionResult: modernCatalogue });
+ try {
+  await collect(
+   h.make("owner", "research", {
+    resolveModel: async () => "large",
+    onSession: (notice) => notices.push(notice),
+   }),
+   input("thread"),
+  );
+  expect(notices).toEqual([
+   expect.objectContaining({
+    requestedModel: "large",
+    model: "large",
+    resolvedModel: "large",
+    executor: "acp",
+   }),
+  ]);
+  expect((await h.read()).filter((r) => r.method === "session/set_config_option").map((r) => r.value)).toEqual(["large"]);
+ } finally { await h.close(); }
+});
+
+test("a legacy set_model empty ACK leaves the model unresolved and does not reuse the previous current value", async () => {
+ const notices: AcpSessionNotice[] = [];
+ const h = await harness({
+  sessionResult: {
+   models: {
+    currentModelId: "small",
+    availableModels: [
+     { modelId: "small", name: "Small" },
+     { modelId: "large", name: "Large" },
+    ],
+   },
+  },
+ });
+ try {
+  await collect(
+   h.make("owner", "research", {
+    resolveModel: async () => "large",
+    onSession: (notice) => notices.push(notice),
+   }),
+   input("thread"),
+  );
+  expect(notices).toHaveLength(1);
+  expect(notices[0]?.requestedModel).toBe("large");
+  expect(notices[0]?.model).toBe("large");
+  expect(notices[0]?.resolvedModel).toBeNull();
+  expect((await h.read()).filter((r) => r.method === "session/set_model").map((r) => r.modelId)).toEqual(["large"]);
+ } finally { await h.close(); }
+});
+
+test("a model selection error never emits a successful session notice", async () => {
+ const notices: AcpSessionNotice[] = [];
+ const h = await harness({ sessionResult: modernCatalogue, confirm: "no" });
+ try {
+  await expect(
+   collect(
+    h.make("owner", "research", {
+     resolveModel: async () => "large",
+     onSession: (notice) => notices.push(notice),
+    }),
+    input("thread"),
+   ),
+  ).rejects.toThrow("não houve fallback para API");
+  expect(notices).toEqual([]);
  } finally { await h.close(); }
 });

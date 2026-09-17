@@ -1,14 +1,21 @@
-import { createHash } from "node:crypto";
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import { createDurableExecutorRegistry } from "../src/agents/durable-executors";
 import { createPiWatcher, PI_WATCH_KIND, PI_WATCH_MAX_AGE_MS, piWatchKey } from "../src/agents/pi-watch";
-import type { WorkQueue, WorkItem } from "../src/work/queue";
+import type { WorkItem, WorkQueue } from "../src/work/queue";
+
 const id = "a".repeat(32);
 const context = { actorId: "owner", botId: "code", runId: "run", threadId: "scratch", depth: 2, originRequest: { botId: "coord", threadId: "visible" } };
 const job = (state = "running", extra = {}) => JSON.stringify({ jobId: id, state, createdAt: "2026-09-07T00:00:00.000Z", updatedAt: "2026-09-07T00:01:00.000Z", ...extra });
-function fixture() {
+const labExecutors = createDurableExecutorRegistry({
+  version: 1,
+  executors: [{ id: "lab-worker", protocol: "pi-durable-v1", submitTool: "lab/pi_run", statusTool: "lab/pi_status" }],
+});
+function fixture(options: { executors?: ReturnType<typeof createDurableExecutorRegistry>; pollRef?: string } = {}) {
   let time = 100_000; let allowed = true; let status = job(); let calls = 0; let polls = 0;
   const offers: any[] = [], finishes: any[] = [], releases: any[] = [], rows = new Map<string, WorkItem>();
+  const pollRef = options.pollRef ?? "pi-m5/pi_status";
   const queue = {
     offer: async (item: any) => { offers.push(item); if (rows.has(item.key)) return "already"; rows.set(item.key, { ...item, attempts: 1 }); return "queued"; },
     claim: async () => [...rows.values()].filter((v: any) => !v.finished),
@@ -16,11 +23,12 @@ function fixture() {
     release: async (input: any) => { releases.push(input); return true; }, purge: async () => 0,
   } as unknown as WorkQueue;
   const watcher = createPiWatcher({ queue, owner: "replica", now: () => time, authorised: async () => allowed,
-    store: { callTool: async (input: any) => { polls++; expect(input).toEqual({ ref: "pi-m5/pi_status", args: { jobId: id }, botId: "code", actorId: "owner" }); return { text: status, isError: false }; } },
+    executors: options.executors,
+    store: { callTool: async (input: any) => { polls++; expect(input).toEqual({ ref: pollRef, args: { jobId: id }, botId: "code", actorId: "owner" }); return { text: status, isError: false }; } },
   });
   const tool = (ref = "pi-m5/pi_run", text = job()) => ({ name: "pi", description: "", ref, parameters: z.object({}), execute: async () => { calls++; return text; } });
   return { watcher, tool, offers, finishes, releases, rows, queue, setStatus: (v: string) => status = v, revoke: () => allowed = false,
-    advance: () => time += PI_WATCH_MAX_AGE_MS, counts: () => ({ calls, polls }) };
+    advance: () => time += PI_WATCH_MAX_AGE_MS, counts: () => ({ calls, polls }), time: () => time };
 }
 function parsePiReceipt(task: string) {
   const start = task.indexOf("<pi_receipt>\n");
@@ -175,5 +183,138 @@ describe("durable Pi completion watcher", () => {
     expect(sameA.evidenceChecksum.format).toBe("json-sorted-keys-v1");
     expect(sameA.evidenceChecksum.sha256).not.toBe(differentArray.evidenceChecksum.sha256);
     expect(sameA.evidenceChecksum.sha256).not.toBe(createHash("sha256").update(JSON.stringify(sameA.evidence)).digest("hex"));
+  });
+  test("new watched jobs persist protocol, tools, and executor id", async () => {
+    const f = fixture();
+    await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
+    expect(f.offers[0].payload).toMatchObject({
+      worker: "pi-m5", protocolVersion: 1, submitTool: "pi-m5/pi_run", statusTool: "pi-m5/pi_status",
+    });
+  });
+  test("custom registered worker is observed and polled at its status tool", async () => {
+    const f = fixture({ executors: labExecutors, pollRef: "lab/pi_status" });
+    await f.watcher.observe(context, [f.tool("lab/pi_run")])[0]!.execute({ background: true });
+    expect(f.offers[0].payload).toMatchObject({
+      worker: "lab-worker", protocolVersion: 1, submitTool: "lab/pi_run", statusTool: "lab/pi_status",
+    });
+    expect(f.offers[0].key).toBe(piWatchKey("owner", "lab-worker", id));
+    f.setStatus(job("completed", { result: { ok: true, text: "answer" } }));
+    await f.watcher.sweep();
+    expect(f.counts()).toEqual({ calls: 1, polls: 1 });
+    expect(f.finishes[0].result.state).toBe("completed");
+    expect(parsePiReceipt(f.finishes[0].followUp.payload.task).data.retrieve).toEqual({ tool: "lab/pi_status", jobId: id });
+  });
+  test("lookalike submit refs are not observed", async () => {
+    const f = fixture({ executors: labExecutors, pollRef: "lab/pi_status" });
+    for (const ref of ["lab-extra/pi_run", "other/pi_run", "lab/PI_RUN", "lab/pi_run/extra", "pi-m5/pi_run"])
+      await f.watcher.observe(context, [f.tool(ref)])[0]!.execute({ background: true });
+    expect(f.offers).toHaveLength(0);
+  });
+  test("exact registered refs are required; vendor pi_run wildcards do not match", async () => {
+    const f = fixture();
+    for (const ref of ["pi-m5/PI_RUN", "pi-m5-extra/pi_run", "other/pi_run", "pi-m5/pi_run/extra"])
+      await f.watcher.observe(context, [f.tool(ref)])[0]!.execute({ background: true });
+    expect(f.offers).toHaveLength(0);
+    await f.watcher.observe(context, [f.tool("pi-m5/pi_run")])[0]!.execute({ background: true });
+    expect(f.offers).toHaveLength(1);
+  });
+  test("old persisted jobs without v1 fields continue against the shipped mapping", async () => {
+    const f = fixture();
+    const key = piWatchKey("owner", "pi-m5", id);
+    f.rows.set(key, { kind: PI_WATCH_KIND, key, payload: {
+      actorId: "owner", botId: "code", threadId: "scratch", runId: "run", depth: 2,
+      worker: "pi-m5", jobId: id, originRequest: { botId: "coord", threadId: "visible" }, createdAt: 100_000,
+    }, attempts: 1 } as WorkItem);
+    f.setStatus(job("completed", { result: { ok: true, text: "legacy" } }));
+    await f.watcher.sweep();
+    expect(f.counts().polls).toBe(1);
+    expect(f.finishes[0].result.state).toBe("completed");
+    expect(parsePiReceipt(f.finishes[0].followUp.payload.task).data.retrieve).toEqual({ tool: "pi-m5/pi_status", jobId: id });
+  });
+  test("new saved jobs can be swept after a watcher restart", async () => {
+    const f = fixture();
+    await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
+    expect(f.offers[0].payload.protocolVersion).toBe(1);
+    const restarted = createPiWatcher({
+      queue: f.queue, owner: "replica-2", now: () => f.time(), authorised: async () => true,
+      store: { callTool: async (input: any) => {
+        expect(input.ref).toBe("pi-m5/pi_status");
+        return { text: job("completed", { result: { ok: true, text: "restarted" } }), isError: false };
+      } },
+    });
+    await restarted.sweep();
+    expect(f.finishes[0].result.state).toBe("completed");
+  });
+  test("removed or remapped registrations finish executor_unavailable without polling or waking", async () => {
+    const f = fixture({ executors: labExecutors, pollRef: "lab/pi_status" });
+    await f.watcher.observe(context, [f.tool("lab/pi_run")])[0]!.execute({ background: true });
+    const remapped = createDurableExecutorRegistry({
+      version: 1,
+      executors: [{ id: "lab-worker", protocol: "pi-durable-v1", submitTool: "lab/pi_run", statusTool: "lab-other/pi_status" }],
+    });
+    const empty = createDurableExecutorRegistry({ version: 1, executors: [] });
+    for (const executors of [remapped, empty]) {
+      const finishes: any[] = [];
+      let polls = 0;
+      const watcher = createPiWatcher({
+        queue: {
+          offer: async () => "queued",
+          claim: async () => [{ kind: PI_WATCH_KIND, key: f.offers[0].key, payload: f.offers[0].payload, attempts: 1 }],
+          finish: async (input: any) => { finishes.push(input); return true; },
+          release: async () => true, purge: async () => 0,
+        } as unknown as WorkQueue,
+        owner: "replica", now: () => 100_000, authorised: async () => true, executors,
+        store: { callTool: async () => { polls++; return { text: job("completed", { result: { ok: true } }), isError: false }; } },
+      });
+      await watcher.sweep();
+      expect(polls).toBe(0);
+      expect(finishes).toHaveLength(1);
+      expect(finishes[0].result).toEqual({ state: "executor_unavailable" });
+      expect(finishes[0].followUp).toBeUndefined();
+    }
+  });
+  test("partial v1 fields and custom-id legacy payloads never poll", async () => {
+    const f = fixture({ executors: labExecutors, pollRef: "lab/pi_status" });
+    const base = {
+      actorId: "owner", botId: "code", threadId: "scratch", runId: "run", depth: 2,
+      jobId: id, originRequest: { botId: "coord", threadId: "visible" }, createdAt: 100_000,
+    };
+    const cases = [
+      { ...base, worker: "lab-worker", protocolVersion: 1, submitTool: "lab/pi_run" },
+      { ...base, worker: "lab-worker", submitTool: "lab/pi_run", statusTool: "lab/pi_status" },
+      { ...base, worker: "lab-worker" },
+    ];
+    for (const payload of cases) {
+      const finishes: any[] = [];
+      let polls = 0;
+      const key = piWatchKey("owner", "lab-worker", id);
+      const watcher = createPiWatcher({
+        queue: {
+          offer: async () => "queued",
+          claim: async () => [{ kind: PI_WATCH_KIND, key, payload, attempts: 1 }],
+          finish: async (input: any) => { finishes.push(input); return true; },
+          release: async () => true, purge: async () => 0,
+        } as unknown as WorkQueue,
+        owner: "replica", now: () => 100_000, authorised: async () => true, executors: labExecutors,
+        store: { callTool: async () => { polls++; return { text: job(), isError: false }; } },
+      });
+      await watcher.sweep();
+      expect(polls).toBe(0);
+      expect(finishes[0].followUp).toBeUndefined();
+      expect(["invalid_watch", "executor_unavailable"]).toContain(finishes[0].result.state);
+    }
+  });
+  test("unsupported protocolVersion is not treated as a legacy watch", async () => {
+    const f = fixture();
+    const key = piWatchKey("owner", "pi-m5", id);
+    f.rows.set(key, { kind: PI_WATCH_KIND, key, payload: {
+      actorId: "owner", botId: "code", threadId: "scratch", runId: "run", depth: 2,
+      worker: "pi-m5", jobId: id, originRequest: { botId: "coord", threadId: "visible" }, createdAt: 100_000,
+      protocolVersion: 2, submitTool: "pi-m5/pi_run", statusTool: "pi-m5/pi_status",
+    }, attempts: 1 } as WorkItem);
+    await f.watcher.sweep();
+    expect(f.counts().polls).toBe(0);
+    expect(f.finishes[0].followUp).toBeUndefined();
+    expect(["invalid_watch", "executor_unavailable"]).toContain(f.finishes[0].result.state);
   });
 });

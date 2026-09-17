@@ -5,16 +5,16 @@ import {
   type ConversationModelState,
   canSubmit,
   modelPickerView,
+  pickerDraftState,
 } from "@/lib/channels/conversation-model";
 import { client } from "@/lib/client";
 
 /**
- * Which model answers this conversation.
+ * Which model this conversation is configured to use on the next turn.
  *
  * Sits in the conversation rather than in the coworker's settings page on purpose: the administrator
- * sets what a role answers with by default over there, and a person changes what this thread answers
- * with here. Two people, two questions, and neither should have to leave the other's page to be
- * answered correctly.
+ * sets what a role uses by default over there, and a person changes what this thread will use here.
+ * The catalogue is not a confirmed record of what last answered; that lives on the session note.
  *
  * Renders nothing when the coworker is not on an ACP connection. An empty dropdown next to a coworker
  * that has no CLI is not a reduced control; it is a lie about what can be chosen.
@@ -63,8 +63,7 @@ export function ConversationModelPicker({
   });
   const view = modelPickerView(query.data);
   if (view.kind !== "picker") return null;
-  const value = draft ?? view.value ?? "";
-  const dirty = draft !== undefined && draft !== (view.value ?? "");
+  const selection = pickerDraftState({ draft, current: view.value });
   return (
     <div className="flex flex-wrap items-center gap-2 pb-2">
       <label
@@ -76,13 +75,13 @@ export function ConversationModelPicker({
       <select
         id={`acp-model-${threadId}`}
         className="h-7 rounded-md border border-input bg-background px-2 text-xs"
-        value={value}
+        value={selection.value}
         disabled={view.readOnly || save.isPending}
         onChange={(event) => {
           setSaved(false);
-          // Empty means "follow the operator's default", and the draft holds undefined for that: a
-          // deliberate null and an untouched control have to stay distinguishable.
-          setDraft(event.target.value === "" ? undefined : event.target.value);
+          // Empty string is Default on purpose. `undefined` is "not touched", and mapping Default
+          // onto that made the control look unchanged so the save never went out.
+          setDraft(event.target.value);
         }}
       >
         <option value="">Default</option>
@@ -92,7 +91,7 @@ export function ConversationModelPicker({
           </option>
         ))}
       </select>
-      {dirty || save.isPending ? (
+      {selection.dirty || save.isPending ? (
         <Button
           size="sm"
           variant="outline"
@@ -100,11 +99,11 @@ export function ConversationModelPicker({
             !canSubmit({
               revision: query.data?.revision,
               readOnly: view.readOnly,
-              dirty,
+              dirty: selection.dirty,
               pending: save.isPending,
             })
           }
-          onClick={() => void save.mutate(draft ?? null)}
+          onClick={() => void save.mutate(selection.modelToSave)}
         >
           Save
         </Button>
@@ -124,7 +123,7 @@ export function ConversationModelPicker({
         </span>
       ) : (
         <span className="text-xs text-muted-foreground" role="status">
-          Answering with {view.answering}.
+          Next turn uses {view.answering}.
         </span>
       )}
     </div>

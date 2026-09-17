@@ -59,7 +59,13 @@ export type ConversationModelStore = {
     actorUserId: string | null;
     resumed: boolean;
     freshReason?: string;
+    /** Requested selection; kept for readers of the legacy `model` field. */
     model: string | null;
+    requestedModel: string | null;
+    /** Confirmed effective id, or null when the CLI did not report one. */
+    resolvedModel: string | null;
+    executor: "acp";
+    runId: string;
     provider: string;
     profileId: string;
   }): Promise<void>;
@@ -195,6 +201,10 @@ export function createConversationModelStore(
           provider: input.provider,
           profileId: input.profileId,
           model: input.model,
+          requestedModel: input.requestedModel,
+          resolvedModel: input.resolvedModel,
+          executor: input.executor,
+          runId: input.runId,
           ...(input.resumed
             ? {}
             : { reason: input.freshReason ?? "first_turn" }),

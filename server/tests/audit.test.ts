@@ -5,6 +5,7 @@ import {
   auditEventTypes,
   recordAuditEvent,
   redactAuditPayload,
+  whitelistSessionAuditPayload,
 } from "../src/audit";
 import { loadConfig } from "../src/config";
 import { testEnvironment } from "./support/environment";
@@ -43,6 +44,7 @@ describe("audit payload redaction", () => {
         "connector.sync_failed",
         "knowledge.searched",
         "agent.invoked",
+        "agent.handoff_reconciled",
         "mcp.call_succeeded",
         "mcp.call_rejected",
       ]),
@@ -67,6 +69,77 @@ describe("audit payload redaction", () => {
         resultCategory: "succeeded",
       },
     });
+  });
+
+  test("session rows keep provenance fields and drop command, env and content", async () => {
+    expect(
+      whitelistSessionAuditPayload({
+        agentId: "coord",
+        provider: "codex",
+        profileId: "codex",
+        model: "gpt-5.1",
+        requestedModel: "gpt-5.1",
+        resolvedModel: "gpt-5.1",
+        executor: "acp",
+        runId: "run-1",
+        reason: "first_turn",
+        command: "/secret/cli",
+        env: { TOKEN: "hidden" },
+        content: "the prompt",
+        args: ["--yolo"],
+      }),
+    ).toEqual({
+      agentId: "coord",
+      provider: "codex",
+      profileId: "codex",
+      model: "gpt-5.1",
+      requestedModel: "gpt-5.1",
+      resolvedModel: "gpt-5.1",
+      executor: "acp",
+      runId: "run-1",
+      reason: "first_turn",
+    });
+
+    const writes: unknown[] = [];
+    await recordAuditEvent(
+      {
+        insert: async (event) => {
+          writes.push(event);
+        },
+      },
+      {
+        eventType: "session.started",
+        targetType: "thread",
+        targetId: "thread-1",
+        payload: {
+          agentId: "coord",
+          provider: "codex",
+          profileId: "codex",
+          model: "gpt-5.1",
+          requestedModel: "gpt-5.1",
+          resolvedModel: null,
+          executor: "acp",
+          runId: "run-1",
+          reason: "first_turn",
+          command: "/secret/cli",
+          env: { OPENAI_API_KEY: "sk-secret" },
+          content: "user prompt",
+        },
+      },
+    );
+    const payload = (writes[0] as { payload: Record<string, unknown> }).payload;
+    expect(payload).toMatchObject({
+      agentId: "coord",
+      requestedModel: "gpt-5.1",
+      resolvedModel: null,
+      executor: "acp",
+      runId: "run-1",
+    });
+    expect(payload).not.toHaveProperty("command");
+    expect(payload).not.toHaveProperty("env");
+    expect(payload).not.toHaveProperty("content");
+    expect(JSON.stringify(payload)).not.toContain("sk-secret");
+    expect(JSON.stringify(payload)).not.toContain("/secret/cli");
   });
 
   test("writes only the redacted payload to the audit store", async () => {
