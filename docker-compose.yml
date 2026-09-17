@@ -52,6 +52,7 @@ services:
 
   # The Bot's computer is long-lived so browser sessions remain signed in across turns.
   agent-computer:
+    restart: unless-stopped
     build:
       context: .
       dockerfile: agent-computer/Dockerfile

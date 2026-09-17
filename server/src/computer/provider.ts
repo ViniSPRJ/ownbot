@@ -167,7 +167,11 @@ export function createSharedComputerProvider(
 
     async status(botId: string): Promise<ComputerStatus> {
       try {
-        await call("/health", "GET", botId);
+        const health = await call("/health", "GET", botId) as { status?: string } | null;
+        // Health is public; also verify the configured credential on a read-only endpoint.
+        const listing = await call("/computers", "GET", botId) as { computers?: unknown } | null;
+        if (health?.status !== "ok" || !Array.isArray(listing?.computers))
+          throw new ProviderError("The shared computer returned an invalid readiness response.");
         return { botId, state: "ready" };
       } catch (error) {
         return {
@@ -233,6 +237,7 @@ export function createComputerProvider(
     }
     case "shared":
       return createSharedComputerProvider({
+        timeoutMs: 4_000,
         baseUrl: config.baseUrl,
         ...(config.token ? { token: config.token } : {}),
       });

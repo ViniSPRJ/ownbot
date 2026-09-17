@@ -1,3 +1,4 @@
+import { displayAvailable } from "./display-health";
 import { serve } from "bun";
 import type { Page } from "playwright";
 import { parseAriaSnapshot, type SnapshotElement } from "./aria-snapshot";
@@ -780,6 +781,8 @@ serve<StreamData>({
     }
 
     if (url.pathname === "/health") {
+      if (!await displayAvailable())
+        return json({ status: "degraded", reason: "browser_display_unavailable" }, 503);
       const [profile] = profiles.summary([botId]);
       return json({
         status: "ok",
@@ -865,6 +868,8 @@ serve<StreamData>({
           {
             error:
               error instanceof Error ? error.message : "Navigation failed.",
+            code: error instanceof Error && /launchPersistentContext|browserType\.launch/.test(error.message)
+              ? "browser_unavailable" : "navigation_failed",
           },
           502,
         );

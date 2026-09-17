@@ -3,7 +3,7 @@ import { checkNavigationTarget } from "./target";
 
 /** The computer did not accept or answer a request. */
 export class ComputerUnavailableError extends Error {
-  constructor(reason: string) {
+  constructor(reason: string, readonly code = "computer_unavailable") {
     super(reason);
     this.name = "ComputerUnavailableError";
   }
@@ -125,7 +125,7 @@ export function createComputerTransport(
     timeoutMsOverride?: number,
   ): Promise<T> {
     if (caller?.aborted) {
-      throw new ComputerUnavailableError("The action was stopped.");
+      throw new ComputerUnavailableError("The action was stopped.", "computer_cancelled");
     }
 
     /*
@@ -158,11 +158,15 @@ export function createComputerTransport(
           : AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
+      const code = caller?.aborted || (error instanceof Error && error.name === "AbortError")
+        ? "computer_cancelled"
+        : error instanceof Error && error.name === "TimeoutError"
+          ? "computer_timeout" : "computer_unreachable";
       throw new ComputerUnavailableError(
-        error instanceof Error && error.name === "TimeoutError"
-          ? "The assistant's computer did not respond in time."
-          : "The assistant's computer is not running.",
-      );
+        code === "computer_cancelled" ? "The computer action was stopped; its effects may be unknown. Do not repeat it automatically."
+          : code === "computer_timeout" ? "The assistant's computer did not respond in time."
+          : "The computer service could not be reached. Its running state is unverified.", code);
+
     }
 
     const body = (await response.json().catch(() => null)) as Record<
@@ -242,5 +246,5 @@ function throwMappedError(
       `${ref ? `Element ${ref} is` : "That element is"} not on the page any more. Take a fresh snapshot and use the refs from it.`,
     );
   }
-  throw new ComputerUnavailableError(detail);
+  throw new ComputerUnavailableError(detail, body?.code === "browser_unavailable" ? "browser_unavailable" : "computer_action_failed");
 }

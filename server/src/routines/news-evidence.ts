@@ -1,3 +1,4 @@
+import { ComputerDependencyError } from "./computer-dependency";
 import { z } from "zod";
 import type { GrantedTool } from "../plugins/tools";
 
@@ -46,12 +47,15 @@ function structuredPublicationTime(value: unknown): number | null {
 }
 
 export function createNewsEvidence(now = Date.now()) {
+  let computerUnavailable = false;
   const sources = new Map<string, Source>();
   const evidence = new Map<string, Evidence>();
   function capture(tool: string, answer: string) {
-    if (tool !== "computer_navigate" && tool !== "computer_read") return;
+    if (!tool.startsWith("computer_")) return;
     try {
       const value = JSON.parse(answer);
+      if (value?.unavailable === true) computerUnavailable = true;
+      if (tool !== "computer_navigate" && tool !== "computer_read") return;
       if (value?.ok !== true || typeof value.url !== "string" || typeof value.text !== "string" || value.text.length < 120) return;
       if (/security verification|subscribe to (?:read|continue)|assine para continuar lendo|acesso exclusivo para assinantes/i.test(value.text)) return;
       const url = canonical(value.url); if (!url) return;
@@ -119,6 +123,7 @@ export function createNewsEvidence(now = Date.now()) {
       const heading = integrity.length ? "# Briefing incompleto — validação editorial pendente"
         : coverage.length ? "# Briefing — cobertura parcial" : "# Briefing — registro de evidências";
       const labelled = `${heading}\n\n${qualification}${issues.length ? issues.map(issue => `- ${issue}`).join("\n") + "\n\n" : ""}${table}\n\n---\n\n${integrity.length ? "Rascunho preservado, sem aprovação editorial:\n\n" : ""}${report}`;
+      if (computerUnavailable) throw new ComputerDependencyError(labelled, resultMessageId);
       if (integrity.length) throw new NewsEditorialError(labelled, resultMessageId, issues);
       return labelled;
     },

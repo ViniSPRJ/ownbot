@@ -64,6 +64,7 @@ export function createOperationsStore(
     .OPENBOT_NOTIFICATION_DELIVERY === "internal"
     ? "internal"
     : "telegram",
+  computerCheck?: () => Promise<boolean>,
 ): OperationsStore {
   return {
     async runs(owner, id) {
@@ -136,6 +137,10 @@ export function createOperationsStore(
         checks.handoffs = rows[0]?.handoffs === true;
       } catch {
         /* Only boolean health leaves this endpoint; never database error details. */
+      }
+      if (computerCheck) {
+        try { checks.computer = await computerCheck(); }
+        catch { checks.computer = false; }
       }
       if (historyCheck) {
         try {

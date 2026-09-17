@@ -17,6 +17,7 @@
  */
 import type { Tool } from "@ag-ui/client";
 import {
+  ComputerUnavailableError,
   ElementNotFoundError,
   HumanHasControlError,
   NavigationRefusedError,
@@ -268,6 +269,11 @@ const BAD_REF: ToolOutcome = {
  */
 function outcomeOf(error: unknown): ToolOutcome {
   const reason = error instanceof Error ? error.message : "That did not work.";
+  if (error instanceof ComputerUnavailableError && ["computer_action_failed", "computer_cancelled"].includes(error.code))
+    return { ok: false, reason, code: error.code, retryable: false, effects: "unknown" };
+  if (error instanceof ComputerUnavailableError)
+    return { ok: false, reason, unavailable: true, code: error.code, retryable: false,
+      effects: "unknown", instruction: "Do not repeat this action. Report the computer dependency failure; use independent sources only." };
   if (error instanceof ActionRefusedError) {
     return { ok: false, reason, refused: true, rule: error.rule };
   }
@@ -295,6 +301,9 @@ export function createHeadlessComputer(options: {
   actorFor: (ownerUserId: string) => ActionActor;
 }): HeadlessComputer {
   const { gateway, actorFor } = options;
+  // A short dependency circuit prevents changing URLs from hammering the same dead service.
+  // No action is replayed when it expires: only a fresh, explicit tool call may proceed.
+  const unavailable = new Map<string, { until: number; outcome: ToolOutcome }>();
 
   async function perform(
     botId: string,
@@ -416,10 +425,20 @@ export function createHeadlessComputer(options: {
   return {
     tools: HEADLESS_COMPUTER_TOOLS,
     async call({ botId, ownerUserId, name, args, signal }) {
+      const key = JSON.stringify([botId, ownerUserId]);
+      const now = Date.now();
+      for (const [id, entry] of unavailable) if (entry.until <= now) unavailable.delete(id);
+      const blocked = unavailable.get(key);
+      if (blocked) return { ...blocked.outcome, circuitOpen: true, effects: "not_attempted", retryAfterMs: blocked.until - now };
       try {
         return await perform(botId, actorFor(ownerUserId), name, asArgs(args), signal);
       } catch (error) {
-        return outcomeOf(error);
+        const outcome = outcomeOf(error);
+        if (error instanceof ComputerUnavailableError && !["computer_cancelled", "computer_action_failed"].includes(error.code)) {
+          if (unavailable.size >= 1000) unavailable.delete(unavailable.keys().next().value!);
+          unavailable.set(key, { until: Date.now() + 30_000, outcome });
+        }
+        return outcome;
       }
     },
   };

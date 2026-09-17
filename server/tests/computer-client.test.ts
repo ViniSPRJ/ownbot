@@ -108,7 +108,7 @@ describe("computer client", () => {
       throw new Error("connect ECONNREFUSED");
     });
     await expect(missing.navigate("https://example.com")).rejects.toThrow(
-      "The assistant's computer is not running.",
+      "The computer service could not be reached. Its running state is unverified.",
     );
 
     const timedOut = clientWith(() => {

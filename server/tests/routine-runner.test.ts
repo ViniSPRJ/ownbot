@@ -1,3 +1,4 @@
+import { ComputerDependencyError } from "../src/routines/computer-dependency";
 import { NewsEditorialError } from "../src/routines/news-evidence";
 import { describe, expect, test } from "bun:test";
 import type { AgentActor } from "../src/agents/profile-types";
@@ -63,6 +64,7 @@ function unreachable(method: string): never {
 }
 
 function harness(options: {
+  preflight?: () => Promise<void>;
   context?: RoutineRunContext | null;
   channel?: AgentChannel | null;
   failures?: number;
@@ -152,7 +154,7 @@ function harness(options: {
 
   return {
     recorded,
-    runner: createRoutineRunner({ routineStore, channelStore, runTurn }),
+    runner: createRoutineRunner({ routineStore, channelStore, runTurn, preflight: options.preflight }),
   };
 }
 
@@ -434,4 +436,15 @@ test("recent cron and unscheduled event runs still execute", async () => {
     expect(recorded.turns).toHaveLength(1);
     expect(recorded.finished[0]?.status).toBe("succeeded");
   }
+});
+
+
+test("dependency preflight records one failed run and incident without model or handoff", async () => {
+  const {runner,recorded}=harness({failures:1,preflight:async()=>{throw new ComputerDependencyError();}});
+  await Promise.all([runner.run(RUN_ID),runner.run(RUN_ID)]);
+  expect(recorded.turns).toHaveLength(0);
+  expect(recorded.finished).toHaveLength(1);
+  expect(recorded.finished[0]?.status).toBe("failed");
+  expect(recorded.finished[0]?.error).toContain("infrastructure_computer_unavailable");
+  expect(recorded.activity).toHaveLength(1);
 });

@@ -1,3 +1,4 @@
+import { ComputerDependencyError } from "./computer-dependency";
 import { ROUTINE_GRACE_MS } from "./timing";
 import { NewsEditorialError } from "./news-evidence";
 /**
@@ -69,6 +70,7 @@ export function createRoutineRunner(options: {
   channelStore: ChannelStore;
   runTurn: TurnRunner;
   now?: () => Date;
+  preflight?: (context: { agentId: string; ownerUserId: string }) => Promise<void>;
 }): RoutineRunner {
   const { routineStore, channelStore, runTurn } = options;
 
@@ -154,6 +156,7 @@ export function createRoutineRunner(options: {
     let replyText: string;
     let resultMessageId: string | undefined;
     try {
+      await options.preflight?.({ agentId, ownerUserId });
       ({ replyText, resultMessageId } = await runTurn({
         ownerUserId,
         agentId,
@@ -174,7 +177,11 @@ export function createRoutineRunner(options: {
         await say(error.draft);
         return;
       }
-      await routineStore.finishRun(routineRunId, "failed", reason);
+      await routineStore.finishRun(routineRunId, "failed", reason,
+        error instanceof ComputerDependencyError ? {
+          replyText: error.draft ?? reason,
+          ...(error.resultMessageId ? { resultMessageId: error.resultMessageId } : {}),
+        } : undefined);
 
       /*
        * THE FATIGUE RULE, read after the failure is recorded — the count has to include this

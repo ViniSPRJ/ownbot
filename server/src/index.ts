@@ -1,3 +1,4 @@
+import { computerReady, routineComputerPreflight } from "./routines/computer-dependency";
 import { acpProfileFor } from "./acp/config";
 import { acpComputerTools } from "./acp/computer-tools";
 import { createConversationModelStore } from "./acp/conversation-models";
@@ -890,6 +891,7 @@ const routineResearchMaxCalls = wholeNumberEnv(
 );
 
 const routineRunner = createRoutineRunner({
+  preflight: routineComputerPreflight(computerProvider),
   routineStore,
   channelStore,
   runTurn: createTurnRunner({
@@ -1238,6 +1240,8 @@ const app = createApp(
           );
         }
       : undefined,
+    undefined,
+    computerProvider ? () => computerReady(computerProvider) : undefined,
   ),
   createAgentMemoryStore(database),
   createRoutineEventStore(database),
