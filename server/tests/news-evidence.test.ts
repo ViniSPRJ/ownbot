@@ -13,7 +13,9 @@ test("only a real article body and exact author/excerpt establish opinion covera
  capture(e,valor,undefined,"computer_snapshot"); expect(await e.tool.execute(valor)).toStartWith("Refused.");
  capture(e); expect(await e.tool.execute({...valor,excerpt:"Invented article text that was never returned by the browser. ".repeat(4)})).toStartWith("Refused.");
  expect(JSON.parse(await e.tool.execute(valor)).registered).toBe(true);
- expect(()=>e.finalise(`[Valor](${valor.url})`)).toThrow("matéria do FT");
+ // A missing outlet is now a stated gap on a delivered briefing, not a failed run.
+ const partial=e.finalise(`[Valor](${valor.url})`);
+ expect(partial).toContain("# Briefing — cobertura parcial"); expect(partial).toContain("matéria do FT");
  capture(e,ft); await e.tool.execute(ft);
  expect(e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toContain("publicação na janela de 24h");
 });
@@ -100,7 +102,8 @@ test.each([`${BQ}`, "*", "[", "'", '"', "," , ";", ":", "!", "?", ".."])("traili
 });
 test("a bare citation trailed by punctuation still resolves to the registered source", () => {
  const e=createNewsEvidence(now); capture(e); return e.tool.execute(valor).then(()=>{
-  expect(()=>e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`)).toThrow("matéria do FT");
+  const out=e.finalise(`fonte: ${valor.url}${String.fromCharCode(96)}`);
+  expect(out).toContain("Uma análise dos juros"); expect(out).toContain("matéria do FT");
  });
 });
 test.each(["Subscribe to read", "Subscribe to continue", "Assine para continuar lendo"])("a paywall shell is not article evidence: %s", async phrase => {
@@ -135,6 +138,33 @@ test("registered but uncited required sources do not certify report coverage", a
   const e = createNewsEvidence(now);
   capture(e); await e.tool.execute(valor);
   capture(e, ft); await e.tool.execute(ft);
-  expect(() => e.finalise(`[FT](${ft.url})`)).toThrow("coluna de opinião do Valor");
-  expect(() => e.finalise(`[Valor](${valor.url})`)).toThrow("matéria do FT");
+  // Registration alone is not coverage: the source has to be cited in the report itself.
+  // The gap is now stated on a delivered briefing instead of failing the run.
+  expect(e.finalise(`[FT](${ft.url})`)).toContain("coluna de opinião do Valor");
+  expect(e.finalise(`[Valor](${valor.url})`)).toContain("matéria do FT");
+});
+
+test("an outlet gap qualifies the briefing but never fails the run", async () => {
+ const e=createNewsEvidence(now); capture(e); await e.tool.execute(valor);
+ const out=e.finalise(`[Valor](${valor.url})`);
+ // Delivered, headed as partial, and explicit about exactly which outlet is missing.
+ expect(out).toContain("# Briefing — cobertura parcial");
+ expect(out).toContain("matéria do FT sem trecho e autoria verificados");
+ expect(out).not.toContain("Rascunho preservado, sem aprovação editorial");
+});
+test("an unsupported claim still fails the run even when every outlet is covered", async () => {
+ const e=createNewsEvidence(now); capture(e); await e.tool.execute(valor); capture(e,ft); await e.tool.execute(ft);
+ // Both outlets are registered, so coverage is complete; the third link was never read.
+ expect(()=>e.finalise(`[Valor](${valor.url}) [FT](${ft.url}) [X](https://example.com/inventado)`))
+  .toThrow("citação sem registro de evidência");
+});
+test("a report with no citations at all is an integrity failure, not a coverage gap", async () => {
+ const e=createNewsEvidence(now); capture(e); await e.tool.execute(valor); capture(e,ft); await e.tool.execute(ft);
+ expect(()=>e.finalise("briefing sem nenhuma fonte")).toThrow("relatório sem citações registradas");
+});
+test("a date that was never certified cannot be delivered as current news", async () => {
+ const e=createNewsEvidence(now);
+ e.capture("computer_read",JSON.stringify({ok:true,url:valor.url,title:valor.title,text:`${valor.title}\nOpinion\n${valor.author}\nontem\n${excerpt}`,truncated:false}));
+ await e.tool.execute(valor); capture(e,ft); await e.tool.execute(ft);
+ expect(()=>e.finalise(`[Valor](${valor.url}) [FT](${ft.url})`)).toThrow("data de publicação não verificada para uso como atual");
 });

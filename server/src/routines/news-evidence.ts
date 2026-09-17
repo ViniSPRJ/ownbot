@@ -58,15 +58,25 @@ export function createNewsEvidence(now = Date.now()) {
       sources.set(url, { url, title: typeof value.title === "string" ? value.title : "", text: value.text.slice(0, 100_000), publishedAt: structuredPublicationTime(value.publishedAt) ?? publicationTime(value.text) });
     } catch { /* Refusals, stale refs and unreadable responses are not article evidence. */ }
   }
-  function assess(cited?: Set<string>): string[] {
-    const entries = [...evidence.values()]; const issues: string[] = [];
+  /** Two different kinds of problem used to share one list, and any of them failed the run.
+   *
+   * A missing outlet is an editorial gap: the briefing that was written is still true, and saying
+   * "the FT article is missing" alongside it is more useful than refusing the whole morning. An
+   * unregistered citation or a date used as current without certification is different in kind —
+   * the text asserts something this run cannot support. Only the second sort may fail a run. */
+  function assessParts(cited?: Set<string>): { coverage: string[]; integrity: string[] } {
+    const entries = [...evidence.values()]; const coverage: string[] = []; const integrity: string[] = [];
     const covered = cited ? entries.filter(item => cited.has(item.url)) : entries;
-    if (!covered.some(e => e.kind === "opinion" && new URL(e.url).hostname === "valor.globo.com")) issues.push("coluna de opinião do Valor sem trecho e autoria verificados");
+    if (!covered.some(e => e.kind === "opinion" && new URL(e.url).hostname === "valor.globo.com")) coverage.push("coluna de opinião do Valor sem trecho e autoria verificados");
     // FT reporting only: the subscription does not cover FT columnists, so an opinion column there
     // is a paywall shell, never evidence. Any verified FT article satisfies the FT requirement.
-    if (!covered.some(e => /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) issues.push("matéria do FT sem trecho e autoria verificados");
-    for (const item of entries) if (item.useAs === "current" && item.freshness !== "current") issues.push(`${item.url}: ${item.freshness === "old" ? "fonte com mais de 24h usada como atual" : "data de publicação não verificada para uso como atual"}`);
-    return issues;
+    if (!covered.some(e => /(^|\.)ft\.com$/.test(new URL(e.url).hostname))) coverage.push("matéria do FT sem trecho e autoria verificados");
+    for (const item of entries) if (item.useAs === "current" && item.freshness !== "current") integrity.push(`${item.url}: ${item.freshness === "old" ? "fonte com mais de 24h usada como atual" : "data de publicação não verificada para uso como atual"}`);
+    return { coverage, integrity };
+  }
+  /** The tool's own informational reply keeps reporting every open issue, both kinds together. */
+  function assess(cited?: Set<string>): string[] {
+    const parts = assessParts(cited); return [...parts.integrity, ...parts.coverage];
   }
   const tool: GrantedTool = {
     name: "news_record_evidence", ref: "routine/news_record_evidence",
@@ -98,14 +108,18 @@ export function createNewsEvidence(now = Date.now()) {
       // an asterisk around a link survives into `canonical`, which percent-encodes it (`…%60`), so a
       // URL the Bot really did read and register reads as an invented citation.
       const citations = [...report.matchAll(/https?:\/\/[^\s<>"\])]+/g)].map(m => canonical(m[0].replace(/[.,;:!?'"`*[\]()<>]+$/, "")));
-      const issues = assess(new Set(citations));
-      for (const url of new Set(citations)) if (!evidence.has(url)) issues.push(`${url}: citação sem registro de evidência nesta execução`);
-      if (citations.length === 0) issues.push("relatório sem citações registradas");
+      const parts = assessParts(new Set(citations));
+      const coverage = parts.coverage; const integrity = parts.integrity;
+      for (const url of new Set(citations)) if (!evidence.has(url)) integrity.push(`${url}: citação sem registro de evidência nesta execução`);
+      if (citations.length === 0) integrity.push("relatório sem citações registradas");
+      const issues = [...integrity, ...coverage];
       const entries = [...evidence.values()];
       const table = entries.map(e => `- ${e.kind === "opinion" ? "Opinião" : "Notícia"}: ${e.title} — ${e.author}; ${e.url}; ${e.publishedAt === null ? "data de publicação não verificada" : new Date(e.publishedAt).toISOString()}; ${e.freshness === "current" ? "publicação na janela de 24h" : e.freshness === "old" ? "CONTEXTO ANTIGO: fora de 24h" : "DATA NÃO VERIFICADA: somente contexto"}.`).join("\n");
       const qualification = entries.some(e => e.freshness !== "current") ? "\nFontes com DATA NÃO VERIFICADA ou CONTEXTO ANTIGO não são notícias confirmadas nas últimas 24 horas, independentemente da redação do rascunho.\n" : "";
-      const labelled = `${issues.length ? "# Briefing incompleto — validação editorial pendente" : "# Briefing — registro de evidências"}\n\n${qualification}${issues.length ? issues.map(issue => `- ${issue}`).join("\n") + "\n\n" : ""}${table}\n\n---\n\n${issues.length ? "Rascunho preservado, sem aprovação editorial:\n\n" : ""}${report}`;
-      if (issues.length) throw new NewsEditorialError(labelled, resultMessageId, issues);
+      const heading = integrity.length ? "# Briefing incompleto — validação editorial pendente"
+        : coverage.length ? "# Briefing — cobertura parcial" : "# Briefing — registro de evidências";
+      const labelled = `${heading}\n\n${qualification}${issues.length ? issues.map(issue => `- ${issue}`).join("\n") + "\n\n" : ""}${table}\n\n---\n\n${integrity.length ? "Rascunho preservado, sem aprovação editorial:\n\n" : ""}${report}`;
+      if (integrity.length) throw new NewsEditorialError(labelled, resultMessageId, issues);
       return labelled;
     },
   };
