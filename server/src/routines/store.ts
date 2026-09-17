@@ -143,6 +143,8 @@ export type RoutineInput = {
  * told whose they were would be a runner that could be told the wrong answer.
  */
 export type RoutineRunContext = {
+  /** Null for event/manual runs; only cron occurrences expire by schedule. */
+  scheduledFor?: Date | null;
   routineId: string;
   ownerUserId: string;
   agentId: string;
@@ -785,6 +787,7 @@ export function createRoutineStore(database: Database): RoutineStore {
       const [row] = await database
         .select({
           routineId: routines.id,
+          scheduledFor: routineRuns.scheduledFor,
           ownerUserId: routines.ownerUserId,
           agentId: routines.agentId,
           channelId: sql<string>`coalesce(${routineRuns.channelIdSnapshot}, ${routines.channelId})`,
@@ -921,7 +924,11 @@ export function createRoutineStore(database: Database): RoutineStore {
 
       let failures = 0;
       for (const run of rows) {
-        if (run.status !== "failed" || run.error?.startsWith("editorial_coverage_incomplete:")) break;
+        if (
+          run.status !== "failed" ||
+          run.error?.startsWith("editorial_coverage_incomplete:")
+        )
+          break;
         failures += 1;
       }
       return failures;

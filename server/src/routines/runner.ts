@@ -1,3 +1,4 @@
+import { ROUTINE_GRACE_MS } from "./timing";
 import { NewsEditorialError } from "./news-evidence";
 /**
  * Running one firing of a routine with nobody's browser open.
@@ -67,6 +68,7 @@ export function createRoutineRunner(options: {
   routineStore: RoutineStore;
   channelStore: ChannelStore;
   runTurn: TurnRunner;
+  now?: () => Date;
 }): RoutineRunner {
   const { routineStore, channelStore, runTurn } = options;
 
@@ -80,6 +82,19 @@ export function createRoutineRunner(options: {
      */
     if (!context) return;
 
+    if (
+      context.scheduledFor &&
+      (options.now?.() ?? new Date()).getTime() -
+        context.scheduledFor.getTime() >
+        ROUTINE_GRACE_MS
+    ) {
+      await routineStore.finishRun(
+        routineRunId,
+        "skipped",
+        "scheduled occurrence expired before execution admission",
+      );
+      return;
+    }
     const { routineId, ownerUserId, agentId, channelId, instruction } = context;
     if (!(await routineStore.routineForFiring(routineId))?.enabled) {
       await routineStore.finishRun(
@@ -151,7 +166,10 @@ export function createRoutineRunner(options: {
         // A completed research turn with incomplete editorial evidence is not an infrastructure
         // failure: keep its draft and receipt, never retry it or trip the fatigue kill-switch here.
         await routineStore.finishRun(routineRunId, "failed", reason, {
-          replyText: error.draft, ...(error.resultMessageId ? { resultMessageId: error.resultMessageId } : {}),
+          replyText: error.draft,
+          ...(error.resultMessageId
+            ? { resultMessageId: error.resultMessageId }
+            : {}),
         });
         await say(error.draft);
         return;

@@ -131,6 +131,12 @@ export type WorkQueue = {
     owner: string;
     leaseMs: number;
   }) => Promise<boolean>;
+  /** Persist admission before any agent effects. A prior admission is never replayed. */
+  admit: (input: {
+    kind: string;
+    key: string;
+    owner: string;
+  }) => Promise<boolean>;
   /**
    * Done. False means the lease had already gone to somebody else, so this was not ours to finish.
    */
@@ -353,6 +359,24 @@ export function createWorkQueue(database: Database): WorkQueue {
       return Boolean(renewed);
     },
 
+    async admit({ kind, key, owner }) {
+      const [row] = await database
+        .update(workItems)
+        .set({
+          payload: sql`${workItems.payload} || jsonb_build_object('_deliveryStartedAt', now())`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            ours(kind, key, owner),
+            sql`${workItems.leaseUntil} > now()`,
+            sql`NOT (${workItems.payload} ? '_deliveryStartedAt')`,
+          ),
+        )
+        .returning({ key: workItems.key });
+      return Boolean(row);
+    },
+
     async finish({ kind, key, owner, result, followUp }) {
       return database.transaction(async (transaction) => {
         const [finished] = await transaction
@@ -414,6 +438,7 @@ export function createWorkQueue(database: Database): WorkQueue {
         .where(
           and(
             eq(workItems.kind, kind),
+            sql`coalesce(${workItems.payload}->'result'->>'outcome', '') <> 'unknown'`,
             or(
               lt(workItems.finishedAt, finishedCutoff),
               /*

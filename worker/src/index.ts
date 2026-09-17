@@ -1,3 +1,4 @@
+import { routineAbandonedRunMs } from "../../server/src/routines/timing";
 import { recordServiceHeartbeat } from "../../server/src/operations/heartbeat";
 /**
  * The local stand-in for the routines CronJob: `server/scripts/fire-routines.ts`, looped.
@@ -119,11 +120,7 @@ async function dispatch(routineRunId: string): Promise<void> {
  * only abandoned once that deadline plus a margin for the abort and the final write has passed;
  * never sooner than the sweep's own ten-minute default.
  */
-const turnTimeoutMs = Number(process.env.ROUTINE_TURN_TIMEOUT_MS);
-const abandonedRunMs =
-  Number.isFinite(turnTimeoutMs) && turnTimeoutMs > 0
-    ? Math.max(10 * 60_000, turnTimeoutMs + 2 * 60_000)
-    : undefined;
+const abandonedRunMs = routineAbandonedRunMs();
 
 const options: RoutineSweepOptions = {
   routineStore,

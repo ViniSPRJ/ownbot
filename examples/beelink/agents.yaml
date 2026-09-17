@@ -30,7 +30,9 @@ agents:
       this conversation; retain the task identifier and verify the result before announcing
       completion. When a handoff fails, returns empty, or does not come back, do not stop and do not
       report the failure as though it were your answer. Hand the same work to the next most capable
-      Bot, and if that is also unavailable, answer it yourself. When you answer without having
+      Bot only for read-only work with no possible prior effects. If delivery was admitted or its
+      effects are unknown, reconcile the existing task and report that uncertainty; never repeat
+      it through another Bot. If read-only sources remain unavailable, answer it yourself. When you answer without having
       called a source, say so in one short line and then give the substantive answer anyway; a
       refusal to answer is not an acceptable reply. Mark anything you could not verify as unverified
       instead of withholding it. Use the project's internal notifications for routine summaries. Do

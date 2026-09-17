@@ -167,3 +167,40 @@ describe("a batch of hops and a lease that can run out", () => {
     );
   });
 });
+
+test("durable admission survives owner loss and prevents effect replay", async () => {
+  const key = `safety:${randomUUID()}`;
+  await queue.offer({
+    kind,
+    key,
+    payload: hop(key, 1) as unknown as Record<string, unknown>,
+  });
+  await queue.claim({ kind, owner: "dead", leaseMs: 500 });
+  expect(await queue.admit({ kind, key, owner: "dead" })).toBe(true);
+  expect(await queue.admit({ kind, key, owner: "dead" })).toBe(false);
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  let calls = 0;
+  const runner = createHandoffRunner({
+    queue,
+    owner: "new",
+    sign: () => "s",
+    auditStore: silent,
+    delivery: {
+      deliver: async () => {
+        calls++;
+        return { answer: null };
+      },
+    },
+  });
+  const report = await runner.sweep();
+  expect(calls).toBe(0);
+  expect(report.skipped[0]?.reason).toContain("not replayed");
+  const [row] = await database
+    .select()
+    .from(workItems)
+    .where(eq(workItems.key, key));
+  expect((row!.payload as any).result.outcome).toBe("unknown");
+  expect(
+    await queue.purge({ kind, olderThanMs: -1, finishedOlderThanMs: -1 }),
+  ).toBe(0);
+});

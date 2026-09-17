@@ -1,3 +1,4 @@
+import { ROUTINE_GRACE_MS, routineAbandonedRunMs } from "./timing";
 /** Durable dispatch is separate from execution admission: queue redeliveries share an occurrence
  * row, and only the runner winning claimed_at may execute it. Pending rows survive HTTP 202 and
  * process restarts. Interrupted admitted turns are surfaced as unknown, never replayed blindly. */
@@ -34,13 +35,12 @@ const DISPATCH_RETRY_DELAY_MS = 60_000;
  * fifteen-minute floor a routine's schedule may have (`MINIMUM_INTERVAL_MS` in `./schedule`), so the
  * window can never call two consecutive occurrences of one routine current at the same time.
  */
-export const DEFAULT_GRACE_MS = 10 * 60_000;
+export const DEFAULT_GRACE_MS = ROUTINE_GRACE_MS;
 
 /** Longer than the default five-minute turn deadline; a deployment with a longer deadline passes
  * `abandonedRunMs`, or a turn still running would be closed as interrupted from under it. Interrupted
  * admitted executions require review; unclaimed accepted work is recovered separately, without
  * conflating dispatch with execution. */
-const ABANDONED_RUN_MS = 10 * 60_000;
 
 export type RoutineSweepOptions = {
   routineStore: RoutineStore;
@@ -258,7 +258,7 @@ export async function dispatchClaimedRoutines(
   // Claimed executions past the hard turn bound have unknown effects. Surface them, never replay.
   try {
     const reaped = await options.routineStore.reapAbandonedRuns(
-      options.abandonedRunMs ?? ABANDONED_RUN_MS,
+      options.abandonedRunMs ?? routineAbandonedRunMs(),
       "Execution interrupted after admission; effects and result are unknown. Review before retrying manually.",
     );
     if (reaped > 0) {

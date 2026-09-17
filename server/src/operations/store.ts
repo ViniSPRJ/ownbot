@@ -1,3 +1,4 @@
+import { routineAbandonedRunMs, ROUTINE_GRACE_MS } from "../routines/timing";
 import { sql } from "drizzle-orm";
 import type { Database } from "../db/client";
 import { HANDOFF_KIND } from "../agents/handoff";
@@ -7,9 +8,10 @@ import { DEFAULT_MAX_ATTEMPTS } from "../work/queue";
 // Check forwards, answer relays and failure notices alike. An active final attempt is not
 // exhausted yet; queued work becomes actionable after ten minutes without a live lease.
 export const handoffQueueReadiness = sql`NOT EXISTS(
-  SELECT 1 FROM work_items WHERE kind=${HANDOFF_KIND} AND finished_at IS NULL
-  AND (lease_until IS NULL OR lease_until <= now())
-  AND (attempts >= ${DEFAULT_MAX_ATTEMPTS} OR run_at < now()-interval '10 minutes')
+  SELECT 1 FROM work_items WHERE kind=${HANDOFF_KIND} AND (
+    payload->'result'->>'outcome' = 'unknown' OR (finished_at IS NULL
+    AND (lease_until IS NULL OR lease_until <= now())
+    AND (attempts >= ${DEFAULT_MAX_ATTEMPTS} OR run_at < now()-interval '10 minutes')))
 )`;
 
 export type RunRecord = {
@@ -116,7 +118,10 @@ export function createOperationsStore(
               EXISTS(SELECT 1 FROM openbot_service_health WHERE name='routine-notifier' AND last_ok_at > now()-interval '5 minutes')
               AND NOT EXISTS(SELECT 1 FROM routine_notifications WHERE status='failed' OR (status<>'sent' AND created_at<now()-interval '15 minutes'))))`
             } AS notifications,
-            NOT EXISTS(SELECT 1 FROM routine_runs WHERE status IS NULL AND started_at<now()-interval '11 minutes') AS runs,
+            NOT EXISTS(SELECT 1 FROM routine_runs WHERE status IS NULL AND (
+              (claimed_at IS NOT NULL AND claimed_at < now()-make_interval(secs => ${routineAbandonedRunMs() / 1000}))
+              OR (claimed_at IS NULL AND coalesce(scheduled_for, started_at) < now()-make_interval(secs => ${ROUTINE_GRACE_MS / 1000}))
+            )) AS runs,
             ${handoffQueueReadiness} AS handoffs
         `)) as unknown as {
           scheduler: boolean;

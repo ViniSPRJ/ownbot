@@ -390,15 +390,48 @@ test("recovered work respects a routine disabled after acceptance", async () => 
   ]);
 });
 
-
 test("editorial incompleteness persists a failed draft once without infra fatigue or retry", async () => {
-  let result: unknown; let calls = 0;
-  const { runner, recorded } = harness({ failures: 10, persistResult: value => {result=value;}, runTurn: async () => {
-    calls++; throw new NewsEditorialError("# Briefing incompleto\nRascunho preservado.","draft-message",["coluna Valor não verificada"]);
-  }});
-  await runner.run(RUN_ID); await runner.run(RUN_ID);
+  let result: unknown;
+  let calls = 0;
+  const { runner, recorded } = harness({
+    failures: 10,
+    persistResult: (value) => {
+      result = value;
+    },
+    runTurn: async () => {
+      calls++;
+      throw new NewsEditorialError(
+        "# Briefing incompleto\nRascunho preservado.",
+        "draft-message",
+        ["coluna Valor não verificada"],
+      );
+    },
+  });
+  await runner.run(RUN_ID);
+  await runner.run(RUN_ID);
   expect(calls).toBe(1);
-  expect(recorded.finished).toEqual([{runId:RUN_ID,status:"failed",error:"editorial_coverage_incomplete: coluna Valor não verificada"}]);
-  expect(result).toEqual({replyText:"# Briefing incompleto\nRascunho preservado.",resultMessageId:"draft-message"});
-  expect(recorded.enabled).toEqual([]); expect(recorded.activity).toHaveLength(1);
+  expect(recorded.finished).toEqual([
+    {
+      runId: RUN_ID,
+      status: "failed",
+      error: "editorial_coverage_incomplete: coluna Valor não verificada",
+    },
+  ]);
+  expect(result).toEqual({
+    replyText: "# Briefing incompleto\nRascunho preservado.",
+    resultMessageId: "draft-message",
+  });
+  expect(recorded.enabled).toEqual([]);
+  expect(recorded.activity).toHaveLength(1);
+});
+
+test("recent cron and unscheduled event runs still execute", async () => {
+  for (const scheduledFor of [new Date(), null]) {
+    const { runner, recorded } = harness({
+      context: { ...CONTEXT, scheduledFor },
+    });
+    await runner.run(RUN_ID);
+    expect(recorded.turns).toHaveLength(1);
+    expect(recorded.finished[0]?.status).toBe("succeeded");
+  }
 });

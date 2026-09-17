@@ -18,6 +18,7 @@ import { textOf } from "./message-text";
 
 /** Whatever runs an agent against a thread and records what it did. */
 export type ThreadRunner = {
+  stop?: (input: { threadId: string; runId: string }) => Promise<unknown>;
   run: (request: {
     threadId: string;
     agent: AbstractAgent;
@@ -133,7 +134,11 @@ export function createHandoffDelivery(options: {
   setBusy?: (input: { threadId: string; busy: boolean }) => Promise<void>;
   newRunId: () => string;
   /** Bind delegation identity to the actual acquired run, including its scratch thread. */
-  signRun?: (input: { work: HandoffWork; runId: string; threadId: string }) => string;
+  signRun?: (input: {
+    work: HandoffWork;
+    runId: string;
+    threadId: string;
+  }) => string;
   /**
    * How long one delivery may take before it is given up on.
    *
@@ -145,6 +150,7 @@ export function createHandoffDelivery(options: {
    * conversation it was asked in locked against them for as long as the process lives.
    */
   deadlineMs?: number;
+  renewEveryMs?: number;
 }): HandoffDelivery {
   const {
     agentFor,
@@ -159,7 +165,8 @@ export function createHandoffDelivery(options: {
   } = options;
 
   return {
-    async deliver({ work, message, shown, assertion }) {
+    async deliver({ work, message, shown, assertion, signal, admit }) {
+      signal?.throwIfAborted();
       const agent = await agentFor({
         actorId: work.actorId,
         botId: work.toBotId,
@@ -324,11 +331,31 @@ export function createHandoffDelivery(options: {
          * and the platform's window is short; a lock that lapses mid-answer lets a second run into the
          * conversation, which is the thing it exists to prevent.
          */
+        const controller = new AbortController();
+        let stopPromise: Promise<unknown> | undefined;
+        const stop = () => {
+          try {
+            agent.abortRun();
+          } catch {}
+          stopPromise ??= runner
+            .stop?.({ threadId: where.threadId, runId })
+            .catch(() => {});
+        };
+        const abort = () =>
+          controller.abort(signal?.reason ?? new Error("handoff cancelled"));
+        signal?.addEventListener("abort", abort, { once: true });
+        if (signal?.aborted) abort();
+        controller.signal.addEventListener("abort", stop, { once: true });
         const heartbeat = setInterval(() => {
-          void lock.renew({ threadId: where.threadId, runId }).catch(() => {});
-        }, LOCK_RENEW_EVERY_MS);
+          void lock
+            .renew({ threadId: where.threadId, runId })
+            .catch((error) => controller.abort(error));
+        }, options.renewEveryMs ?? LOCK_RENEW_EVERY_MS);
 
         try {
+          controller.signal.throwIfAborted();
+          await admit?.();
+          controller.signal.throwIfAborted();
           await settled(
             runner.run({
               threadId: where.threadId,
@@ -374,10 +401,18 @@ export function createHandoffDelivery(options: {
                  * gone. It is what stops the addressed Bot handing the work on for ever, and it is
                  * signed, so the Bot cannot edit its own depth on the way past.
                  */
-                forwardedProps: { openbotRun: options.signRun?.({ work, runId, threadId: where.threadId }) ?? assertion },
+                forwardedProps: {
+                  openbotRun:
+                    options.signRun?.({
+                      work,
+                      runId,
+                      threadId: where.threadId,
+                    }) ?? assertion,
+                },
               },
             }),
             deadlineMs,
+            controller.signal,
             () =>
               `${work.toBotId} did not finish within ${Math.round(deadlineMs / 1000)}s ${
                 seen.count === 0
@@ -401,8 +436,14 @@ export function createHandoffDelivery(options: {
               // as failed and run a second time.
             });
           }
+        } catch (error) {
+          controller.abort(error);
+          stop();
+          throw error;
         } finally {
+          signal?.removeEventListener("abort", abort);
           clearInterval(heartbeat);
+          await stopPromise;
           /*
            * Given back whatever happened. Left held, the conversation is unusable by anybody until the
            * lock expires: the person cannot ask a follow-up and the next hop is refused, which turns
@@ -499,6 +540,7 @@ const DEFAULT_DELIVERY_DEADLINE_MS = 5 * 60_000;
 function settled(
   events: Observable<BaseEvent>,
   deadlineMs: number,
+  signal: AbortSignal,
   /** Written when the deadline passes, so it can say how far the run had got by then. */
   timedOut: () => string,
 ): Promise<void> {
@@ -520,12 +562,20 @@ function settled(
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
       subscription?.unsubscribe();
       settle();
     };
     const timer = setTimeout(() => {
       finish(() => reject(new Error(timedOut())));
     }, deadlineMs);
+    const aborted = () =>
+      finish(() => reject(signal.reason ?? new Error("handoff cancelled")));
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted) {
+      aborted();
+      return;
+    }
     subscription = events.subscribe({
       next: (event) => {
         // Compared as a string rather than through the enum: `@ag-ui/client` re-exports the types

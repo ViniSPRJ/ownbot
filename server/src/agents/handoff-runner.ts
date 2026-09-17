@@ -46,7 +46,8 @@ export type HandoffDelivery = {
   /**
    * Run the addressed Bot against the conversation, and resolve when its turn is on record.
    *
-   * Rejecting means the hop did not happen and is worth another go. Resolving means it did, whatever
+   * Rejecting before admission is retryable. After admission the outcome is uncertain and must
+   * be reconciled without replay. Resolving means it did, whatever
    * the Bot said: a Bot that answers "I could not find that" has answered, and retrying would ask it
    * the same question again and bill for the same non-answer.
    *
@@ -56,6 +57,9 @@ export type HandoffDelivery = {
    */
   deliver: (input: {
     work: HandoffWork;
+    signal?: AbortSignal;
+    /** Must succeed immediately before starting the agent, after preflight. */
+    admit?: () => Promise<void>;
     /** The message the addressed Bot sees, already attributed by the deployment. */
     message: string;
     /**
@@ -264,6 +268,15 @@ export function createHandoffRunner(options: {
        * the item in flight is fine, and the ones waiting behind it are not.
        */
       const ours = new Set(claimed.map((item) => item.key));
+      const controllers = new Map(
+        claimed.map((item) => [item.key, new AbortController()]),
+      );
+      const lose = (key: string) => {
+        ours.delete(key);
+        controllers
+          .get(key)
+          ?.abort(new Error("handoff lease lost or renewal failed"));
+      };
       const heartbeat = setInterval(() => {
         for (const key of ours) {
           void queue
@@ -271,9 +284,9 @@ export function createHandoffRunner(options: {
             .then((kept) => {
               // False means it went to somebody else. Dropped rather than renewed again, so the
               // loop below knows not to spend a model call on work it no longer holds.
-              if (!kept) ours.delete(key);
+              if (!kept) lose(key);
             })
-            .catch(() => {});
+            .catch(() => lose(key));
         }
       }, renewEveryMs);
 
@@ -293,13 +306,47 @@ export function createHandoffRunner(options: {
           // Re-check persisted jobs after configuration changes, including answer relays.
           if (isPrivateAgent(work.fromBotId) || isPrivateAgent(work.toBotId)) {
             await recordAuditEvent(auditStore, {
-              eventType: "agent.handoff_failed", targetType: "agent", targetId: work.toBotId,
+              eventType: "agent.handoff_failed",
+              targetType: "agent",
+              targetId: work.toBotId,
               ...(work.actorId ? { actorUserId: work.actorId } : {}),
-              payload: { bot: work.fromBotId, from: work.fromBotId, to: work.toBotId, workKey: item.key, reason: PRIVATE_BOUNDARY },
+              payload: {
+                bot: work.fromBotId,
+                from: work.fromBotId,
+                to: work.toBotId,
+                workKey: item.key,
+                reason: PRIVATE_BOUNDARY,
+              },
             });
             await queue.finish({ kind: HANDOFF_KIND, key: item.key, owner });
             ours.delete(item.key);
             report.skipped.push({ key: item.key, reason: PRIVATE_BOUNDARY });
+            continue;
+          }
+
+          if (item.payload._deliveryStartedAt) {
+            const reason =
+              "Previous delivery was admitted; outcome unknown. Manual reconciliation required; not replayed.";
+            await queue.finish({
+              kind: HANDOFF_KIND,
+              key: item.key,
+              owner,
+              result: { outcome: "unknown", reason },
+            });
+            ours.delete(item.key);
+            report.skipped.push({ key: item.key, reason });
+            await recordAuditEvent(auditStore, {
+              eventType: "agent.handoff_failed",
+              targetType: "agent",
+              targetId: work.toBotId,
+              actorUserId: work.actorId,
+              payload: {
+                bot: work.fromBotId,
+                workKey: item.key,
+                reason,
+                outcome: "unknown",
+              },
+            });
             continue;
           }
 
@@ -363,10 +410,29 @@ export function createHandoffRunner(options: {
             continue;
           }
 
+          let admitted = false;
           try {
+            const signal = controllers.get(item.key)!.signal;
+            signal.throwIfAborted();
             const shown = summarise(work);
             const { answer } = await delivery.deliver({
               work,
+              signal,
+              admit: async () => {
+                signal.throwIfAborted();
+                if (
+                  !(await queue.admit({
+                    kind: HANDOFF_KIND,
+                    key: item.key,
+                    owner,
+                  }))
+                )
+                  throw new Error(
+                    "handoff admission refused; lease lost or already admitted",
+                  );
+                admitted = true;
+                signal.throwIfAborted();
+              },
               message: attribute(work),
               ...(shown ? { shown } : {}),
               assertion: sign(work),
@@ -435,6 +501,32 @@ export function createHandoffRunner(options: {
           } catch (error) {
             const reason =
               error instanceof Error ? error.message : "could not be delivered";
+            if (admitted) {
+              const unknown = `Delivery admitted; outcome unknown, not replayed: ${reason}`;
+              await queue
+                .finish({
+                  kind: HANDOFF_KIND,
+                  key: item.key,
+                  owner,
+                  result: { outcome: "unknown", reason: unknown },
+                })
+                .catch(() => false);
+              ours.delete(item.key);
+              report.skipped.push({ key: item.key, reason: unknown });
+              await recordAuditEvent(auditStore, {
+                eventType: "agent.handoff_failed",
+                targetType: "agent",
+                targetId: work.toBotId,
+                actorUserId: work.actorId,
+                payload: {
+                  bot: work.fromBotId,
+                  workKey: item.key,
+                  outcome: "unknown",
+                  reason: unknown,
+                },
+              });
+              continue;
+            }
             /*
              * The last try, so the person is told rather than left waiting.
              *

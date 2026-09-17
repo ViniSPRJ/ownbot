@@ -1170,6 +1170,7 @@ describe("the runner's read of one firing", () => {
     // The owner comes back because the runner acts AS the owner: the channel it posts into and the
     // thread it continues are that person's, and nothing else in the run row says who that is.
     expect(await store.runContext(runId)).toEqual({
+      scheduledFor: null,
       routineId: routine.id,
       ownerUserId: owner.id,
       agentId,
