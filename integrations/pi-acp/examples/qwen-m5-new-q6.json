@@ -1,0 +1,14 @@
+{
+  "piCommand": "/home/viniciuspinho/ownbot-pi-acp/runtime/node_modules/.bin/pi",
+  "defaultModel": "qwen38-27b-q6",
+  "models": [
+    {
+      "id": "qwen38-27b-q6",
+      "name": "Qwen 3.8 27B Q6 · M5 novo",
+      "model": "Qwen3.8-27B-oQ6e-mtp",
+      "baseUrl": "http://100.71.224.71:8081/v1",
+      "contextWindow": 65536,
+      "maxTokens": 8192
+    }
+  ]
+}

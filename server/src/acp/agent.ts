@@ -93,7 +93,11 @@ export class AcpAgent extends AbstractAgent {
         const stateFile = join(cwd, ".ownbot-session.json");
         const persist = async (value: AcpSessionState) => writeSessionState(stateFile, value);
         try {
-          const chosen = (await o.resolveModel?.(input.threadId).catch(() => null)) ?? null;
+          // Explicit null still means the operator default. An unexpected throw must not: swallowing
+          // it used to start that default as if the conversation had no choice. Fail before tools or
+          // the CLI so the structured warning can name this phase without the resolver's text.
+          if (o.resolveModel) phase = "model_resolution";
+          const chosen = o.resolveModel ? await o.resolveModel(input.threadId) : null;
           selection = { ...selection, model: chosen ?? o.profile.model ?? null };
           await mkdir(cwd, { recursive: true, mode: 0o700 });
           let saved: AcpSessionState | undefined;

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,6 +25,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(m.method==='session/load')chunk(m.params.sessionId,'REPLAY MUST BE IGNORED');
   return ok({sessionId:m.params.sessionId||crypto.randomUUID()});
  }
+ if(m.method==='session/set_model'){log({method:m.method,modelId:m.params.modelId});return ok({});}
  if(m.method==='session/prompt') {
   log({method:m.method,sessionId:m.params.sessionId,text:m.params.prompt[0].text});
   pending=m;
@@ -87,10 +88,22 @@ function input(threadId: string, ids = ["u1"]): RunAgentInput {
 function collect(agent: AcpAgent, request: RunAgentInput): Promise<BaseEvent[]> {
  return new Promise((resolve,reject)=>{const events:BaseEvent[]=[];agent.run(request).subscribe({next:e=>events.push(e),error:reject,complete:()=>resolve(events)});});
 }
-async function harness(mode="normal") {
+type HarnessOptions = {
+ mode?: string;
+ model?: string;
+ resolveModel?: (threadId: string) => Promise<string | null>;
+};
+type MakeOptions = {
+ resolveModel?: (threadId: string) => Promise<string | null>;
+ tools?: (input: RunAgentInput) => Promise<readonly {name:string;ref:string;description:string;parameters:z.ZodType;execute:(args:unknown)=>Promise<string>}[]>;
+};
+async function harness(modeOrOptions: string | HarnessOptions = "normal") {
+ const options: HarnessOptions = typeof modeOrOptions === "string" ? { mode: modeOrOptions } : modeOrOptions;
+ const mode = options.mode ?? "normal";
  const root=await mkdtemp(join(tmpdir(),"ownbot-acp-agent-")); const log=join(root,"events.jsonl");
- const make=(ownerId="owner",agentId="research")=>new AcpAgent({ownerId,agentId,name:agentId,prompt:"standing instructions",profile:{profileId:"fake",command:process.execPath,args:["-e",fixture],env:{TEST_LOG:log,TEST_MODE:mode},workspaceRoot:root,timeoutMs:1500},tools:async()=>[{name:"approved_lookup",ref:"test/lookup",description:"Lookup",parameters:z.object({}),execute:async()=>"ok"}]});
- return {make,read:async()=> (await readFile(log,"utf8")).trim().split("\n").map(line=>JSON.parse(line)),close:()=>rm(root,{recursive:true,force:true})};
+ const granted=async()=>[{name:"approved_lookup",ref:"test/lookup",description:"Lookup",parameters:z.object({}),execute:async()=>"ok" as const}];
+ const make=(ownerId="owner",agentId="research",extra: MakeOptions = {})=>new AcpAgent({ownerId,agentId,name:agentId,prompt:"standing instructions",profile:{profileId:"fake",command:process.execPath,args:["-e",fixture],env:{TEST_LOG:log,TEST_MODE:mode},workspaceRoot:root,timeoutMs:1500,...(options.model?{model:options.model}:{})},tools:extra.tools??granted,...(extra.resolveModel!==undefined?{resolveModel:extra.resolveModel}:options.resolveModel!==undefined?{resolveModel:options.resolveModel}:{})});
+ return {make,log,read:async()=> (await readFile(log,"utf8")).trim().split("\n").map(line=>JSON.parse(line)),close:()=>rm(root,{recursive:true,force:true})};
 }
 
 describe("ACP agent subprocess integration",()=>{
@@ -216,4 +229,50 @@ test("standard AG-UI consumer keeps every segment and exposes final ID to routin
   expect(messages).toHaveLength(3); expect(messages.at(-1)?.id).toBe(finalId);
   expect(messages.at(-1)?.content).toBe("Final report: two verified findings.");
  }finally{await h.close();}
+});
+
+test("unexpected model resolver errors fail closed before CLI or tools and release the lock", async () => {
+ const secret = "resolver-secret-db-url";
+ const h = await harness();
+ let toolsCalled = 0;
+ const events: BaseEvent[] = [];
+ const warnings: string[] = [];
+ const warn = spyOn(console, "warn").mockImplementation((...args) => { warnings.push(String(args[0])); });
+ try {
+  const agent = h.make("owner", "research", {
+   resolveModel: async () => { throw new Error(`lookup failed: ${secret}`); },
+   tools: async () => { toolsCalled++; return [{name:"approved_lookup",ref:"test/lookup",description:"Lookup",parameters:z.object({}),execute:async()=>"ok"}]; },
+  });
+  let failure: Error | undefined;
+  await new Promise<void>((resolve) => {
+   agent.run(input("thread")).subscribe({
+    next: e => events.push(e),
+    error: e => { failure = e; resolve(); },
+    complete: resolve,
+   });
+  });
+  expect(failure?.message).toBe("A execução ACP não foi concluída. Verifique autenticação, perfil e disponibilidade da CLI; não houve fallback para API.");
+  expect(toolsCalled).toBe(0);
+  expect(await Bun.file(h.log).exists()).toBe(false);
+  expect(events.some(e => e.type === "RUN_FINISHED")).toBe(false);
+  expect(JSON.stringify({events, warnings, public: failure?.message})).not.toContain(secret);
+  const line = warnings.find(w => w.includes("acp-run-failed"));
+  expect(line).toBeDefined();
+  expect(JSON.parse(line!).phase).toBe("model_resolution");
+  expect(line).not.toContain(secret);
+  warn.mockRestore();
+  const retry = await collect(h.make(), input("thread"));
+  expect(retry.at(-1)?.type).toBe("RUN_FINISHED");
+ } finally { warn.mockRestore(); await h.close(); }
+});
+
+test("absent resolver and explicit null keep the profile default; an explicit choice is sent to the CLI", async () => {
+ const h = await harness({ model: "profile-default" });
+ try {
+  await collect(h.make(), input("absent"));
+  await collect(h.make("owner", "research", { resolveModel: async () => null }), input("invalidated"));
+  await collect(h.make("owner", "research", { resolveModel: async () => "conversation-model" }), input("chosen"));
+  const selected = (await h.read()).filter(r => r.method === "session/set_model").map(r => r.modelId);
+  expect(selected).toEqual(["profile-default", "profile-default", "conversation-model"]);
+ } finally { await h.close(); }
 });
