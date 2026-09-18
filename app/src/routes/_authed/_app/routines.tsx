@@ -21,12 +21,14 @@ export const Route = createFileRoute("/_authed/_app/routines")({
 
 function RoutinesPage() {
   return (
-    <PageShell
-      description="What a Bot does on a schedule, without being asked each time. Made and changed by talking to a Bot — this page only shows what is standing, and lets you stop one."
-      title="Routines"
-    >
-      <RoutinesList />
-      <Executions />
-    </PageShell>
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+      <PageShell
+        description="What a Bot does on a schedule, without being asked each time. Made and changed by talking to a Bot — this page only shows what is standing, and lets you stop one."
+        title="Routines"
+      >
+        <RoutinesList />
+        <Executions />
+      </PageShell>
+    </div>
   );
 }
