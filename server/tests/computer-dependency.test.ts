@@ -18,7 +18,7 @@ test("public health does not hide a rejected computer credential",async()=>{
 });
 
 test("computer readiness degrades independently of healthy SQL checks",async()=>{
- const db={execute:async()=>[{scheduler:true,notifications:true,runs:true,handoffs:true}]} as never;
+ const db={execute:async()=>[{scheduler:true,notifications:true,runs:true,handoffs:true,piWatches:true}]} as never;
  const health=await createOperationsStore(db,undefined,"internal",async()=>false).readiness();
  expect(health.status).toBe("degraded");expect(health.checks.computer).toBe(false);
 });

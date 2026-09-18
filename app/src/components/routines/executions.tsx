@@ -1,16 +1,20 @@
-import { WorkerHealth } from "./worker-health";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  executionsQuery,
-  handoffsQuery,
-  handoffStatus,
   executionStatus,
+  executionsQuery,
+  handoffStatus,
+  handoffsQuery,
+  piDelegationStatus,
+  piDelegationsQuery,
+  piWatchAttemptsLabel,
   runNotificationStatus,
 } from "@/lib/routines/executions";
+import { WorkerHealth } from "./worker-health";
 export function Executions() {
   const runs = useQuery(executionsQuery());
   const handoffs = useQuery(handoffsQuery());
+  const piDelegations = useQuery(piDelegationsQuery());
   return (
     <section className="mt-8 space-y-4">
       <WorkerHealth />
@@ -63,6 +67,39 @@ export function Executions() {
             · {new Date(hop.at).toLocaleString("pt-BR")}
           </span>
         </div>
+      ))}
+      <h2 className="font-semibold pt-4">Acompanhamentos Pi recentes</h2>
+      <p className="text-sm text-muted-foreground">
+        O acompanhamento consulta o status do trabalho no executor. O
+        encerramento do acompanhamento e o resultado do trabalho no executor
+        são verificados separadamente. Concluído no executor não confirma a
+        entrega da resposta ao agente solicitante.
+      </p>
+      {piDelegations.error ? (
+        <p role="alert">Não foi possível ler os acompanhamentos Pi.</p>
+      ) : null}
+      {piDelegations.isSuccess && !piDelegations.data.length ? (
+        <p className="text-sm">Nenhum acompanhamento Pi registrado.</p>
+      ) : null}
+      {piDelegations.data?.map((item, index) => (
+        <article
+          className="rounded-lg border p-4 space-y-2"
+          key={item.key ?? item.jobId ?? index}
+        >
+          <p className="font-medium">
+            {item.executor ?? "Executor desconhecido"}
+            {item.jobId ? ` · ${item.jobId}` : ""}
+          </p>
+          <p className="text-sm">{piDelegationStatus(item)}</p>
+          <p className="text-sm text-muted-foreground">
+            {piWatchAttemptsLabel(item.attempts)}
+            {item.createdAt
+              ? ` · ${new Date(item.createdAt).toLocaleString("pt-BR")}`
+              : item.runAt
+                ? ` · ${new Date(item.runAt).toLocaleString("pt-BR")}`
+                : ""}
+          </p>
+        </article>
       ))}
     </section>
   );

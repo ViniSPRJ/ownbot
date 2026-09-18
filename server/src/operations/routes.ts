@@ -24,5 +24,8 @@ export function createOperationsRoutes(
   routes.get("/handoffs", async (c) =>
     c.json({ handoffs: await store.handoffs(c.var.actor.id) }),
   );
+  routes.get("/pi-delegations", async (c) =>
+    c.json({ delegations: await store.piDelegations(c.var.actor.id) }),
+  );
   return routes;
 }

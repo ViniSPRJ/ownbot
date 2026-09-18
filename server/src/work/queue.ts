@@ -123,6 +123,11 @@ export type WorkQueue = {
     leaseMs: number;
     limit?: number;
     maxAttempts?: number;
+    /**
+     * Also take due unfinished rows already at the attempt cap when their lease is
+     * absent or expired. Those rows keep their attempt count. Default false.
+     */
+    recoverExhausted?: boolean;
   }) => Promise<WorkItem[]>;
   /** Keep a claim alive while the work runs. False means it was already taken away. */
   renew: (input: {
@@ -174,6 +179,11 @@ export type WorkQueue = {
     olderThanMs: number;
     finishedOlderThanMs?: number;
     maxAttempts?: number;
+    /**
+     * Drop only finished rows past the retention window. Exhausted unfinished work is left
+     * for a claimant that can recover it. Default false.
+     */
+    finishedOnly?: boolean;
   }) => Promise<number>;
 };
 
@@ -280,19 +290,28 @@ export function createWorkQueue(database: Database): WorkQueue {
       leaseMs,
       limit = 1,
       maxAttempts = DEFAULT_MAX_ATTEMPTS,
+      recoverExhausted = false,
     }) {
       return database.transaction(async (transaction) => {
         /*
          * `skip locked` is what makes this concurrent rather than merely correct. Without it a
          * second replica blocks on the first replica's rows and the queue serialises; with it, it
          * walks past them and takes the next free ones.
+         *
+         * Exhausted rows are unclaimable unless `recoverExhausted` is set. A crash after the last
+         * increment otherwise leaves the work leased-then-expired at the cap, skipped forever, and
+         * later purged with no callback. Recovery still requires due, unfinished, and a missing or
+         * expired lease; an active lease is left alone.
          */
         const due = await transaction.execute(sql`
           select "kind", "key"
           from "work_items"
           where "kind" = ${kind}
             and "finished_at" is null
-            and "attempts" < ${maxAttempts}
+            and (
+              "attempts" < ${maxAttempts}
+              or ${recoverExhausted ? sql`"attempts" >= ${maxAttempts}` : sql`false`}
+            )
             and "run_at" <= now()
             and ("lease_until" is null or "lease_until" <= now())
           -- A finite head start preserves FIFO for old work even under sustained urgent traffic.
@@ -320,7 +339,9 @@ export function createWorkQueue(database: Database): WorkQueue {
             .set({
               claimedBy: owner,
               leaseUntil: fromNow(leaseMs),
-              attempts: sql`${workItems.attempts} + 1`,
+              attempts: recoverExhausted
+                ? sql`case when ${workItems.attempts} >= ${maxAttempts} then ${workItems.attempts} else ${workItems.attempts} + 1 end`
+                : sql`${workItems.attempts} + 1`,
               updatedAt: sql`now()`,
             })
             .where(
@@ -430,6 +451,7 @@ export function createWorkQueue(database: Database): WorkQueue {
       olderThanMs,
       finishedOlderThanMs = olderThanMs,
       maxAttempts = DEFAULT_MAX_ATTEMPTS,
+      finishedOnly = false,
     }) {
       const cutoff = fromNow(-olderThanMs);
       const finishedCutoff = fromNow(-finishedOlderThanMs);
@@ -439,26 +461,28 @@ export function createWorkQueue(database: Database): WorkQueue {
           and(
             eq(workItems.kind, kind),
             sql`coalesce(${workItems.payload}->'result'->>'outcome', '') <> 'unknown'`,
-            or(
-              lt(workItems.finishedAt, finishedCutoff),
-              /*
-               * AND THE ONES THAT GAVE UP, which is the half this forgot.
-               *
-               * An item at its attempt cap is not finished, so it was reaped by nothing: `claim`
-               * skipped it, `purge` did not match it, and `offer` cannot replace a row that is still
-               * there. Its key was wedged for good. The culler keys on the Bot id, so five failed
-               * suspends meant that Bot never scaled to zero again, silently and for ever.
-               *
-               * Reaped on the same window rather than kept, because the window is also how long it
-               * waits before anything tries again: whatever was broken has had a day to be fixed,
-               * and the next sweep offers the work afresh. The audit trail is where "this failed"
-               * lives; this table is what still wants doing.
-               */
-              and(
-                gte(workItems.attempts, maxAttempts),
-                lt(workItems.updatedAt, cutoff),
-              ),
-            ),
+            finishedOnly
+              ? lt(workItems.finishedAt, finishedCutoff)
+              : or(
+                  lt(workItems.finishedAt, finishedCutoff),
+                  /*
+                   * AND THE ONES THAT GAVE UP, which is the half this forgot.
+                   *
+                   * An item at its attempt cap is not finished, so it was reaped by nothing: `claim`
+                   * skipped it, `purge` did not match it, and `offer` cannot replace a row that is still
+                   * there. Its key was wedged for good. The culler keys on the Bot id, so five failed
+                   * suspends meant that Bot never scaled to zero again, silently and for ever.
+                   *
+                   * Reaped on the same window rather than kept, because the window is also how long it
+                   * waits before anything tries again: whatever was broken has had a day to be fixed,
+                   * and the next sweep offers the work afresh. The audit trail is where "this failed"
+                   * lives; this table is what still wants doing.
+                   */
+                  and(
+                    gte(workItems.attempts, maxAttempts),
+                    lt(workItems.updatedAt, cutoff),
+                  ),
+                ),
           ),
         )
         .returning({ key: workItems.key });

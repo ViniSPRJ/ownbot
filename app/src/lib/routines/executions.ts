@@ -32,6 +32,33 @@ export type Handoff = {
   returnQueued?: boolean | null;
   isReturn?: boolean | null;
 };
+export type PiDelegationLifecycle =
+  | "queued"
+  | "watching"
+  | "terminal"
+  | "overdue"
+  | "exhausted"
+  | "unknown";
+export type PiDelegationTerminalState =
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "unknown"
+  | "access_revoked"
+  | "invalid_watch"
+  | "executor_unavailable";
+export type PiDelegation = {
+  key: string | null;
+  executor: string | null;
+  jobId: string | null;
+  lifecycle: PiDelegationLifecycle;
+  terminalState: PiDelegationTerminalState | null;
+  attempts: number;
+  runAt: string | null;
+  createdAt: string | null;
+  finishedAt: string | null;
+  leaseUntil: string | null;
+};
 export function executionQuery(id?: string) {
   return queryOptions({
     queryKey: ["routines", "execution", id],
@@ -59,6 +86,16 @@ export function handoffsQuery() {
     queryFn: (): Promise<Handoff[]> =>
       client("/api/operations/handoffs", "handoffs", {
         fallback: "Delegations could not be loaded.",
+      }),
+    refetchInterval: 15_000,
+  });
+}
+export function piDelegationsQuery() {
+  return queryOptions({
+    queryKey: ["routines", "pi-delegations"],
+    queryFn: (): Promise<PiDelegation[]> =>
+      client("/api/operations/pi-delegations", "delegations", {
+        fallback: "Pi delegations could not be loaded.",
       }),
     refetchInterval: 15_000,
   });
@@ -103,9 +140,58 @@ export function handoffStatus(hop: Handoff): string {
         "agent.handoff_failed": "Falhou",
         "agent.handoff_retried": "Nova tentativa",
         "agent.handoff_refused": "Não enviada",
+        "agent.handoff_reconciled":
+          "Reconciliada; entrega original não confirmada",
       } as Record<string, string>
     )[hop.event] ?? "Estado desconhecido"
   );
+}
+
+export function piLifecycleLabel(lifecycle: PiDelegationLifecycle): string {
+  return (
+    (
+      {
+        queued: "Aguardando acompanhamento",
+        watching: "Consultando status",
+        terminal: "Encerrada",
+        overdue: "Atrasada",
+        exhausted: "Tentativas esgotadas",
+        unknown: "Estado desconhecido",
+      } as Record<string, string>
+    )[lifecycle] ?? "Estado desconhecido"
+  );
+}
+
+export function piTerminalLabel(
+  state: PiDelegationTerminalState | null,
+): string | null {
+  if (!state) return null;
+  return (
+    (
+      {
+        completed: "Concluído no executor",
+        failed: "Falhou",
+        interrupted: "Interrompido",
+        unknown: "Resultado desconhecido",
+        access_revoked: "Acesso revogado",
+        invalid_watch: "Acompanhamento inválido",
+        executor_unavailable: "Executor indisponível",
+      } as Record<string, string>
+    )[state] ?? "Resultado desconhecido"
+  );
+}
+
+export function piDelegationStatus(item: PiDelegation): string {
+  if (item.lifecycle === "terminal") {
+    return `${piLifecycleLabel("terminal")} · ${piTerminalLabel(item.terminalState) ?? "Resultado desconhecido"}`;
+  }
+  return piLifecycleLabel(item.lifecycle);
+}
+
+export function piWatchAttemptsLabel(attempts: number): string {
+  return attempts === 1
+    ? "1 tentativa de acompanhamento"
+    : `${attempts} tentativas de acompanhamento`;
 }
 
 export function runNotificationStatus(run: Execution): string {

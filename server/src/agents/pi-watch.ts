@@ -172,7 +172,7 @@ export function createPiWatcher(options: {
       });
     },
     async sweep() {
-      const items = await queue.claim({ kind: PI_WATCH_KIND, owner, leaseMs: 60_000, limit: 1, maxAttempts: PI_WATCH_MAX_ATTEMPTS });
+      const items = await queue.claim({ kind: PI_WATCH_KIND, owner, leaseMs: 60_000, limit: 1, maxAttempts: PI_WATCH_MAX_ATTEMPTS, recoverExhausted: true });
       for (const item of items) {
         const parsed = watchSchema.safeParse(item.payload);
         if (!parsed.success) { await queue.finish({ kind: PI_WATCH_KIND, key: item.key, owner, result: { state: "invalid_watch" } }); continue; }
@@ -183,7 +183,10 @@ export function createPiWatcher(options: {
           continue;
         }
         if (!await authorised(work)) { await queue.finish({ kind: PI_WATCH_KIND, key: item.key, owner, result: { state: "access_revoked" } }); continue; }
-        if (now() - work.createdAt >= PI_WATCH_MAX_AGE_MS || item.attempts >= PI_WATCH_MAX_ATTEMPTS) {
+        if (item.attempts >= PI_WATCH_MAX_ATTEMPTS) {
+          await finish(item.key, work, "unknown", "Completion could not be verified because the attempt budget was exhausted. The job was not rerun or cancelled.", resolved.statusTool); continue;
+        }
+        if (now() - work.createdAt >= PI_WATCH_MAX_AGE_MS) {
           await finish(item.key, work, "unknown", "Completion could not be verified within the 24-hour tracking window. The job was not rerun or cancelled.", resolved.statusTool); continue;
         }
         try {
@@ -207,6 +210,6 @@ export function createPiWatcher(options: {
       }
     },
     // Worker receipts are retained seven days. Keep keys as long so replay cannot wake twice.
-    reap: () => queue.purge({ kind: PI_WATCH_KIND, olderThanMs: 7 * 24 * 60 * 60 * 1000, maxAttempts: PI_WATCH_MAX_ATTEMPTS }),
+    reap: () => queue.purge({ kind: PI_WATCH_KIND, olderThanMs: 7 * 24 * 60 * 60 * 1000, maxAttempts: PI_WATCH_MAX_ATTEMPTS, finishedOnly: true }),
   };
 }

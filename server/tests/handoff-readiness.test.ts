@@ -4,16 +4,16 @@ import { createOperationsStore } from "../src/operations/store";
 
 test("a stalled handoff degrades health even when routines, history and receipts are healthy", async () => {
   const db = {
-    execute: async () => [{ scheduler: true, notifications: true, runs: true, handoffs: false }],
+    execute: async () => [{ scheduler: true, notifications: true, runs: true, handoffs: false, piWatches: true }],
   } as unknown as Database;
   const health = await createOperationsStore(db).readiness();
   expect(health.status).toBe("degraded");
-  expect(health.checks).toEqual({ database: true, scheduler: true, notifications: true, history: true, runs: true, handoffs: false });
+  expect(health.checks).toEqual({ database: true, scheduler: true, notifications: true, history: true, runs: true, handoffs: false, piWatches: true });
 });
 
 test("empty or progressing handoff queues permit readiness, but database failure does not", async () => {
   const db = {
-    execute: async () => [{ scheduler: true, notifications: true, runs: true, handoffs: true }],
+    execute: async () => [{ scheduler: true, notifications: true, runs: true, handoffs: true, piWatches: true }],
   } as unknown as Database;
   expect((await createOperationsStore(db).readiness()).status).toBe("ready");
   db.execute = async () => { throw new Error("private database details"); };

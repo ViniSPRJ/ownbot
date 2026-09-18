@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createDurableExecutorRegistry } from "../src/agents/durable-executors";
-import { createPiWatcher, PI_WATCH_KIND, PI_WATCH_MAX_AGE_MS, piWatchKey } from "../src/agents/pi-watch";
+import { createPiWatcher, PI_WATCH_KIND, PI_WATCH_MAX_AGE_MS, PI_WATCH_MAX_ATTEMPTS, piWatchKey } from "../src/agents/pi-watch";
 import type { WorkItem, WorkQueue } from "../src/work/queue";
 
 const id = "a".repeat(32);
@@ -14,20 +14,21 @@ const labExecutors = createDurableExecutorRegistry({
 });
 function fixture(options: { executors?: ReturnType<typeof createDurableExecutorRegistry>; pollRef?: string } = {}) {
   let time = 100_000; let allowed = true; let status = job(); let calls = 0; let polls = 0;
-  const offers: any[] = [], finishes: any[] = [], releases: any[] = [], rows = new Map<string, WorkItem>();
+  const offers: any[] = [], finishes: any[] = [], releases: any[] = [], claims: any[] = [], purges: any[] = [], rows = new Map<string, WorkItem>();
   const pollRef = options.pollRef ?? "pi-m5/pi_status";
   const queue = {
     offer: async (item: any) => { offers.push(item); if (rows.has(item.key)) return "already"; rows.set(item.key, { ...item, attempts: 1 }); return "queued"; },
-    claim: async () => [...rows.values()].filter((v: any) => !v.finished),
+    claim: async (input: any) => { claims.push(input); return [...rows.values()].filter((v: any) => !v.finished); },
     finish: async (input: any) => { finishes.push(input); const row: any = rows.get(input.key); if (row.finished) return false; row.finished = true; return true; },
-    release: async (input: any) => { releases.push(input); return true; }, purge: async () => 0,
+    release: async (input: any) => { releases.push(input); return true; },
+    purge: async (input: any) => { purges.push(input); return 0; },
   } as unknown as WorkQueue;
   const watcher = createPiWatcher({ queue, owner: "replica", now: () => time, authorised: async () => allowed,
     executors: options.executors,
     store: { callTool: async (input: any) => { polls++; expect(input).toEqual({ ref: pollRef, args: { jobId: id }, botId: "code", actorId: "owner" }); return { text: status, isError: false }; } },
   });
   const tool = (ref = "pi-m5/pi_run", text = job()) => ({ name: "pi", description: "", ref, parameters: z.object({}), execute: async () => { calls++; return text; } });
-  return { watcher, tool, offers, finishes, releases, rows, queue, setStatus: (v: string) => status = v, revoke: () => allowed = false,
+  return { watcher, tool, offers, finishes, releases, claims, purges, rows, queue, setStatus: (v: string) => status = v, revoke: () => allowed = false,
     advance: () => time += PI_WATCH_MAX_AGE_MS, counts: () => ({ calls, polls }), time: () => time };
 }
 function parsePiReceipt(task: string) {
@@ -98,7 +99,57 @@ describe("durable Pi completion watcher", () => {
     const f = fixture(); await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
     f.advance(); await f.watcher.sweep(); expect(f.finishes[0].result.state).toBe("unknown"); expect(f.counts().polls).toBe(0);
     expect(f.finishes[0].result.evidence).toContain("24-hour tracking window");
+    expect(f.finishes[0].result.evidence).not.toContain("attempt budget");
     expect(parsePiReceipt(f.finishes[0].followUp.payload.task).data.truncated).toBe(false);
+  });
+  test("watcher claims with recoverExhausted opt-in", async () => {
+    const f = fixture();
+    await f.watcher.sweep();
+    expect(f.claims).toHaveLength(1);
+    expect(f.claims[0]).toMatchObject({
+      kind: PI_WATCH_KIND, owner: "replica", leaseMs: 60_000, limit: 1,
+      maxAttempts: PI_WATCH_MAX_ATTEMPTS, recoverExhausted: true,
+    });
+  });
+  test("reap purges finished rows only", async () => {
+    const f = fixture();
+    await f.watcher.reap();
+    expect(f.purges).toHaveLength(1);
+    expect(f.purges[0]).toMatchObject({
+      kind: PI_WATCH_KIND, finishedOnly: true, maxAttempts: PI_WATCH_MAX_ATTEMPTS,
+    });
+    expect(f.purges[0].finishedOnly).toBe(true);
+  });
+  test("recovered at attempt cap finishes unknown once without vendor poll", async () => {
+    const f = fixture(); await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
+    [...f.rows.values()][0]!.attempts = PI_WATCH_MAX_ATTEMPTS;
+    await f.watcher.sweep(); await f.watcher.sweep();
+    expect(f.counts().polls).toBe(0); expect(f.counts().calls).toBe(1);
+    expect(f.finishes).toHaveLength(1);
+    expect(f.finishes[0].result.state).toBe("unknown");
+    expect(f.finishes[0].result.evidence).toContain("attempt budget");
+    expect(f.finishes[0].result.evidence).not.toContain("24-hour tracking window");
+    expect(f.finishes[0].followUp.payload).toMatchObject({ toBotId: "coord", actorId: "owner", answerIn: "visible" });
+    expect(parsePiReceipt(f.finishes[0].followUp.payload.task).data.truncated).toBe(false);
+  });
+  test("at-cap recovery names attempt budget even after the 24-hour window", async () => {
+    const f = fixture(); await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
+    [...f.rows.values()][0]!.attempts = PI_WATCH_MAX_ATTEMPTS;
+    f.advance(); await f.watcher.sweep();
+    expect(f.counts().polls).toBe(0);
+    expect(f.finishes[0].result.state).toBe("unknown");
+    expect(f.finishes[0].result.evidence).toContain("attempt budget");
+    expect(f.finishes[0].result.evidence).not.toContain("24-hour tracking window");
+    expect(f.finishes[0].followUp).toBeDefined();
+  });
+  test("revoked grants suppress callback for exhausted recovery", async () => {
+    const f = fixture(); await f.watcher.observe(context, [f.tool()])[0]!.execute({ background: true });
+    [...f.rows.values()][0]!.attempts = PI_WATCH_MAX_ATTEMPTS;
+    f.revoke(); await f.watcher.sweep();
+    expect(f.counts().polls).toBe(0);
+    expect(f.finishes).toHaveLength(1);
+    expect(f.finishes[0].result.state).toBe("access_revoked");
+    expect(f.finishes[0].followUp).toBeUndefined();
   });
   test("registration failure preserves accepted jobId and explicitly warns, never throws or reruns", async () => {
     const f = fixture(); f.queue.offer = async () => { throw new Error("DB offline"); };
