@@ -224,30 +224,8 @@ function Queued({
 }
 
 /**
- * Put the newest queued message where the person who just typed it can see it.
- *
- * WITHOUT THIS THE AFFORDANCE IS INVISIBLE EXACTLY WHEN IT MATTERS. The scroller holds its anchor on
- * the turn being answered rather than following the bottom, so during a long streamed answer the
- * transcript sits a screen or so above the end — and a line appended below it lands off screen.
- * Measured at the point somebody would actually use this: eighty-odd pixels under the fold, with
- * the composer emptying at the same moment. They would have watched their correction vanish.
- *
- * Keyed on the newest queued id rather than on the list, so it does not fire again for every chunk
- * of the answer still streaming above it. It does fire when the bottom-most queued line is taken
- * back, which is a scroll nobody asked for and which lands on the end of the conversation anyway,
- * and it stays quiet on a drain, when the id goes to null.
- *
- * IT COSTS THE ANCHOR, AND THAT IS THE PRICE OF THE SCROLL RATHER THAN A SIDE EFFECT OF IT.
- * `scrollToEnd` drops whatever turn the scroller was holding its position against and starts
- * following the bottom instead, so the rest of that answer streams past under the reader rather
- * than staying put beneath the question. Somebody who has just typed at the bottom of the
- * conversation has asked to be at the bottom of the conversation, so following it is the reading
- * they chose; but they chose it for the whole turn and not only for the moment, and the button
- * back to the anchored view is the scroller's own, not ours to restore.
- *
- * Rendering nothing and living inside the provider is what buys access to the scroller at all; the
- * alternative is threading a ref out through three components with no other reason to know a
- * scroller exists.
+ * Reveal a message the user just queued, then follow the response until they scroll away.
+ * Key by queued id so streaming chunks do not repeatedly override manual scrolling.
  */
 function ScrollNewestQueuedIntoView({ newest }: { newest: string | null }) {
   const { scrollToEnd } = useMessageScroller();
@@ -676,7 +654,10 @@ export function ChatTranscript({
   }, [hasItems, delays]);
 
   return (
-    <MessageScrollerProvider autoScroll scrollPreviousItemPeek={48}>
+    // Follow the bottom without message anchors. When Thinking is replaced by the first
+    // response, the primitive sees an unchanged child count and reselects an unseen anchor.
+    // Historical user-message anchors can send that replacement back to the first turn.
+    <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller>
         <MessageScrollerViewport>
           <MessageScrollerContent
@@ -721,7 +702,6 @@ export function ChatTranscript({
                 <MessageScrollerItem
                   key={item.id}
                   messageId={item.id}
-                  scrollAnchor={item.role === "user"}
                 >
                   <TranscriptMessage
                     commandNames={commandNames}
