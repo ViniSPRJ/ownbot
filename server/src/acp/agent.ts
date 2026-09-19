@@ -135,6 +135,12 @@ export class AcpAgent extends AbstractAgent {
               if (method === "session/request_permission") {
                 return permissions.decide(params, accepting ? sessionId : undefined);
               }
+              if (o.profile.provider === "cursor" &&
+                (method === "cursor/ask_question" || method === "cursor/create_plan")) {
+                // Headless turns cannot obtain an interactive decision. Explicitly cancel
+                // rather than letting the CLI wait indefinitely or approving a plan.
+                return { outcome: "cancelled" };
+              }
               throw new Error("Unsupported ACP client operation");
             },
             onNotification: (method, value) => {

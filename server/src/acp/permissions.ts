@@ -1,4 +1,4 @@
-export type AcpProvider = "codex" | "claude" | "grok" | "pi";
+export type AcpProvider = "codex" | "claude" | "grok" | "pi" | "cursor";
 type ObjectValue = Record<string, any>;
 const object = (value: unknown): ObjectValue | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -19,6 +19,9 @@ export class AcpPermissionGate {
       const qualified = permission ? call.name : call._meta?.claudeCode?.toolName;
       if (typeof qualified !== "string" || !qualified.startsWith("mcp__ownbot__")) return;
       name = qualified.slice("mcp__ownbot__".length);
+    } else if (this.provider === "cursor") {
+      if (call.rawInput?.providerIdentifier !== "ownbot") return;
+      name = call.rawInput.toolName;
     } else if (this.provider === "pi") {
       if (call._meta?.ownbot_pi_tool !== true || call.rawInput?.server !== "ownbot") return;
       name = call.rawInput.tool;
@@ -55,6 +58,11 @@ export class AcpPermissionGate {
     if (!expected || !option) return deny;
     if (this.provider === "codex") {
       if (request._meta?.is_mcp_tool_approval !== true) return deny;
+    } else if (this.provider === "cursor") {
+      // Cursor's permission request omits rawInput. Correlate the exact call ID
+      // with its preceding structured MCP update; never trust the display title.
+      if (call.kind !== "other") return deny;
+      if (call.rawInput && this.tool(call, true) !== expected) return deny;
     } else if (this.tool(call, true) !== expected) return deny;
     this.calls.delete(id); this.consumed.add(id);
     return { outcome: { outcome: "selected", optionId: option.optionId } };

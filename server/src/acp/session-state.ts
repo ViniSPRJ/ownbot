@@ -60,7 +60,7 @@ export type FreshReason =
   /** The person asked to start over. */
   | "requested";
 
-const providerNames: readonly AcpProvider[] = ["codex", "claude", "grok", "pi"];
+const providerNames: readonly AcpProvider[] = ["codex", "claude", "grok", "pi", "cursor"];
 const freshReasons: readonly FreshReason[] = [
   "first_turn",
   "load_unsupported",

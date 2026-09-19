@@ -71,7 +71,7 @@ export type ConversationModelStore = {
   }): Promise<void>;
 };
 
-const providers: readonly AcpProvider[] = ["codex", "claude", "grok", "pi"];
+const providers: readonly AcpProvider[] = ["codex", "claude", "grok", "pi", "cursor"];
 
 function asProvider(value: unknown): AcpProvider {
   return providers.includes(value as AcpProvider)

@@ -59,3 +59,22 @@ test("Pi allows only a correlated Ownbot MCP grant and rejects native or changed
   expect(gate.decide(params, "s")).toEqual({ outcome: { outcome: "selected", optionId: "once" } });
   expect(gate.decide(params, "s")).toEqual({ outcome: { outcome: "cancelled" } });
 });
+
+test("cursor: structured MCP updates authorize only a correlated one-shot grant", () => {
+  const gate = new AcpPermissionGate("cursor", new Set(["echo"]));
+  const request = {sessionId:"s1",toolCall:{toolCallId:"c1",kind:"other",title:"arbitrary"},options:[option]};
+  expect(gate.decide(request,"s1")).toEqual({outcome:{outcome:"cancelled"}});
+  gate.observe({sessionUpdate:"tool_call_update",toolCallId:"c1",rawInput:{providerIdentifier:"ownbot",toolName:"echo",args:{}}});
+  expect(gate.decide(request,"wrong")).toEqual({outcome:{outcome:"cancelled"}});
+  expect(gate.decide({...request,toolCall:{...request.toolCall,kind:"execute"}},"s1")).toEqual({outcome:{outcome:"cancelled"}});
+  expect(gate.decide(request,"s1")).toEqual({outcome:{outcome:"selected",optionId:"once"}});
+  expect(gate.decide(request,"s1")).toEqual({outcome:{outcome:"cancelled"}});
+});
+
+test("cursor: titles, other servers and ungranted tools cannot authorize tools", () => {
+  for (const rawInput of [{},{providerIdentifier:"other",toolName:"echo"},{providerIdentifier:"ownbot",toolName:"shell"}]) {
+    const gate = new AcpPermissionGate("cursor", new Set(["echo"]));
+    gate.observe({sessionUpdate:"tool_call",toolCallId:"c1",title:"ownbot: echo",rawInput});
+    expect(gate.decide({sessionId:"s1",toolCall:{toolCallId:"c1",kind:"other"},options:[option]},"s1")).toEqual({outcome:{outcome:"cancelled"}});
+  }
+});

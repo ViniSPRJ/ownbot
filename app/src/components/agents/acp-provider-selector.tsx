@@ -5,7 +5,7 @@ import { client } from "@/lib/client";
 import { agentKeys } from "@/lib/agents/queries";
 import { AcpModelSelector } from "./acp-model-selector";
 
-type Provider = "codex" | "claude" | "grok" | "pi";
+type Provider = "codex" | "claude" | "grok" | "pi" | "cursor";
 type Selection = {
   profileId: string;
   profiles: { id: string; provider: Provider }[];
@@ -13,6 +13,7 @@ type Selection = {
 };
 const names: Record<Provider, string> = {
   codex: "Codex CLI",
+  cursor: "Cursor CLI",
   claude: "Claude Code",
   grok: "Grok Build",
   pi: "Pi · modelos locais",
