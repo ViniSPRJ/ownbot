@@ -47,6 +47,6 @@ channels:
     allowed_groups: [all]
   - id: onyx
     name: Onyx
-    description: Base de conhecimento Onyx: perguntas, fontes e brainstorming com Codex ou Cursor.
+    description: "Base de conhecimento Onyx: perguntas, fontes e brainstorming com Codex ou Cursor."
     permitted_agents: [onyx, research, coord]
     allowed_groups: [all]
