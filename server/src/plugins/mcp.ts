@@ -260,6 +260,15 @@ export type McpCallResult = {
   truncated: boolean;
 };
 
+/** Read a vendor resource with the same credential isolation and timeout as tool calls. */
+export async function readResource(connection: Connection, uri: string): Promise<McpCallResult> {
+  return withClient(connection, async (client) => {
+    const result = await client.readResource({ uri }, { timeout: CALL_TIMEOUT_MS });
+    const content = result.contents.map(part => ({ type: "text", text: "text" in part ? part.text : "[binary resource]" }));
+    return { ...resultText(content), isError: false };
+  });
+}
+
 /**
  * Call one tool.
  *

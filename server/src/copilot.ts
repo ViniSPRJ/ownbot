@@ -526,6 +526,9 @@ async function buildAgent(
     return new UnavailableAgent(agent);
   }
 
+  // Validate CLI-only policy before considering the legacy private/API paths.
+  const acpSelection = acpModelSelectionFor(agent.id);
+  const acp = acpSelection?.profile;
   if (isPrivateAgent(agent.id)) {
     try {
       const route = privateModelRoute();
@@ -541,7 +544,6 @@ async function buildAgent(
     }
   }
 
-  const acp = acpProfileFor(agent.id);
   if (acp) {
     if (!agent.acpOwnerId) throw new Error("ACP requires an authenticated owner");
     /*
@@ -574,7 +576,7 @@ async function buildAgent(
       ? async (threadId: string) => {
           const resolved = await resolveConversationModel({
             store: conversationModels, actor: { userId: ownerId, admin: false }, threadId, agentId: agent.id,
-            current: { profileId: acp.profileId, revision: acpModelSelectionFor(agent.id)?.revision ?? "" },
+            current: { profileId: acp.profileId, revision: acpSelection!.conversationRevision },
           });
           if ("dropped" in resolved) {
             console.info(JSON.stringify({type:"acp-model-choice-dropped",agentId:agent.id,reason:resolved.dropped}));

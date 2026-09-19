@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 async function startBot(environment: Record<string, string>) {
   const proc = Bun.spawn(
-    ["bun", join(import.meta.dir, "..", "agent-bot", "src", "index.ts")],
+    [process.execPath, join(import.meta.dir, "..", "agent-bot", "src", "index.ts")],
     {
       // Every variable the repository's `.env` could inject is named explicitly: bun loads that
       // file into the child, and a leaked token or key would let a configuration under test pass

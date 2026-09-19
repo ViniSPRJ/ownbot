@@ -10,6 +10,8 @@ const ownerSchema = z
     baseUrl: z.string().url(),
     onyxUserId: z.string().min(1),
     tokenFile: z.string().refine(isAbsolute),
+    mcpUrl: z.string().url().optional(),
+    cliCommand: z.string().refine(isAbsolute).optional(),
   })
   .strict();
 const configSchema = z
@@ -25,7 +27,7 @@ const searchSchema = z
 const REFUSED =
   "Onyx não está conectado para esta conta. Solicite ao administrador o vínculo da sua identidade.";
 
-function privateFile(path: string): string {
+export function privateFile(path: string): string {
   if (!isAbsolute(path)) throw new Error(REFUSED);
   const stat = statSync(path);
   if (!stat.isFile() || (stat.mode & 0o077) !== 0 || stat.size > 65536)
@@ -56,7 +58,7 @@ export function onyxBaseUrl(raw: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-function ownerFor(actorId: string): OnyxOwner {
+export function ownerFor(actorId: string): OnyxOwner {
   const path = ownbotEnv(process.env, "OWNBOT_ONYX_CONFIG");
   if (!path || !actorId) throw new Error(REFUSED);
   const config = configSchema.parse(JSON.parse(privateFile(path)));

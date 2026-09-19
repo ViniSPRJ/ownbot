@@ -10,6 +10,7 @@
     "worker"
   ],
   "scripts": {
+    "setup": "bun scripts/setup.ts",
     "build": "bun run generate:app-config && bun run --filter '*' build",
     "dev": "bun run generate:app-config && bun run --filter '*' --parallel dev",
     "generate:app-config": "bun --env-file=.env scripts/generate-app-config.ts",

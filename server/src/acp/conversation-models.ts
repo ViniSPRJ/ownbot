@@ -71,7 +71,13 @@ export type ConversationModelStore = {
   }): Promise<void>;
 };
 
-const providers: readonly AcpProvider[] = ["codex", "claude", "grok", "pi", "cursor"];
+const providers: readonly AcpProvider[] = [
+  "codex",
+  "claude",
+  "grok",
+  "pi",
+  "cursor",
+];
 
 function asProvider(value: unknown): AcpProvider {
   return providers.includes(value as AcpProvider)
@@ -108,11 +114,8 @@ export function createConversationModelStore(
         .where(
           and(
             eq(intelligenceChannelMappings.threadId, threadId),
-            // An administrator reads the trail, they do not join the conversation. Membership still
-            // decides for everybody, including them, so this stays the single answer to one question.
-            actor.admin
-              ? undefined
-              : eq(intelligenceChannelMappings.userId, actor.userId),
+            // Administrative settings do not grant membership in another person's conversation.
+            eq(intelligenceChannelMappings.userId, actor.userId),
           ),
         )
         .limit(1);

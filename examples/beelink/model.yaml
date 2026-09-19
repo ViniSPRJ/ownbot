@@ -1,5 +1,5 @@
-# Catalog is LiteLLM :4000. Self-hosted default is Beelink Ollama.
-# Per-agent overrides live in agents.yaml.
+# Legacy API metadata required by the tenant schema. Beelink executes all Bots through
+# OWNBOT_ACP_CONFIG with cliOnly=true; this value never selects an inference backend there.
 model:
   provider: openai
   credential_secret_ref: openai-api-key

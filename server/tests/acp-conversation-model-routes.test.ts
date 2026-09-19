@@ -96,7 +96,8 @@ function setup(
       : selection({
           model: input.storedModel,
           operatorRevision:
-            input.storedRevision ?? acpModelSelectionFor("coord")!.revision,
+            input.storedRevision ??
+            acpModelSelectionFor("coord")!.conversationRevision,
         });
   const fake = fakeStore({ member: input.member, stored });
   const audits: Record<string, unknown>[] = [];
@@ -126,6 +127,7 @@ function setup(
     async (c, next) => {
       c.set("actor", {
         id: input.role === "admin" ? "admin-1" : "owner",
+        role: input.role ?? "user",
       } as never);
       await next();
     },
@@ -150,7 +152,7 @@ function setup(
 
 function currentRevision() {
   // The route reads the same file, so the live revision is whatever config.ts computes for it now.
-  return acpModelSelectionFor("coord")!.revision;
+  return acpModelSelectionFor("coord")!.conversationRevision;
 }
 
 const selection = (

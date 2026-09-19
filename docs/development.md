@@ -6,7 +6,7 @@ Install Docker, [Bun](https://bun.sh) 1.3+, `lsof`, `python3`, and `curl`.
 
 ```sh
 cp .env.example .env
-bun install
+bun run setup
 ```
 
 Provision CopilotKit Intelligence after `.env` exists:
@@ -26,6 +26,10 @@ Start the stack:
 ```sh
 bash scripts/start.sh
 ```
+
+`bun run setup` installs the root workspaces and the independently locked Bot,
+LangGraph, computer, supervisor and Pi compatibility-test packages. CI uses the same command. A root-only
+`bun install` does not install all dependencies imported by the repository's tests.
 
 ## Running services
 

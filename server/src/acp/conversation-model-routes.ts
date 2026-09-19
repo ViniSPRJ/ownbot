@@ -85,24 +85,25 @@ export function createAcpConversationModelRoutes(
       const honoured =
         stored &&
         stored.profileId === authorized.selection.profile.profileId &&
-        stored.operatorRevision === authorized.selection.revision
+        stored.operatorRevision === authorized.selection.conversationRevision
           ? stored.model
           : null;
       return c.json({
         selection: {
           models: catalogue.models,
           currentModel: catalogue.currentModel,
-          operatorDefault: authorized.selection.defaultModel,
+          operatorDefault: authorized.selection.profile.model ?? null,
           selected: honoured,
           // Says out loud when a stored choice has been dropped, so the interface cannot imply a choice
           // that the runtime is not honouring.
           dropped:
             stored && honoured === null && stored.model !== null
-              ? stored.operatorRevision !== authorized.selection.revision
+              ? stored.operatorRevision !==
+                authorized.selection.conversationRevision
                 ? "stale"
                 : "connection_changed"
               : null,
-          revision: authorized.selection.revision,
+          revision: authorized.selection.conversationRevision,
           canSelect: true,
         },
       });
@@ -203,7 +204,7 @@ export function createAcpConversationModelRoutes(
       typeof revision !== "string"
     )
       return c.json({ error: "Selecione um modelo válido." }, 400);
-    if (revision !== authorized.selection.revision)
+    if (revision !== authorized.selection.conversationRevision)
       return c.json(
         { error: "A configuração mudou. Atualize a lista antes de escolher." },
         409,
@@ -222,6 +223,18 @@ export function createAcpConversationModelRoutes(
         { error: "Este modelo não está disponível nesta CLI." },
         400,
       );
+    // Model discovery is asynchronous: membership and the effective connection may have changed.
+    const current = await authorize(c);
+    if ("error" in current)
+      return c.json(
+        { error: current.message ?? "Não autorizado." },
+        current.error,
+      );
+    if (current.selection.conversationRevision !== revision)
+      return c.json(
+        { error: "A configuração mudou. Atualize a lista antes de escolher." },
+        409,
+      );
     try {
       await conversations.set(
         {
@@ -230,7 +243,7 @@ export function createAcpConversationModelRoutes(
           profileId: authorized.selection.profile.profileId,
           provider: authorized.selection.profile.provider ?? "codex",
           model: model === null ? null : model,
-          operatorRevision: authorized.selection.revision,
+          operatorRevision: authorized.selection.conversationRevision,
         },
         c.var.actor.id,
       );
@@ -248,7 +261,10 @@ export function createAcpConversationModelRoutes(
           provider: authorized.selection.profile.provider ?? "codex",
           profileId: authorized.selection.profile.profileId,
           from: catalogue.currentModel,
-          to: model === null ? authorized.selection.defaultModel : model,
+          to:
+            model === null
+              ? (authorized.selection.profile.model ?? null)
+              : model,
           explicit: model !== null,
         },
       }).catch(() => {});

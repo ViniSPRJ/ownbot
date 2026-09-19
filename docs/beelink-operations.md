@@ -25,3 +25,15 @@ See the tenant's READ-ONLY-COWORKERS.md. Apply the gateway deny rule before crea
 `OWNBOT_SELF_HOSTED=true` already selects local SQLite history and SSE without requiring Intelligence configuration. Model providers, MCP endpoints and optional UI licensing remain separate dependencies. Set `COPILOTKIT_TELEMETRY_DISABLED=true` and `DO_NOT_TRACK=1` in server/worker environment to disable the installed runtime telemetry client; that does not turn external models or tools into local services.
 
 Keep upstream as the source reference and the Beelink tenant as the maintained deployment package. Review updates against the deployed commit, run isolated migration/queue/memory tests, build the static UI and take verified Postgres+SQLite backups before changing services. Do not change coordinator ownership or publish a repository as a side effect of an upstream update. A remote private fork and external supervisor integration are separate deployment choices.
+
+## Shared computer startup
+
+After Docker/Tailscale races, an in-container healthcheck can pass while the container
+has no Docker network or published API. `examples/beelink/ownbot-check-computer.py`
+validates Compose ownership and expected bindings, reconnects only a detached existing
+computer to its original network, then checks the host-to-container path. Install it
+as the user service's ExecStartPost after the existing Tailscale wait. It never recreates
+containers or volumes. A headed navigate/read remains the browser acceptance check.
+
+Beelink's Compose override leaves standalone model Bots behind `legacy-bots`; the
+normal deployment uses the Codex/Cursor ACP file documented in `acp-runtime.md`.

@@ -1,6 +1,12 @@
 # Beelink override (2026-09-06): Bot browser headed under Xvfb (no HeadlessChrome UA) + noVNC so the owner
 # can sign in to sites from any device. VNC is bound to the Tailscale IP only; password in .env (VNC_PASSWORD).
 services:
+  # Beelink uses Codex/Cursor for all roles, including formerly remote AG-UI Bots.
+  # Keep the legacy services opt-in for rollback without starting API-based model runtimes.
+  agent-bot:
+    profiles: [legacy-bots]
+  agent-langgraph:
+    profiles: [legacy-bots]
   agent-computer:
     build:
       context: .

@@ -96,6 +96,8 @@ function sweepOptions(overrides: Record<string, unknown> = {}) {
     queue,
     dispatch,
     owner: "sweep-test",
+    // These fixtures age abandoned runs by eleven minutes, independently of deployment timeouts.
+    abandonedRunMs: 10 * 60_000,
     ...overrides,
   } as Parameters<typeof offerDueRoutines>[0];
 }

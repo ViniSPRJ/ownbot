@@ -3,7 +3,7 @@ import type { CatalogueEntry } from "./catalogue";
 import * as driveRest from "./google-drive-rest";
 import type { McpCallResult, McpTool } from "./mcp";
 import * as mcp from "./mcp";
-import * as onyxRest from "./onyx-rest";
+import * as onyxRest from "./onyx-knowledge";
 import * as nexusFx from "./nexus-fx";
 
 /**

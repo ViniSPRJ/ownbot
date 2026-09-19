@@ -95,7 +95,7 @@ A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui),
 4. Install and run:
 
    ```sh
-   bun install
+   bun run setup
    bash scripts/start.sh
    ```
 

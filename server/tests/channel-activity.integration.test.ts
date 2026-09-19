@@ -336,9 +336,14 @@ describe("channel activity", () => {
     const quiet = await createChannel(owner, [agentId]);
     const busy = await createChannel(owner, [agentId]);
 
+    // Database and test process may run on different hosts. Order known timestamps,
+    // not two wall clocks whose skew could make a new message older than creation.
+    await database.update(channels).set({ createdAt: new Date("2026-01-02T00:00:00Z") }).where(eq(channels.id, quiet.id));
+    await database.update(channels).set({ createdAt: new Date("2026-01-01T00:00:00Z") }).where(eq(channels.id, busy.id));
+
     await store.recordActivity(owner, busy.id, {
       agentId,
-      at: new Date(),
+      at: new Date("2026-01-03T00:00:00Z"),
       text: "Said something.",
     });
 

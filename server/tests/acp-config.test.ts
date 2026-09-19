@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { acpProfileFor } from "../src/acp/config";
+import {
+  acpProfileFor,
+  acpModelSelectionFor,
+  acpProviderSelectionFor,
+  saveAcpAgentModel,
+  saveAcpAgentProvider,
+} from "../src/acp/config";
 const original = process.env.OPENBOT_ACP_CONFIG;
 let temporary: string | undefined;
 afterEach(() => {
@@ -12,6 +18,7 @@ afterEach(() => {
   temporary = undefined;
 });
 function configure(value: unknown) {
+  if (temporary) rmSync(temporary, { recursive: true, force: true });
   temporary = mkdtempSync(join(tmpdir(), "ownbot-acp-config-"));
   const file = join(temporary, "operator.json");
   writeFileSync(
@@ -104,5 +111,113 @@ describe("ACP operator config", () => {
     config.agents.coord = "";
     configure(config);
     expect(() => acpProfileFor("coord")).toThrow();
+  });
+
+  test("CLI-only policy covers new Bots and allows their first provider and model changes", () => {
+    configure({
+      ...valid(),
+      cliOnly: true,
+      defaultProfile: "codex",
+      profiles: {
+        ...valid().profiles,
+        cursor: {
+          command: "/opt/bin/agent",
+          provider: "cursor",
+          workspaceRoot: "/srv/ownbot",
+        },
+      },
+    });
+    expect(acpProfileFor("new-bot")?.profileId).toBe("codex");
+    expect(
+      acpProviderSelectionFor("new-bot")?.profiles.map((p) => p.provider),
+    ).toEqual(["codex", "cursor"]);
+    saveAcpAgentProvider(
+      "new-bot",
+      "cursor",
+      acpProviderSelectionFor("new-bot")!.revision,
+    );
+    saveAcpAgentModel(
+      "new-bot",
+      "composer",
+      acpModelSelectionFor("new-bot")!.revision,
+    );
+    expect(acpProfileFor("new-bot")).toMatchObject({
+      provider: "cursor",
+      model: "composer",
+    });
+    expect(acpProfileFor("another-new-bot")?.profileId).toBe("codex");
+  });
+
+  test("CLI-only policy rejects absent defaults, third providers and a local private mapping", () => {
+    configure({ ...valid(), cliOnly: true });
+    expect(() => acpProfileFor("coord")).toThrow("default");
+    configure({
+      ...valid(),
+      cliOnly: true,
+      defaultProfile: "codex",
+      profiles: {
+        ...valid().profiles,
+        local: {
+          command: "/opt/bin/pi",
+          provider: "pi",
+          workspaceRoot: "/srv/ownbot",
+        },
+      },
+    });
+    expect(() => acpProfileFor("coord")).toThrow("only Codex");
+    configure({ ...valid(), cliOnly: true, defaultProfile: "codex" });
+    const prior = process.env.OWNBOT_PRIVATE_AGENT_IDS;
+    try {
+      process.env.OWNBOT_PRIVATE_AGENT_IDS = "credito";
+      expect(() => acpProfileFor("credito")).toThrow("private local");
+    } finally {
+      if (prior === undefined) delete process.env.OWNBOT_PRIVATE_AGENT_IDS;
+      else process.env.OWNBOT_PRIVATE_AGENT_IDS = prior;
+    }
+  });
+
+  test("another Bot's edit keeps conversation choices valid while retaining the global write lock", () => {
+    configure({ ...valid(), agents: { coord: "codex", news: "codex" } });
+    const before = acpModelSelectionFor("news")!;
+    saveAcpAgentModel("coord", "different-model", before.revision);
+    const after = acpModelSelectionFor("news")!;
+    expect(after.revision).not.toBe(before.revision);
+    expect(after.conversationRevision).toBe(before.conversationRevision);
+    expect(() =>
+      saveAcpAgentModel("news", "stale-write", before.revision),
+    ).toThrow("changed");
+    saveAcpAgentModel("news", "new-default", after.revision);
+    expect(acpModelSelectionFor("news")!.conversationRevision).not.toBe(
+      before.conversationRevision,
+    );
+  });
+
+  test("conversation revisions ignore formatting and key order but detect connection changes", () => {
+    const data = {
+      ...valid(),
+      profiles: {
+        codex: { ...valid().profiles.codex, env: { FIRST: "a", SECOND: "b" } },
+      },
+    };
+    configure(data);
+    const before = acpModelSelectionFor("coord")!;
+    configure({
+      agents: data.agents,
+      profiles: {
+        codex: { env: { SECOND: "b", FIRST: "a" }, ...valid().profiles.codex },
+      },
+    });
+    expect(acpModelSelectionFor("coord")!.conversationRevision).toBe(
+      before.conversationRevision,
+    );
+    configure({
+      ...data,
+      profiles: {
+        codex: { ...data.profiles.codex, command: "/opt/bin/replacement" },
+      },
+    });
+    expect(acpModelSelectionFor("coord")!.conversationRevision).not.toBe(
+      before.conversationRevision,
+    );
   });
 });

@@ -56,11 +56,12 @@ afterEach(async () => {
 });
 
 /** Maps both Bots to the fake CLI; the private one is a misconfiguration the runtime must ignore. */
-async function configureAcp(agentIds: string[]) {
+async function configureAcp(agentIds: string[], cliOnly = false) {
   root = await mkdtemp(join(tmpdir(), "ownbot-acp-profile-"));
   const log = join(root, "cli.jsonl");
   const config = join(root, "acp.json");
   await writeFile(config, JSON.stringify({
+    ...(cliOnly ? { cliOnly: true, defaultProfile: "fake" } : {}),
     profiles: { fake: { command: process.execPath, args: ["-e", fixture], workspaceRoot: root, env: { TEST_LOG: log }, timeoutMs: 5000 } },
     agents: Object.fromEntries(agentIds.map((id) => [id, "fake"])),
   }), { mode: 0o600 });
@@ -97,6 +98,27 @@ function collect(agent: { clone(): { run(input: RunAgentInput): { subscribe: Fun
 }
 
 describe("ACP runtime preserves the built-in Bot's composed profile", () => {
+  test("CLI-only execution covers former local Bots and new remote Bots without any API fallback", async () => {
+    const cli = await configureAcp([], true);
+    delete process.env.OPENBOT_PRIVATE_AGENT_IDS;
+    delete process.env.OWNBOT_PRIVATE_AGENT_IDS;
+    const remote: RegisteredAgent = {
+      id: "new-remote", name: "New role", type: "remote_ag_ui", acpOwnerId: "owner-1",
+      endpoint: "https://must-not-be-called.example/ag-ui",
+      standingMessage: { id: "standing", role: "system", content: "Preserve this remote role." },
+    };
+    let apiCalls = 0;
+    const built = await resolveRuntimeAgents(async () => [credito, remote], model, async () => { apiCalls++; throw new Error("API fallback"); });
+    for (const id of [credito.id, remote.id]) {
+      expect(built[id]).toBeInstanceOf(AcpAgent);
+      const events = await collect(built[id]!, input(`cli-only-${id}`));
+      expect(events.at(-1)?.type).toBe("RUN_FINISHED");
+    }
+    expect(apiCalls).toBe(0);
+    const prompts = (await cli.records()).filter(row => row.method === "session/prompt").map(row => row.text);
+    expect(prompts.some(text => text.includes("Private credit analysis."))).toBe(true);
+    expect(prompts.some(text => text.includes("Preserve this remote role."))).toBe(true);
+  });
   test("the CLI is handed the API path's prompt, with per-run handoff tools described and bridged", async () => {
     const cli = await configureAcp(["research"]);
     let loads = 0, handoffs = 0;

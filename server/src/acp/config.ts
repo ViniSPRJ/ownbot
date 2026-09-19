@@ -23,6 +23,9 @@ const profile = z
   .strict();
 const schema = z
   .object({
+    /** Apply one of the two native CLIs to every current and future Bot. */
+    cliOnly: z.boolean().optional(),
+    defaultProfile: z.string().min(1).optional(),
     profiles: z.record(z.string().min(1), profile),
     agents: z.record(
       z.string().min(1),
@@ -45,26 +48,71 @@ function readConfig() {
   if (!isAbsolute(file))
     throw new Error("OWNBOT_ACP_CONFIG must be an absolute path");
   const source = readFileSync(file, "utf8");
-  return { file, source, config: schema.parse(JSON.parse(source)) };
+  const config = schema.parse(JSON.parse(source));
+  if (
+    config.defaultProfile &&
+    !Object.hasOwn(config.profiles, config.defaultProfile)
+  )
+    throw new Error("Default ACP profile is missing");
+  if (config.cliOnly) {
+    if (!config.defaultProfile)
+      throw new Error("CLI-only execution requires a default ACP profile");
+    if (
+      Object.values(config.profiles).some(
+        (value) => !["codex", "cursor"].includes(value.provider ?? "codex"),
+      )
+    )
+      throw new Error(
+        "CLI-only execution accepts only Codex CLI and Cursor CLI",
+      );
+    if (ownbotEnv(process.env, "OWNBOT_PRIVATE_AGENT_IDS")?.trim())
+      throw new Error(
+        "Clear the private local runtime mapping before enabling CLI-only execution",
+      );
+  }
+  return { file, source, config };
+}
+
+function mappingFor(config: z.infer<typeof schema>, agentId: string) {
+  return Object.hasOwn(config.agents, agentId)
+    ? config.agents[agentId]
+    : config.defaultProfile;
+}
+
+/** Hash only the effective connection for this Bot, independent of JSON key order. */
+function stableConfiguration(value: unknown): string {
+  if (Array.isArray(value))
+    return `[${value.map(stableConfiguration).join(",")}]`;
+  if (value && typeof value === "object")
+    return `{${Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${JSON.stringify(k)}:${stableConfiguration(v)}`)
+      .join(",")}}`;
+  return JSON.stringify(value);
 }
 
 export function acpModelSelectionFor(agentId: string) {
   const loaded = readConfig();
-  if (!loaded || !Object.hasOwn(loaded.config.agents, agentId)) return;
-  const mapping = loaded.config.agents[agentId]!;
+  if (!loaded) return;
+  const mapping = mappingFor(loaded.config, agentId);
+  if (!mapping) return;
   const id = typeof mapping === "string" ? mapping : mapping.profile;
   if (!Object.hasOwn(loaded.config.profiles, id))
     throw new Error("ACP profile is missing");
   const base = loaded.config.profiles[id]!;
   const selectedModel = typeof mapping === "string" ? undefined : mapping.model;
+  const effective: AcpProfile = {
+    ...base,
+    ...(selectedModel ? { model: selectedModel } : {}),
+    profileId: id,
+  };
   return {
-    profile: {
-      ...base,
-      ...(selectedModel ? { model: selectedModel } : {}),
-      profileId: id,
-    } as AcpProfile,
+    profile: effective,
     selectedModel: selectedModel ?? null,
     defaultModel: base.model ?? null,
+    conversationRevision: `profile-v1:${createHash("sha256").update(stableConfiguration(effective)).digest("hex")}`,
+    // File-wide revision protects concurrent administrative edits; it is not a conversation key.
     revision: createHash("sha256").update(loaded.source).digest("hex"),
   };
 }
@@ -81,9 +129,8 @@ export function saveAcpAgentModel(
     createHash("sha256").update(loaded.source).digest("hex") !== revision
   )
     throw new Error("ACP configuration changed");
-  const mapping = loaded.config.agents[agentId];
-  if (!mapping || !Object.hasOwn(loaded.config.agents, agentId))
-    throw new Error("ACP agent not mapped");
+  const mapping = mappingFor(loaded.config, agentId);
+  if (!mapping) throw new Error("ACP agent not mapped");
   const id = typeof mapping === "string" ? mapping : mapping.profile;
   const value = model === null ? id : { profile: id, model };
   // Preserve the operator's original fields and other agents byte-for-value; never accept
@@ -110,8 +157,9 @@ export function acpProfileFor(agentId: string): AcpProfile | undefined {
 /** Public catalogue contains only operator-defined connection IDs and provider names. */
 export function acpProviderSelectionFor(agentId: string) {
   const loaded = readConfig();
-  if (!loaded || !Object.hasOwn(loaded.config.agents, agentId)) return;
-  const mapping = loaded.config.agents[agentId]!;
+  if (!loaded) return;
+  const mapping = mappingFor(loaded.config, agentId);
+  if (!mapping) return;
   const profileId = typeof mapping === "string" ? mapping : mapping.profile;
   if (!Object.hasOwn(loaded.config.profiles, profileId))
     throw new Error("ACP profile is missing");
@@ -147,11 +195,11 @@ export function saveAcpAgentProvider(
   )
     throw new Error("ACP configuration changed");
   if (
-    !Object.hasOwn(loaded.config.agents, agentId) ||
+    !mappingFor(loaded.config, agentId) ||
     !Object.hasOwn(loaded.config.profiles, profileId)
   )
     throw new Error("ACP agent or profile not configured");
-  const mapping = loaded.config.agents[agentId]!;
+  const mapping = mappingFor(loaded.config, agentId)!;
   const previous = typeof mapping === "string" ? mapping : mapping.profile;
   // An unchanged provider must preserve the user's model override.
   if (previous === profileId) return;

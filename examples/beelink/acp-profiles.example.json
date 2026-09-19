@@ -11,30 +11,17 @@
       },
       "timeoutMs": 600000
     },
-    "claude": {
-      "provider": "claude",
-      "command": "/home/viniciuspinho/ownbot-acp-runtime/node_modules/.bin/claude-agent-acp",
-      "args": [],
-      "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
-      "env": {
-        "PATH": "/home/viniciuspinho/.local/bin:/usr/bin:/bin",
-        "CLAUDE_CODE_EXECUTABLE": "/home/viniciuspinho/.local/bin/claude"
-      },
-      "timeoutMs": 600000
-    },
-    "grok": {
-      "provider": "grok",
-      "command": "/home/viniciuspinho/ownbot-acp-runtime/bin/grok",
+    "cursor": {
+      "provider": "cursor",
+      "command": "/home/viniciuspinho/.local/bin/agent",
       "args": [
-        "agent",
-        "--no-leader",
-        "stdio"
+        "acp"
       ],
       "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
       "env": {
         "PATH": "/home/viniciuspinho/.local/bin:/usr/bin:/bin"
       },
-      "timeoutMs": 600000
+      "timeoutMs": 1500000
     }
   },
   "agents": {
@@ -43,9 +30,17 @@
     "desk": "codex",
     "quant": "codex",
     "infra": "codex",
-    "research": "claude",
-    "onyx": "claude",
-    "news": "grok",
-    "mercado": "grok"
-  }
+    "research": "codex",
+    "onyx": "codex",
+    "news": "cursor",
+    "mercado": "codex",
+    "credito": "codex",
+    "estruturador": "codex",
+    "hermes": "codex",
+    "hermes-equity": "codex",
+    "hermes-fx": "codex",
+    "a0": "codex"
+  },
+  "cliOnly": true,
+  "defaultProfile": "codex"
 }
