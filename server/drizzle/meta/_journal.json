@@ -225,6 +225,13 @@
       "when": 1788640000005,
       "tag": "0031_acp_conversation_models",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788640000006,
+      "tag": "0032_cursor_conversation_models",
+      "breakpoints": true
     }
   ]
 }
