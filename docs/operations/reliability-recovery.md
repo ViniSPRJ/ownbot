@@ -28,9 +28,9 @@ Internal notifications are the configured production delivery path. External not
 
 ACP protocol filtering is not an OS sandbox. On the current Beelink deployment ACP children still share the service UID. Profiles containing sensitive configuration must remain mode 0600; saving model selections already writes mode 0600 atomically. A separate UID/container, dedicated HOME, credential allowlist, filesystem policy and real provider-authentication tests are required before giving this runtime critical execution authority.
 
-Hermes on Arcus remains a research process with root service identity; moving identity or restricting mounts requires a dedicated staged migration of its HOME, credentials and cron workflows. This patch does not claim that boundary is solved. Do not install a second OpenBot there or transfer FX execution on the basis of these tests.
+Hermes on Arcus remains a research process with root service identity; moving identity or restricting mounts requires a dedicated staged migration of its HOME, credentials and cron workflows. This patch does not claim that boundary is solved. Do not install a second OwnBot there or transfer FX execution on the basis of these tests.
 
-FX execution remains exclusively on Nexus through the isolated runner/Gateway/signed cTrader path. OpenBot's Nexus adapter remains read-only. Viable next stage: isolated OpenBot coordination and Hermes research, shadow validation, then reviewed promotion; no broker-order authority is added here.
+FX execution remains exclusively on Nexus through the isolated runner/Gateway/signed cTrader path. OwnBot's Nexus adapter remains read-only. Viable next stage: isolated OwnBot coordination and Hermes research, shadow validation, then reviewed promotion; no broker-order authority is added here.
 
 ## Computer dependency recovery (2026-09-17)
 

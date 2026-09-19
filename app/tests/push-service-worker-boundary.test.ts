@@ -180,7 +180,7 @@ test("a push is one generic notification, and the payload cannot write on it", a
 
   expect(worker_.shown).toHaveLength(1);
   const { title, options } = worker_.shown[0]!;
-  expect(title).toBe("ownbot");
+  expect(title).toBe("OwnBot");
   expect(options.body).toBe("Há uma nova atualização no seu projeto.");
   expect(options.tag).toBe("run-7");
   expect("data" in options).toBe(false);
@@ -222,7 +222,7 @@ test("the notification is shown whatever the payload is, with the shared tag", a
 
   expect(worker_.shown).toHaveLength(payloads.length);
   for (const shown of worker_.shown) {
-    expect(shown.title).toBe("ownbot");
+    expect(shown.title).toBe("OwnBot");
     expect(shown.options.body).toBe("Há uma nova atualização no seu projeto.");
     expect(shown.options.tag).toBe("ownbot");
     expect(typeof shown.options.tag).toBe("string");

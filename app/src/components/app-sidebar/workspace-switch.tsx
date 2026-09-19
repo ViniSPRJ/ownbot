@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 const modes = [
   {
     value: "ownbot" as const,
-    label: "Ownbot",
+    label: "OwnBot",
     icon: IconMessages,
     description: "Conversas com os coworkers que respondem por API",
   },
@@ -21,7 +21,7 @@ const modes = [
  * The two halves of the roster, and which one is open.
  *
  * Two real buttons rather than a toggle: both destinations are named, and a single control that says
- * "Cowork" while meaning "you are in Ownbot, press to leave" is the kind of switch people read
+ * "Cowork" while meaning "you are in OwnBot, press to leave" is the kind of switch people read
  * backwards. `aria-pressed` carries the state, so the current half is announced rather than only
  * shaded.
  *
@@ -56,7 +56,7 @@ export function WorkspaceSwitch({
             <Icon />
             <span className="tracking-tight">{option.label}</span>
             {/*
-             * The count is for the half you are NOT in. Reading "Cowork 3" from Ownbot is what tells
+             * The count is for the half you are NOT in. Reading "Cowork 3" from OwnBot is what tells
              * somebody there is anything over there at all; repeating the number of rows already on
              * screen underneath them is decoration.
              */}

@@ -297,7 +297,7 @@ export const CATALOGUE: readonly CatalogueEntry[] = Object.freeze([
   {
     key: "routines",
     title: "Routines",
-    vendor: "OpenBot",
+    vendor: "OwnBot",
     summary:
       "Standing instructions a Bot runs on a schedule, as whoever scheduled them.",
     /*

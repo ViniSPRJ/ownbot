@@ -6,7 +6,7 @@ Onyx user identity. Normal ownbot login is sufficient after the operator configu
 mapping. A grant alone never allows an unmapped person to use another person's token.
 The model cannot choose an owner, token, endpoint, index permissions or retrieval model.
 
-Set `OPENBOT_ONYX_CONFIG` to an absolute, private (0600) JSON file:
+Set `OWNBOT_ONYX_CONFIG` to an absolute, private (0600) JSON file:
 
 ```json
 {

@@ -1,3 +1,5 @@
+import { ownbotRunAssertion } from "../../shared/ownbot-protocol";
+import { ownbotEnv } from "../../shared/ownbot-env";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
 import { ChatAnthropic } from "@langchain/anthropic";
@@ -40,7 +42,7 @@ const PORT = Number.parseInt(process.env.PORT ?? "4201", 10);
 const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim();
 if (!MANAGED_AGENT_TOKEN) {
   console.error(
-    "MANAGED_AGENT_TOKEN is not set. This process holds a model credential and will not start without a token for OpenBot's server.",
+    "MANAGED_AGENT_TOKEN is not set. This process holds a model credential and will not start without a token for OwnBot's server.",
   );
   process.exit(1);
 }
@@ -229,7 +231,7 @@ function buildModel() {
  * here, in this process, and every call it makes goes back through the deployment that granted it.
  */
 const TOOL_URL =
-  process.env.OPENBOT_TOOL_URL ?? "http://localhost:3001/api/agent-tools/call";
+  ownbotEnv(process.env, "OWNBOT_TOOL_URL") ?? "http://localhost:3001/api/agent-tools/call";
 const TOOL_TOKEN = process.env.AGENT_TOOL_TOKEN ?? "";
 
 async function callTool(
@@ -252,6 +254,7 @@ async function callTool(
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-ownbot-agent-token": TOOL_TOKEN,
         "x-openbot-agent-token": TOOL_TOKEN,
       },
       /*
@@ -280,8 +283,8 @@ async function callTool(
  * calls a tool, and the deployment that signed it is the only thing that can open it.
  */
 function runAssertionOf(input: RunAgentInput): string {
-  const props = input.forwardedProps as { openbotRun?: unknown } | undefined;
-  return typeof props?.openbotRun === "string" ? props.openbotRun : "";
+  const assertion = ownbotRunAssertion(input.forwardedProps as Record<string, unknown> | undefined);
+  return typeof assertion === "string" ? assertion : "";
 }
 
 /**
@@ -294,9 +297,9 @@ function runAssertionOf(input: RunAgentInput): string {
  */
 function deploymentToolsOf(input: RunAgentInput): Set<string> {
   const props = input.forwardedProps as
-    | { openbotDeploymentTools?: unknown }
+    | { ownbotDeploymentTools?: unknown; openbotDeploymentTools?: unknown }
     | undefined;
-  const names = props?.openbotDeploymentTools;
+  const names = props?.ownbotDeploymentTools ?? props?.openbotDeploymentTools;
   return new Set(
     Array.isArray(names)
       ? names.filter((name) => typeof name === "string")

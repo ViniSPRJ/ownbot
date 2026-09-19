@@ -1,5 +1,5 @@
 [Unit]
-Description=Refresh Ownbot read-only FX snapshot
+Description=Refresh OwnBot read-only FX snapshot
 
 [Timer]
 OnBootSec=15s

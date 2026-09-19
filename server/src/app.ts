@@ -1,3 +1,5 @@
+import { ownbotHeader } from "../../shared/ownbot-protocol";
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { readPushConfig } from "./notifications/push-config";
 import { createPushRoutes } from "./notifications/push-routes";
 import type { PushStore } from "./notifications/push-store";
@@ -280,7 +282,7 @@ export function createApp(
        */
       authProviders: configuredAuthProviders(config.auth),
       localPasswordAuth: config.auth?.localPassword === true,
-      privateAgentIds: (process.env.OPENBOT_PRIVATE_AGENT_IDS ?? "").split(",").map(v => v.trim()).filter(Boolean),
+      privateAgentIds: (ownbotEnv(process.env, "OWNBOT_PRIVATE_AGENT_IDS") ?? "").split(",").map(v => v.trim()).filter(Boolean),
       /*
        * Whether any enterprise identity provider has been registered.
        *
@@ -819,7 +821,7 @@ export function createApp(
     });
   }
   // The CopilotKit runtime, behind the same session guard as every other API route. Mounted last so
-  // its own routing under /api/copilotkit cannot shadow an OpenBot route declared above.
+  // its own routing under /api/copilotkit cannot shadow an OwnBot route declared above.
   if (copilotHandler) {
     // Mounted at the ROOT with the handler carrying its own basePath. Mounting it at
     // "/api/copilotkit" as well double-prefixes it: Hono strips the prefix before the handler sees
@@ -1053,7 +1055,7 @@ export function createApp(
       } | null;
 
       const verdict = await authoriseAgentCall({
-        presented: context.req.header("x-openbot-agent-token") ?? "",
+        presented: ownbotHeader(context.req.raw.headers, "agent-token") ?? "",
         run: body?.run,
         encryptionKey: config.keyEncryptionKey,
         legacyToken,

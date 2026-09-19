@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { readStoredPreference } from "@/lib/stored-preference";
 import {
   applySidebarOpen,
   parseStoredSidebarOpen,
@@ -29,7 +30,9 @@ export function SidebarShell({
 }) {
   // Read before the first paint, so a shell somebody left collapsed never flashes open.
   const [open, setOpen] = useState(() =>
-    parseStoredSidebarOpen(window.localStorage.getItem(SIDEBAR_STORAGE_KEY)),
+    parseStoredSidebarOpen(
+      readStoredPreference(SIDEBAR_STORAGE_KEY, "openbot-sidebar"),
+    ),
   );
 
   useEffect(() => {

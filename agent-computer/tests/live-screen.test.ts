@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -28,7 +29,7 @@ import { join } from "node:path";
  * to start, and whether input reaches a page it does not belong to.
  */
 
-const asked = process.env.OPENBOT_LIVE_SCREEN === "1";
+const asked = ownbotEnv(process.env, "OWNBOT_LIVE_SCREEN") === "1";
 
 const TOKEN = "test-computer-token";
 

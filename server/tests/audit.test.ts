@@ -18,7 +18,7 @@ const adminAuth = {
   handler: () => new Response(null, { status: 204 }),
   api: {
     getSession: async () => ({
-      user: { id: "admin", email: "admin@openbot.test" },
+      user: { id: "admin", email: "admin@ownbot.test" },
     }),
   },
 };
@@ -27,7 +27,7 @@ const memberAuth = {
   handler: () => new Response(null, { status: 204 }),
   api: {
     getSession: async () => ({
-      user: { id: "member", email: "member@openbot.test" },
+      user: { id: "member", email: "member@ownbot.test" },
     }),
   },
 };
@@ -233,7 +233,7 @@ describe("admin audit API", () => {
     );
 
     const response = await app.request(
-      "http://openbot.local/api/admin/audit-events?eventType=connector.sync_succeeded&limit=10",
+      "http://ownbot.local/api/admin/audit-events?eventType=connector.sync_succeeded&limit=10",
     );
 
     expect(response.status).toBe(200);
@@ -265,7 +265,7 @@ describe("admin audit API", () => {
     );
 
     const response = await app.request(
-      "http://openbot.local/api/admin/audit-events",
+      "http://ownbot.local/api/admin/audit-events",
     );
 
     expect(response.status).toBe(403);

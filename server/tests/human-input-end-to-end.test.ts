@@ -74,7 +74,7 @@ function appFor(baseUrl: string) {
   });
   const actor: AuthenticatedActor = {
     id: "user-1",
-    email: "member@openbot.test",
+    email: "member@ownbot.test",
     role: "user",
   };
   const asActor: MiddlewareHandler<{ Variables: AppVariables }> = async (
@@ -99,7 +99,7 @@ async function drive(kind: string, body: unknown) {
   const { received, baseUrl } = serveComputer();
   const { app, rows } = appFor(baseUrl);
   const response = await app.request(
-    `http://openbot.test/bot-1/human/${kind}`,
+    `http://ownbot.test/bot-1/human/${kind}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },

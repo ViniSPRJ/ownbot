@@ -51,7 +51,7 @@ if (!token) {
   );
   process.exit(1);
 }
-const image = process.env.COMPUTER_IMAGE ?? "openbot-agent-computer:latest";
+const image = process.env.COMPUTER_IMAGE ?? "ownbot-agent-computer:latest";
 const network = process.env.COMPUTER_NETWORK;
 const runtime = process.env.COMPUTER_RUNTIME;
 const memoryBytes = process.env.COMPUTER_MEMORY_BYTES

@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,7 +24,7 @@ import { join } from "node:path";
  *   bun run test:live-screen
  */
 
-const asked = process.env.OPENBOT_LIVE_SCREEN === "1";
+const asked = ownbotEnv(process.env, "OWNBOT_LIVE_SCREEN") === "1";
 
 let root = "";
 /*

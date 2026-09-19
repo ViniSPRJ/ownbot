@@ -736,7 +736,7 @@ describe("standing agent roles", () => {
       async () => null,
     );
 
-    const request = new Request("http://openbot.test/api/copilotkit");
+    const request = new Request("http://ownbot.test/api/copilotkit");
     const resolved = await factory({ request });
 
     expect(seen.request).toBe(request);
@@ -754,7 +754,7 @@ describe("standing agent roles", () => {
       { provider: "openai", defaultModel: "gpt-5.6-terra" },
       async () => null,
     );
-    const request = new Request("http://openbot.test/api/copilotkit");
+    const request = new Request("http://ownbot.test/api/copilotkit");
 
     const before = await factory({ request });
     roleDescription = "Reconcile corporate card statements.";

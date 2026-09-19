@@ -1,18 +1,20 @@
+import { readStoredPreference } from "../stored-preference";
+
 /**
  * Which half of the roster a person is working in.
  *
- * Ownbot is everything by default. Cowork is the coding cockpit, and it holds the conversations of the
+ * OwnBot is everything by default. Cowork is the coding cockpit, and it holds the conversations of the
  * coworkers a person has named as their coding agents.
  *
  * IT WAS DERIVED, AND THAT WAS WRONG. The first version read the split off how each coworker runs:
  * ACP meant a CLI, a CLI meant a coding agent. The argument was that a mode nobody has to configure
  * cannot sit there empty. On a deployment where the operator maps every coworker to a CLI — and that
  * is the deployment this was written for, ten of ten on Codex, Claude and Grok — the rule was true of
- * everything, so Cowork swallowed the whole roster and Ownbot went empty. `coord` answering through
+ * everything, so Cowork swallowed the whole roster and OwnBot went empty. `coord` answering through
  * Codex is not a coding agent; it is an assistant that happens to run on one.
  *
  * Nothing in the operator's mapping distinguishes the two, so nothing derived can. The marks are the
- * person's, and the default is no marks at all: Ownbot holds everything, exactly as it did before
+ * person's, and the default is no marks at all: OwnBot holds everything, exactly as it did before
  * there was a switch, until somebody says otherwise.
  */
 
@@ -26,8 +28,8 @@ export type RuntimeKind =
   | "remote"
   | "unavailable";
 
-const MODE_KEY = "openbot.workspace-mode";
-const CODING_KEY = "openbot.cowork-coworkers";
+const MODE_KEY = "ownbot.workspace-mode";
+const CODING_KEY = "ownbot.cowork-coworkers";
 
 export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
   return value === "ownbot" || value === "cowork";
@@ -43,7 +45,7 @@ export function isWorkspaceMode(value: unknown): value is WorkspaceMode {
  */
 export function readWorkspaceMode(): WorkspaceMode {
   try {
-    const stored = globalThis.localStorage?.getItem(MODE_KEY);
+    const stored = readStoredPreference(MODE_KEY, "openbot.workspace-mode");
     return isWorkspaceMode(stored) ? stored : "ownbot";
   } catch {
     return "ownbot";
@@ -69,7 +71,7 @@ export function writeWorkspaceMode(mode: WorkspaceMode): void {
  */
 export function readCodingCoworkers(): ReadonlySet<string> {
   try {
-    const raw = globalThis.localStorage?.getItem(CODING_KEY);
+    const raw = readStoredPreference(CODING_KEY, "openbot.cowork-coworkers");
     if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
     return new Set(
@@ -121,7 +123,7 @@ type PlaceableChannel = { agentIds: string[] };
  *
  * Any marked coworker in the channel puts it there, including a channel that also holds an unmarked
  * one: the cockpit is where that coworker's session, workspace and model selection are visible, and a
- * channel holding one of those filed under Ownbot is a channel whose session nobody can see.
+ * channel holding one of those filed under OwnBot is a channel whose session nobody can see.
  */
 export function isCoworkChannel(
   channel: PlaceableChannel,
@@ -139,7 +141,7 @@ export function isCoworkChannel(
  * had already walked through it.
  *
  * `mode` is the effective one, which is not always the stored one. Someone left in Cowork on a
- * deployment that has since lost its ACP coworkers is shown Ownbot rather than an empty cockpit they
+ * deployment that has since lost its ACP coworkers is shown OwnBot rather than an empty cockpit they
  * cannot leave by reloading. An empty Cowork somebody can still fill is not that case: it stays, and
  * says how to fill it.
  */
@@ -172,7 +174,7 @@ export function workspaceSwitchView(input: {
  * The roster, narrowed to the mode in force.
  *
  * Returns the input array unchanged when nothing is filtered out, for the same reason the search
- * filter does: handing `AnimatePresence` a fresh array identity restages every row, and Ownbot
+ * filter does: handing `AnimatePresence` a fresh array identity restages every row, and OwnBot
  * holding everything — which is the default — is not a reason to animate the whole list.
  */
 export function channelsForMode<Channel extends PlaceableChannel>(

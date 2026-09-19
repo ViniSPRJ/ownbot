@@ -51,6 +51,18 @@ describe("finding the secret a caller offered", () => {
     expect(offeredToken(headers, url("/snapshot"))).toBe(SECRET);
   });
 
+  test("the canonical header and an identical legacy alias are accepted", () => {
+    expect(offeredToken(new Headers({ "x-ownbot-computer-token": SECRET }), url("/snapshot"))).toBe(SECRET);
+    expect(offeredToken(new Headers({ "x-ownbot-computer-token": SECRET, "x-openbot-computer-token": SECRET }), url("/snapshot"))).toBe(SECRET);
+  });
+
+  test("conflicting or empty canonical headers cannot fall back to legacy or bearer", () => {
+    for (const offered of ["", "different"]) {
+      const headers = new Headers({ "x-ownbot-computer-token": offered, "x-openbot-computer-token": SECRET, authorization: `Bearer ${SECRET}` });
+      expect(offeredToken(headers, url("/snapshot"))).toBe("");
+    }
+  });
+
   test("a bearer token", () => {
     const headers = new Headers({ authorization: `Bearer ${SECRET}` });
     expect(offeredToken(headers, url("/snapshot"))).toBe(SECRET);

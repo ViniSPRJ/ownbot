@@ -1,7 +1,9 @@
 /**
- * What the runtime can do. Intelligence is the product default. OPENBOT_SELF_HOSTED=true is the
+ * What the runtime can do. Intelligence is the product default. OWNBOT_SELF_HOSTED=true is the
  * on-prem path: SSE plus a SQLite thread store on this machine, no CopilotKit cloud.
  */
+import { ownbotEnv } from "../../shared/ownbot-env";
+import { existsSync } from "node:fs";
 import { singleUserEnabled } from "./auth/dev-actor";
 import type { ActionPolicy } from "./computer/policy";
 import { parseActionPolicy } from "./computer/policy-store";
@@ -186,7 +188,7 @@ export type DeploymentConfig = {
    * configuration rather than from the incoming request: a redirect URI assembled out of a Host
    * header is one an attacker has a say in.
    *
-   * `OPENBOT_PUBLIC_URL` when set, otherwise `BETTER_AUTH_URL`, which is the same public address for
+   * `OWNBOT_PUBLIC_URL` when set, otherwise `BETTER_AUTH_URL`, which is the same public address for
    * every deployment that has real sign-in. Undefined only where neither exists, which is a local
    * deployment running without authentication — and there is nothing to connect there anyway.
    */
@@ -199,7 +201,7 @@ export type DeploymentConfig = {
    * the API and has to send the person back to a page, so a relative redirect would put them on the
    * API's origin, where no page exists.
    *
-   * `OPENBOT_APP_URL` when set, otherwise the first `TRUSTED_ORIGINS` entry, which is already defined
+   * `OWNBOT_APP_URL` when set, otherwise the first `TRUSTED_ORIGINS` entry, which is already defined
    * as where the app is served from. Falls back to the API's own public URL, which is right for a
    * deployment serving both from one origin.
    */
@@ -234,7 +236,7 @@ export type DeploymentConfig = {
    * reaching somewhere other people can get to.
    */
   singleUser: boolean;
-  /** Names OpenBot on the analytics the runtime already sends. Off with OPENBOT_ACCESSIBILITY_DISABLED. */
+  /** Names OwnBot on the analytics the runtime already sends. Off with OWNBOT_ACCESSIBILITY_DISABLED. */
   accessibility: boolean;
   /**
    * Whether a Bot may answer with an interface it wrote itself.
@@ -251,7 +253,7 @@ export type DeploymentConfig = {
    * Narrowing the middleware to some Bots would leave the rest able to call the tool and draw
    * nothing at all, which is a worse answer than never offering it.
    *
-   * Off until a deployment sets OPENBOT_GENERATIVE_UI. A capability that runs code a model wrote is
+   * Off until a deployment sets OWNBOT_GENERATIVE_UI. A capability that runs code a model wrote is
    * one an operator should choose, not one they should discover after an upgrade — and a deployment
    * that builds its default branch automatically would otherwise acquire it without a decision.
    *
@@ -334,7 +336,10 @@ function required(environment: Environment, name: string): string {
 }
 
 function optional(environment: Environment, name: string): string | undefined {
-  return environment[name]?.trim() || undefined;
+  const value = name.startsWith("OWNBOT_")
+    ? ownbotEnv(environment, name as `OWNBOT_${string}`)
+    : environment[name];
+  return value?.trim() || undefined;
 }
 
 /**
@@ -472,7 +477,7 @@ function authConfig(
   environment: Environment,
   google: OAuthClient | undefined,
 ): AuthConfig | undefined {
-  const localPassword = optional(environment, "OPENBOT_LOCAL_PASSWORD_AUTH") === "true";
+  const localPassword = optional(environment, "OWNBOT_LOCAL_PASSWORD_AUTH") === "true";
   const microsoft = microsoftAuth(environment);
   const okta = oktaAuth(environment);
 
@@ -522,7 +527,7 @@ function authConfig(
       ? commaSeparated(environment, "TRUSTED_ORIGINS")
       : ["http://localhost:3010"],
     initialAdminEmails,
-    ...(localPassword ? { localPassword: true, localEnrollmentTokenHash: optional(environment, "OPENBOT_LOCAL_ENROLLMENT_TOKEN_HASH") } : {}),
+    ...(localPassword ? { localPassword: true, localEnrollmentTokenHash: optional(environment, "OWNBOT_LOCAL_ENROLLMENT_TOKEN_HASH") } : {}),
     ...(google ? { google } : {}),
     ...(microsoft ? { microsoft } : {}),
     ...(okta ? { okta } : {}),
@@ -578,17 +583,17 @@ function oktaAuth(
  * Resolve the runtime contract, or refuse to start.
  *
  * Intelligence is the default: all four values are required together. A partial set is more
- * dangerous than none at all. OPENBOT_SELF_HOSTED=true (exactly) switches to SSE + SQLite on this
+ * dangerous than none at all. OWNBOT_SELF_HOSTED=true (exactly) switches to SSE + SQLite on this
  * machine and does not talk to CopilotKit Intelligence. The license token, if present, still unlocks
  * the packaged chat UI; it is not a cloud connection.
  */
 function runtimeCapabilities(environment: Environment): RuntimeCapabilities {
-  if (optional(environment, "OPENBOT_SELF_HOSTED") === "true") {
+  if (optional(environment, "OWNBOT_SELF_HOSTED") === "true") {
     return {
       mode: "sse",
       durableHistory: true,
       threadsDbPath:
-        optional(environment, "OPENBOT_THREADS_DB") ?? ".data/threads.db",
+        optional(environment, "OWNBOT_THREADS_DB") ?? ".data/threads.db",
       ...(optional(environment, "COPILOTKIT_LICENSE_TOKEN")
         ? {
             licenseToken: optional(
@@ -755,7 +760,9 @@ function computerConfig(environment: Environment): ComputerConfig | undefined {
       ),
       templateFile:
         optional(environment, "COMPUTER_SANDBOX_TEMPLATE_FILE") ??
-        "/etc/openbot/sandbox-template.json",
+        (existsSync("/etc/ownbot/sandbox-template.json") || !existsSync("/etc/openbot/sandbox-template.json")
+          ? "/etc/ownbot/sandbox-template.json"
+          : "/etc/openbot/sandbox-template.json"),
       allowPrivateHosts,
       ...(computerToken ? { token: computerToken } : {}),
       ...(policy ? { policy } : {}),
@@ -828,7 +835,7 @@ function actionPolicy(environment: Environment): ActionPolicy | undefined {
  * Zero is a legitimate value and means off. It is not the same as a malformed one.
  */
 function accessibilityEnabled(environment: Environment): boolean {
-  const off = optional(environment, "OPENBOT_ACCESSIBILITY_DISABLED");
+  const off = optional(environment, "OWNBOT_ACCESSIBILITY_DISABLED");
   return off !== "true" && off !== "1";
 }
 
@@ -836,7 +843,7 @@ function accessibilityEnabled(environment: Environment): boolean {
  * Whether a Bot may draw an interface it wrote itself.
  *
  * ASKED FOR, NOT INHERITED, which is the one place this deliberately breaks the symmetry with
- * OPENBOT_ACCESSIBILITY_DISABLED above it. That flag names a deployment out of an analytics label,
+ * OWNBOT_ACCESSIBILITY_DISABLED above it. That flag names a deployment out of an analytics label,
  * so defaulting it on costs a fork nothing it would mind. This one decides whether a model may put
  * code it wrote on somebody's screen and pull libraries from a CDN to run it. Written as a disable
  * switch, absence would be the permissive answer, and a deployment acquires the capability by
@@ -852,7 +859,7 @@ function accessibilityEnabled(environment: Environment): boolean {
  * interface that nothing renders. See DeploymentConfig.generativeUi.
  */
 function generativeUiEnabled(environment: Environment): boolean {
-  const on = optional(environment, "OPENBOT_GENERATIVE_UI");
+  const on = optional(environment, "OWNBOT_GENERATIVE_UI");
   return on === "true" || on === "1";
 }
 
@@ -942,12 +949,12 @@ export function loadConfig(
     agentEndpointAllowedHosts: agentEndpointAllowedHosts(environment),
     deploymentId: optional(environment, "DEPLOYMENT_ID"),
     publicUrl: (
-      optional(environment, "OPENBOT_PUBLIC_URL") ?? auth?.baseUrl
+      optional(environment, "OWNBOT_PUBLIC_URL") ?? auth?.baseUrl
     )?.replace(/\/+$/, ""),
     appUrl: (
-      optional(environment, "OPENBOT_APP_URL") ??
+      optional(environment, "OWNBOT_APP_URL") ??
       commaSeparated(environment, "TRUSTED_ORIGINS")[0] ??
-      optional(environment, "OPENBOT_PUBLIC_URL") ??
+      optional(environment, "OWNBOT_PUBLIC_URL") ??
       auth?.baseUrl
     )?.replace(/\/+$/, ""),
     tenantPackageDirectory:

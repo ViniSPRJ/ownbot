@@ -15,7 +15,7 @@ test.skipIf(!isolated)("local enrollment creates session, rejects replay, wrong 
   const config = loadConfig({
     ...process.env, NODE_ENV: "test", DATABASE_URL: url, KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     OPENBOT_LOCAL_PASSWORD_AUTH: "true", BETTER_AUTH_SECRET: "local-auth-isolated-test-secret-with-32-chars",
-    BETTER_AUTH_URL: "https://openbot.example.test", INITIAL_ADMIN_EMAILS: "dev@openbot.local",
+    BETTER_AUTH_URL: "https://ownbot.example.test", INITIAL_ADMIN_EMAILS: "dev@openbot.local",
     OPENBOT_LOCAL_ENROLLMENT_TOKEN_HASH: createHash("sha256").update(token).digest("hex"),
     INTELLIGENCE_API_URL: "http://localhost:7100", INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103", INTELLIGENCE_API_KEY: "test", COPILOTKIT_LICENSE_TOKEN: "test",
   });

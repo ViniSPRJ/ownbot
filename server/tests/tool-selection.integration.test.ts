@@ -407,6 +407,11 @@ describe("a remote Bot", () => {
     expect(String(holdings?.content ?? "")).not.toContain("drive: tool_0");
     expect(run?.forwardedProps?.openbotBotId).toBe("risk");
     expect(run?.forwardedProps?.openbotRun).toBe("signed-assertion");
+    expect(run?.forwardedProps?.ownbotBotId).toBe("risk");
+    expect(run?.forwardedProps?.ownbotRun).toBe("signed-assertion");
+    expect(run?.forwardedProps?.ownbotDeploymentTools).toEqual(
+      run?.forwardedProps?.openbotDeploymentTools,
+    );
     // The deployment-run list has to be the narrowed set too, or the Bot is told this side executes
     // a tool it was never offered.
     expect(run?.forwardedProps?.openbotDeploymentTools).toContain(

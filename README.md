@@ -1,13 +1,13 @@
 <div align="center">
 
-# OpenBot
+# OwnBot
 
 **AI coworkers you can hand real work to, and actually trust with the access.** Each gets a computer of its own: a real browser with its own logins, its own files, and only the tools you grant. Every action decided before it happens and recorded after.
 
-[**copilotkit.ai/openbot**](https://copilotkit.ai/openbot) · [**Quick start**](#quick-start) · [**Features**](#features) · [**Bring your own agent**](#bring-your-own-agent) · [**Architecture**](#architecture) · [**Docs**](docs/README.md)
+[**Source**](https://github.com/ViniSPRJ/ownbot) · [**Quick start**](#quick-start) · [**Features**](#features) · [**Bring your own agent**](#bring-your-own-agent) · [**Architecture**](#architecture) · [**Docs**](docs/README.md)
 
-[![CI](https://github.com/CopilotKit/openbot/actions/workflows/ci.yml/badge.svg)](https://github.com/CopilotKit/openbot/actions/workflows/ci.yml)
-[![security](https://github.com/CopilotKit/openbot/actions/workflows/security_zizmor.yml/badge.svg)](https://github.com/CopilotKit/openbot/actions/workflows/security_zizmor.yml)
+[![CI](https://github.com/ViniSPRJ/ownbot/actions/workflows/ci.yml/badge.svg)](https://github.com/ViniSPRJ/ownbot/actions/workflows/ci.yml)
+[![security](https://github.com/ViniSPRJ/ownbot/actions/workflows/security_zizmor.yml/badge.svg)](https://github.com/ViniSPRJ/ownbot/actions/workflows/security_zizmor.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange.svg)
 
@@ -25,11 +25,11 @@ your own machine.
 
 </div>
 
-> **A template, not a product.** OpenBot is meant to be cloned and made your own. There is no hosted version to sign up for, and nothing here is published as a package to depend on: every workspace in this repository is private. You take the repository, replace the example tenant package under `examples/` with your own coworkers, channels and skills, and run it. Everything below describes a starting point, not a finished thing somebody operates for you.
+> **A template, not a product.** OwnBot is meant to be cloned and made your own. There is no hosted version to sign up for, and nothing here is published as a package to depend on: every workspace in this repository is private. You take the repository, replace the example tenant package under `examples/` with your own coworkers, channels and skills, and run it. Everything below describes a starting point, not a finished thing somebody operates for you.
 
-> **Alpha, and under active development.** OpenBot is early. Expect rough edges and bugs, and expect things to move. Issues and pull requests are welcome.
+> **Alpha, and under active development.** OwnBot is early. Expect rough edges and bugs, and expect things to move. Issues and pull requests are welcome.
 
-> **Runs on your machine.** Everything below is written for a laptop. `.env.example` carries `OPENBOT_SINGLE_USER=true`, which admits every request as one administrator, so a fresh clone reaches the product without registering an OAuth client first. [Sign-in](#sign-in) turns that off, and is required before anybody else can reach the deployment.
+> **Runs on your machine.** Everything below is written for a laptop. `.env.example` carries `OWNBOT_SINGLE_USER=true`, which admits every request as one administrator, so a fresh clone reaches the product without registering an OAuth client first. [Sign-in](#sign-in) turns that off, and is required before anybody else can reach the deployment.
 
 ## What it is
 
@@ -39,11 +39,11 @@ Three coworkers ship in the example package, and they are configuration rather t
 
 Anything a Bot does to a computer, a file, an MCP server or a component goes through one gateway that decides and records it. That is the difference between an agent that can use your tools and an agent you can let near them.
 
-More at [copilotkit.ai/openbot](https://copilotkit.ai/openbot).
+OwnBot is maintained from the [CopilotKit OpenBot upstream](https://copilotkit.ai/openbot). Upstream links and historical records retain their original names.
 
 ## Built on AG-UI
 
-A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, so OpenBot is not tied to a framework and neither are you. Agents built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand all arrive the same way, and the governance rides the protocol rather than the framework.
+A Bot is any endpoint speaking [AG-UI](https://github.com/ag-ui-protocol/ag-ui), the open protocol for agent-to-user interaction, so OwnBot is not tied to a framework and neither are you. Agents built with LangGraph, Mastra, CrewAI, Pydantic AI, Google ADK or written by hand all arrive the same way, and the governance rides the protocol rather than the framework.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
@@ -109,9 +109,9 @@ One image carries the app, the API, the browser the Bots drive, and optionally P
 `.env`, no Kubernetes.
 
 ```sh
-docker build -t openbot .
+docker build -t ownbot .
 docker run -p 3001:3001 --env-file .env \
-  -e EMBEDDED_POSTGRES=on -v openbot-data:/var/lib/postgresql openbot
+  -e EMBEDDED_POSTGRES=on -v ownbot-data:/var/lib/postgresql ownbot
 ```
 
 Leave `EMBEDDED_POSTGRES` off and set `DATABASE_URL` to point at a database you already run.
@@ -208,7 +208,7 @@ Settings worth knowing:
 
 | Variable                             | Use                                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------- |
-| `OPENBOT_SINGLE_USER`                | Admits every request as one administrator. Required when no identity provider is configured; `.env.example` ships it on. |
+| `OWNBOT_SINGLE_USER`                | Admits every request as one administrator. Required when no identity provider is configured; `.env.example` ships it on. |
 | `OPENAI_BASE_URL`                    | Answers the OpenAI-shaped calls from somewhere else: a gateway, a proxy.  |
 | `ANTHROPIC_BASE_URL`, `GOOGLE_GENERATIVE_AI_BASE_URL` | The same, for those two APIs.            |
 | `COMPUTER_TOKEN`                     | Secret every Bot computer request must present. `start.sh` sets one.      |
@@ -248,7 +248,7 @@ More detail: [docs/architecture.md](docs/architecture.md).
 
 ## Sign in
 
-`.env.example` ships `OPENBOT_SINGLE_USER=true`, which is one administrator and no sign-in: how a
+`.env.example` ships `OWNBOT_SINGLE_USER=true`, which is one administrator and no sign-in: how a
 fresh clone reaches the product without registering an OAuth client first. Delete that line and
 configure **any one** of Google, Microsoft or Okta before anybody else can reach the deployment.
 With neither, it refuses to start rather than admitting everybody as an administrator. Configure
@@ -292,7 +292,7 @@ provider's discovery document listed in `TRUSTED_ORIGINS`, not only the issuer.
   the next time that person signs in.
 - `MICROSOFT_OAUTH_TENANT_ID` defaults to `common`, which admits personal Microsoft accounts as well
   as work ones. On a multi-tenant app registration Entra may send no `email` claim at all, so
-  OpenBot falls back to `upn` and then `preferred_username`. If none of the three arrives the
+  OwnBot falls back to `upn` and then `preferred_username`. If none of the three arrives the
   sign-in is refused and the reason is logged: add `email` as an optional claim, or use your
   directory GUID here.
 - A half-configured provider is refused at start-up rather than at somebody's first attempt to sign
@@ -333,7 +333,7 @@ Use `bash scripts/start.sh` for the whole stack. Use `bun run dev` only when you
 
 ## Documentation
 
-- [copilotkit.ai/openbot](https://copilotkit.ai/openbot)
+- [CopilotKit OpenBot upstream](https://copilotkit.ai/openbot)
 - [docs/README.md](docs/README.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/configuration.md](docs/configuration.md)

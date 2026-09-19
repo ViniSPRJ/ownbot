@@ -1,0 +1,55 @@
+# GKE. Cloud SQL, Workload Identity, Secret Manager through external-secrets, Gateway API.
+config:
+  initialAdminEmails: admin@example.com
+  intelligence:
+    apiUrl: https://api.intelligence.copilotkit.ai
+    gatewayWsUrl: wss://realtime.intelligence.copilotkit.ai
+  auth:
+    google:
+      clientId: example.apps.googleusercontent.com
+  publicUrl: https://ownbot.example.com
+postgresql:
+  enabled: false
+database:
+  existingSecret: ownbot-database
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: ownbot@example-project.iam.gserviceaccount.com
+externalSecrets:
+  enabled: true
+  secretStoreRef:
+    name: gcp-secret-manager
+  data:
+    - secretKey: key-encryption-key
+      remoteRef:
+        key: ownbot-key-encryption-key
+    # Sessions are signed with this. The server refuses to start when sign-in is configured and it
+    # is missing, so every provider store has to carry it.
+    - secretKey: better-auth-secret
+      remoteRef:
+        key: ownbot-better-auth-secret
+    - secretKey: intelligence-api-key
+      remoteRef:
+        key: ownbot-intelligence-api-key
+    - secretKey: google-client-secret
+      remoteRef:
+        key: ownbot/google-client-secret
+    - secretKey: computer-token
+      remoteRef:
+        key: ownbot/computer-token
+    - secretKey: license-token
+      remoteRef:
+        key: ownbot-license-token
+# Gateway API rather than an Ingress, which the same chart supports without a second code path.
+ingress:
+  enabled: false
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: ownbot-gateway
+      namespace: gateway-system
+  hostnames:
+    - ownbot.example.com
+
+computers:
+  mode: shared

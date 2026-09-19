@@ -1,6 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { singleUserEnabled } from "../src/auth/dev-actor";
 
+test("a disabled OwnBot login bypass cannot be re-enabled by either legacy flag", () => {
+  expect(singleUserEnabled({ OWNBOT_SINGLE_USER: "true" }, false)).toBe(true);
+  for (const value of ["false", ""]) {
+    expect(() => singleUserEnabled({
+      OWNBOT_SINGLE_USER: value,
+      OPENBOT_SINGLE_USER: "true",
+      OPENBOT_DEV_NO_AUTH: "true",
+    }, false)).toThrow("OWNBOT_SINGLE_USER");
+  }
+});
+
 /**
  * Whether this deployment lets every visitor in as one administrator.
  *

@@ -1,17 +1,17 @@
 # Deployment
 
-OpenBot ships as one container. It carries the app, the API that serves it, and the browser the Bots
+OwnBot ships as one container. It carries the app, the API that serves it, and the browser the Bots
 drive, and it can carry its own PostgreSQL as well. It does what it does on a laptop.
 
 ```sh
-docker build -t openbot .
+docker build -t ownbot .
 
 # A database you already run.
-docker run -p 3001:3001 --env-file .env openbot
+docker run -p 3001:3001 --env-file .env ownbot
 
 # Or one inside the container. Nothing else to provision.
 docker run -p 3001:3001 --env-file .env \
-  -e EMBEDDED_POSTGRES=on -v openbot-data:/var/lib/postgresql openbot
+  -e EMBEDDED_POSTGRES=on -v ownbot-data:/var/lib/postgresql ownbot
 ```
 
 ## What is in the image, and what is not
@@ -98,7 +98,7 @@ reachable from this container. Unset it if your `.env` still has the laptop defa
 
 **Authentication is required.** With no identity provider configured, the deployment refuses to start,
 because a public URL where every visitor is an administrator fails silently: it looks like it works.
-Configure Google, Microsoft or Okta, or set `OPENBOT_SINGLE_USER=true` to say you meant an open
+Configure Google, Microsoft or Okta, or set `OWNBOT_SINGLE_USER=true` to say you meant an open
 deployment. `NODE_ENV` does not affect this.
 
 **Put TLS in front of it.** Not only for the cookies. A page served from `http://<address>` is not a
@@ -116,7 +116,7 @@ would race, and a failed migration should stop a deploy rather than leave a half
 serving traffic.
 
 ```sh
-docker run --rm --env-file .env openbot \
+docker run --rm --env-file .env ownbot \
   sh -c "cd /app/server && bun x drizzle-kit migrate --config=drizzle.config.ts"
 ```
 
@@ -143,7 +143,7 @@ No shared-memory configuration is needed or possible.
 **Kubernetes.** Everything above describes one container run by hand. A cluster is the other shape,
 and it is the only one that gives a Bot a computer of its own, runs the routines schedule without
 something outside the container, and scales the API past a single replica. That is the Helm chart:
-[charts/openbot/README.md](../charts/openbot/README.md), which covers EKS, GKE, AKS and a plain
+[charts/ownbot/README.md](../charts/ownbot/README.md), which covers EKS, GKE, AKS and a plain
 self-hosted cluster from the same templates.
 
 **Azure Container Apps.** Managed ingress with TLS and custom domains. Note the **240-second request

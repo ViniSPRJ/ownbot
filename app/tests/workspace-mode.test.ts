@@ -25,7 +25,7 @@ describe("placing a conversation in one half of the roster", () => {
      * The regression this file exists for. Placement used to be derived from the runtime: ACP meant a
      * CLI, a CLI meant a coding agent. On the deployment this shipped to, the operator maps all ten
      * coworkers to Codex, Claude and Grok, so every channel matched, Cowork took the entire roster and
-     * Ownbot went empty. With no marks, every conversation is in Ownbot no matter how it runs.
+     * OwnBot went empty. With no marks, every conversation is in OwnBot no matter how it runs.
      */
     const everything = [
       channel("coord"),
@@ -77,7 +77,7 @@ describe("what the switch offers", () => {
       hasAcpCoworker: false,
     });
     expect(view.available).toBe(false);
-    // And somebody left in Cowork is shown Ownbot rather than a cockpit a reload cannot leave.
+    // And somebody left in Cowork is shown OwnBot rather than a cockpit a reload cannot leave.
     expect(view.mode).toBe("ownbot");
   });
 
@@ -116,7 +116,7 @@ describe("narrowing the roster to the mode in force", () => {
   });
 
   test("filtering nothing out returns the same array, not a copy of it", () => {
-    // A fresh array identity restages every animated row, and Ownbot holding everything is the default.
+    // A fresh array identity restages every animated row, and OwnBot holding everything is the default.
     const channels = [channel("codeexec"), channel("pi")];
     expect(channelsForMode("cowork", channels, coding("codeexec", "pi"))).toBe(
       channels,
@@ -148,14 +148,32 @@ describe("remembering the marks and the mode locally", () => {
     });
   });
 
-  test("a stored mode comes back, and anything else reads as Ownbot", () => {
+  test("a stored mode comes back, and anything else reads as OwnBot", () => {
     const store = new Map<string, string>([
-      ["openbot.workspace-mode", "cowork"],
+      ["ownbot.workspace-mode", "cowork"],
     ]);
     stub({ getItem: (key: string) => store.get(key) ?? null });
     expect(readWorkspaceMode()).toBe("cowork");
-    store.set("openbot.workspace-mode", "cockpit");
+    store.set("ownbot.workspace-mode", "cockpit");
     expect(readWorkspaceMode()).toBe("ownbot");
+  });
+
+  test("legacy coworker grouping and mode survive while new writes take precedence", () => {
+    const store = new Map<string, string>([
+      ["openbot.workspace-mode", "cowork"],
+      ["openbot.cowork-coworkers", '["codeexec"]'],
+    ]);
+    stub({
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => { store.set(key, value); },
+    });
+    expect(readWorkspaceMode()).toBe("cowork");
+    expect([...readCodingCoworkers()]).toEqual(["codeexec"]);
+    writeWorkspaceMode("ownbot");
+    writeCodingCoworkers(new Set());
+    expect(readWorkspaceMode()).toBe("ownbot");
+    expect([...readCodingCoworkers()]).toEqual([]);
+    expect(store.get("openbot.cowork-coworkers")).toBe('["codeexec"]');
   });
 
   test("the marks survive a reload, and junk reads as no marks", () => {
@@ -169,11 +187,11 @@ describe("remembering the marks and the mode locally", () => {
     writeCodingCoworkers(coding("codeexec", "pi"));
     expect([...readCodingCoworkers()].sort()).toEqual(["codeexec", "pi"]);
     // Not an array, an array of the wrong thing, and not JSON at all: none of them invent a mark.
-    store.set("openbot.cowork-coworkers", '{"codeexec":true}');
+    store.set("ownbot.cowork-coworkers", '{"codeexec":true}');
     expect([...readCodingCoworkers()]).toEqual([]);
-    store.set("openbot.cowork-coworkers", "[1,2,null]");
+    store.set("ownbot.cowork-coworkers", "[1,2,null]");
     expect([...readCodingCoworkers()]).toEqual([]);
-    store.set("openbot.cowork-coworkers", "not json");
+    store.set("ownbot.cowork-coworkers", "not json");
     expect([...readCodingCoworkers()]).toEqual([]);
   });
 

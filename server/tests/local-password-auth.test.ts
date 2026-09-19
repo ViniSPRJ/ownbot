@@ -8,7 +8,7 @@ const environment = {
   DATABASE_URL: "postgres://test:test@localhost/test", KEY_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   INTELLIGENCE_API_URL: "http://localhost:7100", INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103", INTELLIGENCE_API_KEY: "test-key", COPILOTKIT_LICENSE_TOKEN: "test-token",
   OPENBOT_RUNTIME_MODE: "local", OPENBOT_SINGLE_USER: "true", OPENBOT_LOCAL_PASSWORD_AUTH: "true",
-  BETTER_AUTH_SECRET: "a".repeat(40), BETTER_AUTH_URL: "https://openbot.example.test",
+  BETTER_AUTH_SECRET: "a".repeat(40), BETTER_AUTH_URL: "https://ownbot.example.test",
   INITIAL_ADMIN_EMAILS: "dev@openbot.local", OPENBOT_LOCAL_ENROLLMENT_TOKEN_HASH: hash,
 };
 describe("local password enrollment", () => {

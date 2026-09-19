@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
@@ -39,10 +40,10 @@ const schema = z
   .strict();
 export type AcpProfile = z.infer<typeof profile> & { profileId: string };
 function readConfig() {
-  const file = process.env.OPENBOT_ACP_CONFIG;
+  const file = ownbotEnv(process.env, "OWNBOT_ACP_CONFIG");
   if (!file) return;
   if (!isAbsolute(file))
-    throw new Error("OPENBOT_ACP_CONFIG must be an absolute path");
+    throw new Error("OWNBOT_ACP_CONFIG must be an absolute path");
   const source = readFileSync(file, "utf8");
   return { file, source, config: schema.parse(JSON.parse(source)) };
 }

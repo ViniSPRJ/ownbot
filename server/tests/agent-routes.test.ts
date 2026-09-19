@@ -19,7 +19,7 @@ import { testEnvironment } from "./support/environment";
 
 const actor = {
   id: "user-1",
-  email: "member@openbot.test",
+  email: "member@ownbot.test",
   role: "user",
 } as const;
 
@@ -230,7 +230,7 @@ describe("agent lifecycle routes", () => {
     ];
 
     for (const [path, init] of requests) {
-      const response = await app.request(`http://openbot.test${path}`, init);
+      const response = await app.request(`http://ownbot.test${path}`, init);
       expect(response.status).toBe(401);
     }
     expect(store.calls).toEqual([]);
@@ -247,7 +247,7 @@ describe("agent lifecycle routes", () => {
       "?hidden=1",
       "?hidden=true",
     ]) {
-      expect((await app.request(`http://openbot.test/${query}`)).status).toBe(
+      expect((await app.request(`http://ownbot.test/${query}`)).status).toBe(
         200,
       );
     }
@@ -265,31 +265,31 @@ describe("agent lifecycle routes", () => {
     const store = fakeStore();
     const app = appFor(store);
 
-    const list = await app.request("http://openbot.test/");
-    const detail = await app.request("http://openbot.test/agent-1");
-    const created = await app.request("http://openbot.test/", {
+    const list = await app.request("http://ownbot.test/");
+    const detail = await app.request("http://ownbot.test/agent-1");
+    const created = await app.request("http://ownbot.test/", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
-    const updated = await app.request("http://openbot.test/agent-1", {
+    const updated = await app.request("http://ownbot.test/agent-1", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(validInput),
     });
     const duplicated = await app.request(
-      "http://openbot.test/agent-1/duplicate",
+      "http://ownbot.test/agent-1/duplicate",
       {
         method: "POST",
       },
     );
-    const hidden = await app.request("http://openbot.test/agent-1/hide", {
+    const hidden = await app.request("http://ownbot.test/agent-1/hide", {
       method: "POST",
     });
-    const unhidden = await app.request("http://openbot.test/agent-1/unhide", {
+    const unhidden = await app.request("http://ownbot.test/agent-1/unhide", {
       method: "POST",
     });
-    const deleted = await app.request("http://openbot.test/agent-1", {
+    const deleted = await app.request("http://ownbot.test/agent-1", {
       method: "DELETE",
     });
 
@@ -329,7 +329,7 @@ describe("agent lifecycle routes", () => {
       },
     });
 
-    const response = await appFor(store).request("http://openbot.test/");
+    const response = await appFor(store).request("http://ownbot.test/");
 
     expect(await json(response)).toEqual({
       agents: [
@@ -382,7 +382,7 @@ describe("agent lifecycle routes", () => {
   test("separates ownership from permission for an administrator", async () => {
     const administrator: AuthenticatedActor = {
       id: "admin-1",
-      email: "admin@openbot.test",
+      email: "admin@ownbot.test",
       role: "admin",
     };
     const requireAdministrator: MiddlewareHandler<{
@@ -401,7 +401,7 @@ describe("agent lifecycle routes", () => {
     });
 
     const body = (await json(
-      await appFor(store, requireAdministrator).request("http://openbot.test/"),
+      await appFor(store, requireAdministrator).request("http://ownbot.test/"),
     )) as { agents: { id: string; canManage: boolean; mine: boolean }[] };
 
     // An administrator may manage everybody's coworkers but only created their own. A roster that
@@ -433,7 +433,7 @@ describe("agent lifecycle routes", () => {
       ["/", "POST"],
       ["/agent-1", "PATCH"],
     ] as const) {
-      const response = await app.request(`http://openbot.test${path}`, {
+      const response = await app.request(`http://ownbot.test${path}`, {
         method,
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
@@ -458,12 +458,12 @@ describe("agent lifecycle routes", () => {
   ])("requires a valid full JSON object for %s %s", async (method, path) => {
     const store = fakeStore();
     const app = appFor(store);
-    const malformed = await app.request(`http://openbot.test${path}`, {
+    const malformed = await app.request(`http://ownbot.test${path}`, {
       method,
       headers: { "content-type": "application/json" },
       body: "{",
     });
-    const partial = await app.request(`http://openbot.test${path}`, {
+    const partial = await app.request(`http://ownbot.test${path}`, {
       method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "Only a name" }),
@@ -483,7 +483,7 @@ describe("agent lifecycle routes", () => {
   test("returns 404 when get returns null", async () => {
     const store = fakeStore({ get: async () => null });
 
-    const response = await appFor(store).request("http://openbot.test/missing");
+    const response = await appFor(store).request("http://ownbot.test/missing");
 
     expect(response.status).toBe(404);
     expect(await json(response)).toEqual({ error: "Agent not found." });
@@ -509,7 +509,7 @@ describe("agent lifecycle routes", () => {
     });
 
     const response = await appFor(store).request(
-      "http://openbot.test/agent-1",
+      "http://ownbot.test/agent-1",
       {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -533,7 +533,7 @@ describe("agent lifecycle routes", () => {
     );
 
     const response = await app.request(
-      "http://openbot.test/agent-1/duplicate",
+      "http://ownbot.test/agent-1/duplicate",
       {
         method: "POST",
       },
@@ -577,7 +577,7 @@ describe("agent route composition", () => {
       store,
     );
 
-    const unauthenticated = await app.request("http://openbot.test/api/agents");
+    const unauthenticated = await app.request("http://ownbot.test/api/agents");
     expect(unauthenticated.status).toBe(401);
     expect(store.calls).toEqual([]);
 
@@ -585,11 +585,11 @@ describe("agent route composition", () => {
       user: {
         id: actor.id,
         email: actor.email,
-        name: "OpenBot Member",
+        name: "OwnBot Member",
         image: "https://example.test/member.png",
       },
     };
-    const authenticated = await app.request("http://openbot.test/api/agents");
+    const authenticated = await app.request("http://ownbot.test/api/agents");
 
     expect(authenticated.status).toBe(200);
     expect(store.calls).toEqual([
@@ -597,7 +597,7 @@ describe("agent route composition", () => {
         "list",
         {
           ...actor,
-          name: "OpenBot Member",
+          name: "OwnBot Member",
           image: "https://example.test/member.png",
         },
         false,
@@ -608,7 +608,7 @@ describe("agent route composition", () => {
   test("leaves agent routes unmounted when createApp has no store", async () => {
     const app = createApp(loadConfig(testEnvironment()));
 
-    const response = await app.request("http://openbot.test/api/agents");
+    const response = await app.request("http://ownbot.test/api/agents");
 
     expect(response.status).toBe(404);
   });
@@ -622,7 +622,7 @@ describe("agent route composition", () => {
 describe("which Bots a Bot may hand work to", () => {
   const admin = {
     id: "admin-1",
-    email: "a@openbot.test",
+    email: "a@ownbot.test",
     role: "admin",
   } as const;
 

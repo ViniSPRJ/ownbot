@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
@@ -56,7 +57,7 @@ export function onyxBaseUrl(raw: string): string {
 }
 
 function ownerFor(actorId: string): OnyxOwner {
-  const path = process.env.OPENBOT_ONYX_CONFIG;
+  const path = ownbotEnv(process.env, "OWNBOT_ONYX_CONFIG");
   if (!path || !actorId) throw new Error(REFUSED);
   const config = configSchema.parse(JSON.parse(privateFile(path)));
   const owner = config.owners[actorId];

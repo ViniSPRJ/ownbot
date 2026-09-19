@@ -1,3 +1,5 @@
+name: ${COMPOSE_PROJECT_NAME:-ownbot}
+
 services:
   postgres:
     restart: unless-stopped
@@ -58,7 +60,7 @@ services:
       dockerfile: agent-computer/Dockerfile
     # Tagged explicitly because the supervisor starts one computer per Bot from this image by name,
     # and a Compose-derived name would change with the project.
-    image: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
+    image: ${COMPUTER_IMAGE:-ownbot-agent-computer:latest}
     ports:
       # Loopback only. This process drives a browser holding real logins; COMPUTER_TOKEN is the
       # request control, and loopback keeps the surface off routed networks.
@@ -174,7 +176,7 @@ services:
       SUPERVISOR_TOKEN: ${SUPERVISOR_TOKEN:-openbot-dev-supervisor-token}
       # Handed to every computer this creates, so the server and the computers share one secret.
       COMPUTER_TOKEN: ${COMPUTER_TOKEN:-openbot-dev-computer-token}
-      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-openbot-agent-computer:latest}
+      COMPUTER_IMAGE: ${COMPUTER_IMAGE:-ownbot-agent-computer:latest}
       # Which deployment the computers it creates belong to, so two stacks on one Docker host never
       # derive the same container and volume names for the same Bot.
       COMPUTER_NAMESPACE: ${COMPUTER_NAMESPACE:-openbot}
@@ -190,7 +192,7 @@ services:
       SPIRE_SOCKET: /tmp/spire-server/private/api.sock
       SPIRE_TRUST_DOMAIN: openbot.local
       SPIRE_AGENT_ID: spiffe://openbot.local/spire/agent/join_token/${SPIRE_JOIN_TOKEN:-openbot-dev-token}
-      SPIRE_AGENT_SOCKET_VOLUME: ${COMPOSE_PROJECT_NAME:-openbot}_spire-agent-socket
+      SPIRE_AGENT_SOCKET_VOLUME: ${COMPOSE_PROJECT_NAME:-ownbot}_spire-agent-socket
     ports:
       # For the server on the host to ask for a Bot's computer.
       #
@@ -270,7 +272,7 @@ services:
       BOT_REASONING_EFFORT: ${BOT_REASONING_EFFORT:-}
       # Where this Bot runs a tool: back through the deployment that granted it, never at the vendor.
       # `host.docker.internal` because the API server runs on the host, not in this network.
-      OPENBOT_TOOL_URL: ${OPENBOT_TOOL_URL:-http://host.docker.internal:3001/api/agent-tools/call}
+      OWNBOT_TOOL_URL: ${OWNBOT_TOOL_URL-${OPENBOT_TOOL_URL:-http://host.docker.internal:3001/api/agent-tools/call}}
       AGENT_TOOL_TOKEN: ${AGENT_TOOL_TOKEN:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"

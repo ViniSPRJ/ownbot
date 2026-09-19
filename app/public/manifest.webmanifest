@@ -1,7 +1,7 @@
 {
-  "name": "ownbot",
-  "short_name": "ownbot",
-  "description": "ownbot no seu navegador: avisos de rotinas e coworker, com o conteúdo dentro do ownbot.",
+  "name": "OwnBot",
+  "short_name": "OwnBot",
+  "description": "OwnBot no seu navegador: avisos de rotinas e coworker, com o conteúdo dentro do OwnBot.",
   "id": "/",
   "start_url": "/",
   "scope": "/",

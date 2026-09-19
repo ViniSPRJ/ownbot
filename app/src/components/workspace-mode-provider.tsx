@@ -11,7 +11,7 @@ import {
 type WorkspaceModeContextValue = {
   mode: WorkspaceMode;
   setMode: (mode: WorkspaceMode) => void;
-  /** The coworkers this person treats as coding agents. Empty means Ownbot holds everything. */
+  /** The coworkers this person treats as coding agents. Empty means OwnBot holds everything. */
   coding: ReadonlySet<string>;
   toggleCoding: (agentId: string) => void;
 };

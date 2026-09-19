@@ -31,7 +31,7 @@ import {
 import { createWorkQueue } from "../../server/src/work/queue";
 import { workerStatus } from "./status";
 
-console.info(`OpenBot worker status: ${workerStatus().status}`);
+console.info(`OwnBot worker status: ${workerStatus().status}`);
 
 /*
  * Refused up front, for the reason `fire-routines.ts` refuses up front: a loop that started anyway

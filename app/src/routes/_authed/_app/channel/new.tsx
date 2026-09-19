@@ -142,7 +142,7 @@ function RouteComponent() {
             /*
              * Follow the conversation into whichever half of the roster it landed in.
              *
-             * Starting one with a coding coworker from Ownbot filed it in Cowork and left the person
+             * Starting one with a coding coworker from OwnBot filed it in Cowork and left the person
              * looking at a roster it was not in — the conversation they had just created, missing. Moving
              * the mode is the honest resolution: the recipient was a deliberate choice, and the roster is
              * a view over it rather than a constraint on it. Nothing is refused at the picker for the

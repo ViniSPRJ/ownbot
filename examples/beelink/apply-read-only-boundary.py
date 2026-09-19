@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Apply audited policy/grants via authenticated API; never invoke a coworker/tool.
-Use a private OPENBOT_ADMIN_COOKIE_FILE, not a cookie on the command line.
+Use a private OWNBOT_ADMIN_COOKIE_FILE, not a cookie on the command line.
 Run while configuration has a single writer. Policy is saved before grants.
 """
 import argparse
@@ -22,7 +22,7 @@ def main():
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--policy-only', action='store_true', help='Apply before package startup exposes coworkers')
     args = parser.parse_args()
-    cookie_path = Path(os.environ['OPENBOT_ADMIN_COOKIE_FILE'])
+    cookie_path = Path(os.environ.get('OWNBOT_ADMIN_COOKIE_FILE', os.environ.get('OPENBOT_ADMIN_COOKIE_FILE', '')))
     if cookie_path.stat().st_mode & 0o077:
         raise ValueError('Cookie file must be private (0600).')
     cookie = cookie_path.read_text().strip()

@@ -123,8 +123,8 @@ export function createSharedComputerProvider(
 
   function headers(botId?: string): Record<string, string> {
     return {
-      ...(botId ? { "x-openbot-bot-id": botId } : {}),
-      ...(options.token ? { "x-openbot-computer-token": options.token } : {}),
+      ...(botId ? { "x-ownbot-bot-id": botId, "x-openbot-bot-id": botId } : {}),
+      ...(options.token ? { "x-ownbot-computer-token": options.token, "x-openbot-computer-token": options.token } : {}),
     };
   }
 

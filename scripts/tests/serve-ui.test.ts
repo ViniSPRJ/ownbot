@@ -10,7 +10,7 @@ describe("production UI server (local fixtures only)", () => {
   let ui: Awaited<ReturnType<typeof createUiServer>>;
   let stub: ReturnType<typeof Bun.serve>;
   beforeAll(async () => {
-    temp = await mkdtemp(path.join(tmpdir(), "openbot-ui-test-"));
+    temp = await mkdtemp(path.join(tmpdir(), "ownbot-ui-test-"));
     await mkdir(path.join(temp, "dist/assets"), { recursive: true });
     await writeFile(
       path.join(temp, "dist/index.html"),

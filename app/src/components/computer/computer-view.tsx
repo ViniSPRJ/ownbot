@@ -548,13 +548,13 @@ export function ComputerView({
               if (state) setControl(state);
             }}
           >
-            <label className="block" htmlFor="openbot-secret">
+            <label className="block" htmlFor="ownbot-secret">
               <span className="font-medium">The assistant needs </span>
               <span>{control.secretWanted}</span>
             </label>
             <div className="mt-1.5 flex gap-2">
               <input
-                id="openbot-secret"
+                id="ownbot-secret"
                 type="password"
                 value={secret}
                 onChange={(event) => setSecret(event.target.value)}

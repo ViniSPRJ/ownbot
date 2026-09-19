@@ -1,5 +1,5 @@
 [Unit]
-Description=Read-only FX receipt projection for Ownbot
+Description=Read-only FX receipt projection for OwnBot
 
 [Service]
 Type=oneshot

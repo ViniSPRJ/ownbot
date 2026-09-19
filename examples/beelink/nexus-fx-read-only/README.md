@@ -1,7 +1,7 @@
 # Nexus FX: read-only receipt snapshot
 
 This package contains an exporter and SSH reader; it is not installed by adding an
-Ownbot tool grant. The Ownbot catalogue contract is vendor `nexus-fx`, tool `status`,
+OwnBot tool grant. The OwnBot catalogue contract is vendor `nexus-fx`, tool `status`,
 arguments `{}`. Its transport runs **exactly** `ownbot-fx-status` over authenticated
 Tailnet SSH as `ownbot-fx-reader`. The server-side reader rejects any other command.
 
@@ -12,7 +12,7 @@ The service reads these fixed files, without importing or calling executor code:
 - `/var/lib/tch-isolated-fx-decisions/latest/codex-fx/{EURUSD,GBPUSD,USDCAD,USDCHF,USDJPY}.json`
 - `/var/lib/tch-carrier-state/fxpro/{EURUSD,GBPUSD,USDCAD,USDCHF,USDJPY}/quote.json`
 
-Root needs to read the existing mode-0600 files. Ownbot receives neither root
+Root needs to read the existing mode-0600 files. OwnBot receives neither root
 access nor these files: the exporter writes one redacted mode-0640 snapshot owned
 by root and group `ownbot-fx-reader`. The reader account can read only this snapshot
 and has no sudo, executor, broker, decision-receiver or source-file privileges.
@@ -116,7 +116,7 @@ SSH configuration and assume it governs Tailscale SSH.
    succeeds and `id`, empty command, separators, extra path arguments, SFTP and
    `submit_fx_decision` are rejected by the fixed reader. No broker/order endpoint
    is called by these transport refusal tests.
-7. Bind only the authorized Ownbot owner through `OPENBOT_NEXUS_FX_CONFIG`.
+7. Bind only the authorized OwnBot owner through `OWNBOT_NEXUS_FX_CONFIG`.
    Example structure (all referenced files private, absolute, mode 0600):
 
    ```json
@@ -129,11 +129,11 @@ SSH configuration and assume it governs Tailscale SSH.
 Provisioned on 2026-09-07: new Nexus services and snapshot, plus Beelink private
 config `/home/viniciuspinho/ownbot-acp-runtime/nexus-fx-owners.json`. Rollback manifest
 is `/opt/backups/ownbot-fx-readonly-20260907T210134Z/new-resources.json` on Nexus.
-Ownbot activation still requires its operator to wire that config and grant the
+OwnBot activation still requires its operator to wire that config and grant the
 read-only tool. Provisioning alone does not claim this application activation.
 
 Rollback: revoke this dedicated reader key, disable only `ownbot-fx-status.timer`
-and `ownbot-fx-status-sshd.service`, and remove the new Ownbot config/grant.
+and `ownbot-fx-status-sshd.service`, and remove the new OwnBot config/grant.
 Preserve all trading services/data and the snapshot until operator review.
 
 ## Tests

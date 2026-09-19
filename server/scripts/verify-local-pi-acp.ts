@@ -2,6 +2,7 @@
  * Opt-in ACP + native Pi validation. Proves persisted session and granted-tool
  * roundtrip only. Does not assert model capacity or trading execution.
  */
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -16,7 +17,7 @@ import { AcpPermissionGate } from "../src/acp/permissions";
 import { createToolBridge } from "../src/acp/tool-bridge";
 import { AcpStdioTransport } from "../src/acp/transport";
 
-export const OPT_IN_ENV = "OPENBOT_VERIFY_LOCAL_PI";
+export const OPT_IN_ENV = "OWNBOT_VERIFY_LOCAL_PI";
 export const OPT_IN_VALUE = "1";
 export const TIMEOUT_MS = {
   min: 1_000,
@@ -149,7 +150,7 @@ export function selectCatalogModel(
 }
 
 export function assertOptIn(env: NodeJS.ProcessEnv = process.env): void {
-  if (env[OPT_IN_ENV] !== OPT_IN_VALUE)
+  if (ownbotEnv(env, OPT_IN_ENV) !== OPT_IN_VALUE)
     fail(`Set ${OPT_IN_ENV}=${OPT_IN_VALUE} to run real ACP+Pi validation`);
 }
 

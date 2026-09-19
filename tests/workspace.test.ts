@@ -12,7 +12,7 @@ function packageManifest(path: string) {
   };
 }
 
-describe("OpenBot workspace", () => {
+describe("OwnBot workspace", () => {
   test("defines the app, server, and worker packages", () => {
     const rootManifest = JSON.parse(
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),

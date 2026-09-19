@@ -29,7 +29,7 @@ function signedIn(): MiddlewareHandler<{ Variables: AppVariables }> {
   return async (context, next) => {
     context.set("actor", {
       id: "user-1",
-      email: "person@openbot.test",
+      email: "person@ownbot.test",
       role: "user",
     } as never);
     await next();
@@ -61,7 +61,7 @@ function app(input: {
     signedIn(),
     async () => true,
     {
-      publicUrl: "https://openbot.example",
+      publicUrl: "https://ownbot.example",
       appUrl: "https://app.example",
       encryptionKey: KEY,
       personHasAccess: input.personHasAccess ?? (async () => true),

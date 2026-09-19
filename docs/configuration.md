@@ -1,6 +1,8 @@
 # Configuration
 
-OpenBot is configured with environment variables and a tenant package. The API server validates both at startup.
+OwnBot is configured with environment variables and a tenant package. The API server validates both at startup.
+
+`OWNBOT_*` is the current configuration prefix. Existing `OPENBOT_*` variables remain compatibility aliases when the corresponding `OWNBOT_*` variable is absent; an explicitly set current variable takes precedence, including an empty value. Use the current names in new configurations. Existing persisted accounts and infrastructure resources keep their identities; see [the rename compatibility notes](rename-compatibility.md).
 
 ## Environment setup
 
@@ -39,7 +41,7 @@ at `agent-langgraph` on a laptop.
 | Variable             | Default                            | Meaning                                                             |
 | -------------------- | ---------------------------------- | ------------------------------------------------------------------- |
 | `PORT`               | `3001`                             | API server port.                                                    |
-| `NODE_ENV`           | unset                              | `production` refuses the example `KEY_ENCRYPTION_KEY`. It does not decide whether sign-in is required; see `OPENBOT_SINGLE_USER`. |
+| `NODE_ENV`           | unset                              | `production` refuses the example `KEY_ENCRYPTION_KEY`. It does not decide whether sign-in is required; see `OWNBOT_SINGLE_USER`. |
 | `TENANT_PACKAGE_DIR` | `../examples/fintech`              | Tenant package directory, resolved from `server/`.                  |
 | `DEPLOYMENT_ID`      | the tenant package's id            | Names this deployment inside a shared Intelligence project.          |
 | `OPENAI_API_KEY`     | unset                              | Default model key for built-in agents and both shipped Bots.        |
@@ -56,9 +58,9 @@ at `agent-langgraph` on a laptop.
 | `APP_DIST_DIR`       | unset                              | Where the built app is, when this process serves it. Set inside the container image; unset in development, where Vite serves the app. |
 | `AUDIT_RETENTION_DAYS` | unset                            | Whole number of days to keep audit rows; older ones are removed. Unset keeps the trail forever. |
 | `WORKER_SHARED_SECRET` | unset; `start.sh` uses a fixed local default | The secret the routines worker presents to fire a due routine. Without it the server refuses every handoff, whether or not a worker exists to send one. |
-| `OPENBOT_GENERATIVE_UI` | unset (capability off)              | `true` or `1` lets a Bot answer with an interface it wrote itself. |
+| `OWNBOT_GENERATIVE_UI` | unset (capability off)              | `true` or `1` lets a Bot answer with an interface it wrote itself. |
 
-**`OPENBOT_GENERATIVE_UI`** turns on generated interfaces. Set it, and a Bot may answer by writing
+**`OWNBOT_GENERATIVE_UI`** turns on generated interfaces. Set it, and a Bot may answer by writing
 the markup, styles and script for an interface and streaming it into the transcript, where it renders
 in a sandboxed iframe. Left unset, a Bot answers in prose and with the components this deployment
 holds, as before.
@@ -168,7 +170,7 @@ Two things are worth knowing before pointing a deployment at any gateway. Not ev
 
 | Variable                     | Meaning                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------- |
-| `OPENBOT_SINGLE_USER`        | One fixed administrator and no sign-in. **Required** when no identity provider is configured, or the deployment refuses to start. Ignored when one is. |
+| `OWNBOT_SINGLE_USER`        | One fixed administrator and no sign-in. **Required** when no identity provider is configured, or the deployment refuses to start. Ignored when one is. |
 | `GOOGLE_OAUTH_CLIENT_ID`     | Google OAuth client id.                                                                |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Google OAuth client secret.                                                            |
 | `MICROSOFT_OAUTH_CLIENT_ID`  | Microsoft Entra ID application id.                                                     |
@@ -181,10 +183,10 @@ Two things are worth knowing before pointing a deployment at any gateway. Not ev
 | `BETTER_AUTH_URL`            | Public API server base URL, where OAuth callbacks return. Required with any provider.  |
 | `TRUSTED_ORIGINS`            | Comma-separated app origins accepted by the API, plus every host in a registered OIDC provider's discovery document. |
 | `INITIAL_ADMIN_EMAILS`       | Comma-separated administrators. **Required** with any provider.                        |
-| `OPENBOT_PUBLIC_URL`         | Public address of this API. Defaults to `BETTER_AUTH_URL`.                              |
-| `OPENBOT_APP_URL`            | Where the browser app is served. Defaults to the first `TRUSTED_ORIGINS` entry.          |
+| `OWNBOT_PUBLIC_URL`         | Public address of this API. Defaults to `BETTER_AUTH_URL`.                              |
+| `OWNBOT_APP_URL`            | Where the browser app is served. Defaults to the first `TRUSTED_ORIGINS` entry.          |
 
-**With no provider at all, `OPENBOT_SINGLE_USER=true` is required.** A deployment that configures
+**With no provider at all, `OWNBOT_SINGLE_USER=true` is required.** A deployment that configures
 nothing to sign anybody in and does not say that was deliberate refuses to start, naming what to
 configure, because a public URL where every visitor is an administrator fails silently. `NODE_ENV`
 does not enter into it. `.env.example` ships the line switched on, so a clone runs with no
@@ -217,11 +219,11 @@ added it. The client secret and any SAML signing material are encrypted at rest 
 The redirect URI to register with each provider is `<BETTER_AUTH_URL>/api/auth/callback/<provider>`,
 where `<provider>` is `google`, `microsoft` or `okta`.
 
-`OPENBOT_PUBLIC_URL` and `OPENBOT_APP_URL` matter only for a connector each person connects their own account to, such as Google Drive.
+`OWNBOT_PUBLIC_URL` and `OWNBOT_APP_URL` matter only for a connector each person connects their own account to, such as Google Drive.
 
-`OPENBOT_PUBLIC_URL` builds the redirect URI the vendor sends somebody back to after they consent, which has to match what an administrator registered with that vendor character for character — so it comes from configuration rather than from the incoming request. Most deployments never set it, because `BETTER_AUTH_URL` is already the same public address. With neither, the Plugins page says the deployment cannot complete a consent flow, and no account can be connected.
+`OWNBOT_PUBLIC_URL` builds the redirect URI the vendor sends somebody back to after they consent, which has to match what an administrator registered with that vendor character for character — so it comes from configuration rather than from the incoming request. Most deployments never set it, because `BETTER_AUTH_URL` is already the same public address. With neither, the Plugins page says the deployment cannot complete a consent flow, and no account can be connected.
 
-`OPENBOT_APP_URL` is where the callback sends the person afterwards. It is a separate setting because the app and the API are separate addresses: locally the app is Vite on `3010` and the API is `3001`, so a relative redirect would land on the API, which serves no pages. A deployment serving both from one origin can leave it unset.
+`OWNBOT_APP_URL` is where the callback sends the person afterwards. It is a separate setting because the app and the API are separate addresses: locally the app is Vite on `3010` and the API is `3001`, so a relative redirect would land on the API, which serves no pages. A deployment serving both from one origin can leave it unset.
 
 ## One Bot handing work to another
 
@@ -308,7 +310,9 @@ carrying it, so two deployments on one Docker host never adopt each other's.
 
 Per-Bot computers belong to the supervisor rather than to Compose, so `docker compose down -v` does
 not remove them: their containers keep running and their profile volumes, which hold whatever the
-Bots are signed in to, survive. Remove them by the label the supervisor sets:
+Bots are signed in to, survive. The `openbot.namespace` label is a retained compatibility identity.
+For an intentional reset only, remove them by the label the supervisor sets (replace the namespace
+value if your deployment overrides it):
 
 ```sh
 docker ps -aq --filter "label=openbot.namespace=openbot" | xargs -r docker rm -f
@@ -351,7 +355,7 @@ from the same `.env` does. Threads are listed per Bot and carry nothing else tha
 conversation came from, so the name goes into every thread id a deployment mints and is how its own
 conversations stay tellable from the other's.
 
-Set `OPENBOT_ONE_COMPUTER_EACH=false` when using `start.sh` to run all Bots against one shared computer.
+Set `OWNBOT_ONE_COMPUTER_EACH=false` when using `start.sh` to run all Bots against one shared computer.
 
 ## Tenant package
 
@@ -371,8 +375,8 @@ examples/fintech/
 
 ```yaml
 tenant:
-  id: openbot
-  product_name: OpenBot
+  id: ownbot
+  product_name: OwnBot
 ```
 
 Optional theme:

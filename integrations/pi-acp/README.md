@@ -90,10 +90,10 @@ real Ownbot MCP bridge, verifying that only Ownbot tools are advertised and that
 a tool call completes. It performs no inference on the user's local models.
 
 Opt-in live ACP + native Pi verification against an operator catalogue. It
-refuses to run unless `OPENBOT_VERIFY_LOCAL_PI=1`:
+refuses to run unless `OWNBOT_VERIFY_LOCAL_PI=1`:
 
 ```
-OPENBOT_VERIFY_LOCAL_PI=1 bun server/scripts/verify-local-pi-acp.ts --config <absolute-config> --model <catalog-id> --timeout-ms 300000
+OWNBOT_VERIFY_LOCAL_PI=1 bun server/scripts/verify-local-pi-acp.ts --config <absolute-config> --model <catalog-id> --timeout-ms 300000
 ```
 
 `--config` is a required absolute operator Pi ACP JSON path. `--model` is a

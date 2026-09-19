@@ -5,6 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
+import { readStoredPreference } from "@/lib/stored-preference";
 import {
   applyDarkTheme,
   parseStoredDarkTheme,
@@ -19,13 +20,11 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [dark, setDark] = useState(() => {
-    try {
-      return parseStoredDarkTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
-    } catch {
-      return parseStoredDarkTheme(null);
-    }
-  });
+  const [dark, setDark] = useState(() =>
+    parseStoredDarkTheme(
+      readStoredPreference(THEME_STORAGE_KEY, "openbot-theme"),
+    ),
+  );
 
   useEffect(() => {
     applyDarkTheme(dark, {

@@ -14,7 +14,7 @@ def main():
     parser.add_argument('--url', default='http://127.0.0.1:3001')
     parser.add_argument('--grant-handoffs', action='store_true')
     args = parser.parse_args()
-    path = Path(os.environ['OPENBOT_ADMIN_COOKIE_FILE'])
+    path = Path(os.environ.get('OWNBOT_ADMIN_COOKIE_FILE', os.environ.get('OPENBOT_ADMIN_COOKIE_FILE', '')))
     if path.stat().st_mode & 0o077:
         raise ValueError('Cookie file must be private (0600).')
     cookie = path.read_text().strip()

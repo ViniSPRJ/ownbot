@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ownbot</title>
+    <title>OwnBot</title>
     <meta name="theme-color" content="#0B0B0F" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="ownbot" />
+    <meta name="apple-mobile-web-app-title" content="OwnBot" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
@@ -17,7 +17,8 @@
       // localStorage throws in some privacy modes; a theme is not worth taking the app down for.
       let dark = true;
       try {
-        dark = window.localStorage.getItem("openbot-theme") !== "light";
+        dark = (window.localStorage.getItem("ownbot-theme") ??
+          window.localStorage.getItem("openbot-theme")) !== "light";
       } catch {}
       document.documentElement.classList.toggle("dark", dark);
       document.documentElement.style.colorScheme = dark ? "dark" : "light";

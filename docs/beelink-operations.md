@@ -22,6 +22,6 @@ See the tenant's READ-ONLY-COWORKERS.md. Apply the gateway deny rule before crea
 
 ## Runtime and maintenance
 
-`OPENBOT_SELF_HOSTED=true` already selects local SQLite history and SSE without requiring Intelligence configuration. Model providers, MCP endpoints and optional UI licensing remain separate dependencies. Set `COPILOTKIT_TELEMETRY_DISABLED=true` and `DO_NOT_TRACK=1` in server/worker environment to disable the installed runtime telemetry client; that does not turn external models or tools into local services.
+`OWNBOT_SELF_HOSTED=true` already selects local SQLite history and SSE without requiring Intelligence configuration. Model providers, MCP endpoints and optional UI licensing remain separate dependencies. Set `COPILOTKIT_TELEMETRY_DISABLED=true` and `DO_NOT_TRACK=1` in server/worker environment to disable the installed runtime telemetry client; that does not turn external models or tools into local services.
 
 Keep upstream as the source reference and the Beelink tenant as the maintained deployment package. Review updates against the deployed commit, run isolated migration/queue/memory tests, build the static UI and take verified Postgres+SQLite backups before changing services. Do not change coordinator ownership or publish a repository as a side effect of an upstream update. A remote private fork and external supervisor integration are separate deployment choices.

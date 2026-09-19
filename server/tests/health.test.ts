@@ -11,7 +11,7 @@ const app = createApp(
 
 describe("health endpoint", () => {
   test("reports the server as healthy", async () => {
-    const response = await app.request("http://openbot.local/health");
+    const response = await app.request("http://ownbot.local/health");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ status: "ok" });
@@ -20,7 +20,7 @@ describe("health endpoint", () => {
 
 describe("runtime capabilities", () => {
   test("reports the Intelligence runtime without exposing configuration secrets", async () => {
-    const response = await app.request("http://openbot.local/api/capabilities");
+    const response = await app.request("http://ownbot.local/api/capabilities");
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -42,7 +42,7 @@ describe("runtime capabilities", () => {
   // The runtime object holds the Intelligence API key and licence token. This endpoint has no
   // authentication, so a projection bug here publishes deployment secrets to anyone who asks.
   test("never serves the Intelligence credentials", async () => {
-    const response = await app.request("http://openbot.local/api/capabilities");
+    const response = await app.request("http://ownbot.local/api/capabilities");
     const body = await response.text();
     const parsed = (await new Response(body).json()) as Record<string, unknown>;
 
@@ -76,7 +76,7 @@ describe("runtime capabilities", () => {
     );
 
     const response = await enabled.request(
-      "http://openbot.local/api/capabilities",
+      "http://ownbot.local/api/capabilities",
     );
 
     expect(response.status).toBe(200);
@@ -87,7 +87,7 @@ describe("runtime capabilities", () => {
 describe("authentication availability", () => {
   test("fails loudly when no identity provider has been configured", async () => {
     const response = await app.request(
-      "http://openbot.local/api/auth/sign-in/social",
+      "http://ownbot.local/api/auth/sign-in/social",
       { method: "POST" },
     );
 
@@ -108,7 +108,7 @@ describe("authentication availability", () => {
     );
 
     const response = await authenticatedApp.request(
-      "http://openbot.local/api/auth/callback/google",
+      "http://ownbot.local/api/auth/callback/google",
     );
 
     expect(response.status).toBe(204);
@@ -128,7 +128,7 @@ describe("authentication availability", () => {
     );
 
     const response = await authenticatedApp.request(
-      "http://openbot.local/api/auth/sign-out",
+      "http://ownbot.local/api/auth/sign-out",
       { method: "POST" },
     );
 
@@ -155,7 +155,7 @@ describe("identity provider registration", () => {
         },
         api: {
           getSession: async () =>
-            signedIn ? { user: { id: "u1", email: "u1@openbot.test" } } : null,
+            signedIn ? { user: { id: "u1", email: "u1@ownbot.test" } } : null,
         },
       } as never,
       { rolesForUser: async () => roles },
@@ -172,7 +172,7 @@ describe("identity provider registration", () => {
   test.each(routes)("refuses %s to a plain user", async (route) => {
     const { app, reached } = appFor(["user"]);
 
-    const response = await app.request(`http://openbot.test${route}`, {
+    const response = await app.request(`http://ownbot.test${route}`, {
       method: "POST",
     });
 
@@ -184,7 +184,7 @@ describe("identity provider registration", () => {
   test.each(routes)("refuses %s to somebody signed out", async (route) => {
     const { app, reached } = appFor([], false);
 
-    const response = await app.request(`http://openbot.test${route}`, {
+    const response = await app.request(`http://ownbot.test${route}`, {
       method: "POST",
     });
 
@@ -195,7 +195,7 @@ describe("identity provider registration", () => {
   test.each(routes)("lets an administrator through to %s", async (route) => {
     const { app, reached } = appFor(["admin"]);
 
-    await app.request(`http://openbot.test${route}`, { method: "POST" });
+    await app.request(`http://ownbot.test${route}`, { method: "POST" });
 
     expect(reached()).toBe(true);
   });
@@ -205,7 +205,7 @@ describe("identity provider registration", () => {
   test("leaves the rest of the auth routes alone", async () => {
     const { app, reached } = appFor([], false);
 
-    await app.request("http://openbot.test/api/auth/sign-in/social", {
+    await app.request("http://ownbot.test/api/auth/sign-in/social", {
       method: "POST",
     });
 

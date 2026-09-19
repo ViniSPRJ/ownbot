@@ -590,7 +590,7 @@ describe("removing an MCP server", () => {
       .insert(users)
       .values({
         id: connectedUserId,
-        email: `${connectedUserId}@openbot.test`,
+        email: `${connectedUserId}@ownbot.test`,
         name: connectedUserId,
         emailVerified: false,
       })
@@ -1060,7 +1060,7 @@ describe("refresh token rotation", () => {
       .insert(users)
       .values({
         id: rotationUserId,
-        email: `${rotationUserId}@openbot.test`,
+        email: `${rotationUserId}@ownbot.test`,
         name: rotationUserId,
         emailVerified: false,
       })
@@ -1412,7 +1412,7 @@ describe("a dynamic client the vendor has evicted", () => {
   /** What registering again gets. No secret: a DCR client proves itself with PKCE. */
   const FRESH: OAuthClient = { clientId: "dyn-2", clientSecret: "" };
   /** Built the way the callback route builds it, so the vendor is offered the real thing. */
-  const REDIRECT_URI = redirectUriFor("https://openbot.test");
+  const REDIRECT_URI = redirectUriFor("https://ownbot.test");
   /** The pinned endpoint, read from the entry rather than copied, so the two cannot drift. */
   const REGISTRATION_URL = (() => {
     const entry = catalogueEntry(dynamicServerId);
@@ -1708,7 +1708,7 @@ describe("a dynamic client the vendor has evicted", () => {
       .insert(users)
       .values({
         id: dynamicUserId,
-        email: `${dynamicUserId}@openbot.test`,
+        email: `${dynamicUserId}@ownbot.test`,
         name: dynamicUserId,
         emailVerified: false,
       })
@@ -1982,7 +1982,7 @@ describe("a dynamic client the vendor has evicted", () => {
     expect(
       await dynamicStore.ensureOAuthClient(
         dynamicServerId,
-        "someone@openbot.test",
+        "someone@ownbot.test",
       ),
     ).toEqual(EVICTED);
     // Nothing was asked of the vendor: this is the path every connect takes once, and it must not
@@ -1999,7 +1999,7 @@ describe("a dynamic client the vendor has evicted", () => {
     expect(
       await dynamicStore.ensureOAuthClient(
         dynamicServerId,
-        "someone@openbot.test",
+        "someone@ownbot.test",
       ),
     ).toEqual(FRESH);
     expect(registrations).toEqual([
@@ -2011,9 +2011,9 @@ describe("a dynamic client the vendor has evicted", () => {
     expect(registered.length).toBe(registeredBefore.length + 1);
     // Whoever pressed Connect, because for a first registration that IS the act that caused it.
     expect(
-      registeredBy(registered, "someone@openbot.test", FRESH.clientId),
+      registeredBy(registered, "someone@ownbot.test", FRESH.clientId),
     ).toBe(
-      registeredBy(registeredBefore, "someone@openbot.test", FRESH.clientId) +
+      registeredBy(registeredBefore, "someone@ownbot.test", FRESH.clientId) +
         1,
     );
   });
@@ -2033,7 +2033,7 @@ describe("a dynamic client the vendor has evicted", () => {
 
     try {
       expect(
-        await dynamicStore.ensureOAuthClient(serverId, "someone@openbot.test"),
+        await dynamicStore.ensureOAuthClient(serverId, "someone@ownbot.test"),
       ).toBeNull();
       expect(registrations).toEqual([]);
     } finally {
@@ -2051,7 +2051,7 @@ describe("a dynamic client the vendor has evicted", () => {
     expect(
       await storeWithNoRedirect.ensureOAuthClient(
         dynamicServerId,
-        "someone@openbot.test",
+        "someone@ownbot.test",
       ),
     ).toBeNull();
     expect(registrations).toEqual([]);
@@ -2096,8 +2096,8 @@ describe("a dynamic client the vendor has evicted", () => {
     };
 
     const [first, second] = await Promise.all([
-      dynamicStore.ensureOAuthClient(dynamicServerId, "one@openbot.test"),
-      dynamicStore.ensureOAuthClient(dynamicServerId, "two@openbot.test"),
+      dynamicStore.ensureOAuthClient(dynamicServerId, "one@ownbot.test"),
+      dynamicStore.ensureOAuthClient(dynamicServerId, "two@ownbot.test"),
     ]);
 
     // Neither raised, and neither got null: both people can be sent to consent.

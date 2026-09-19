@@ -45,7 +45,7 @@ describe("the ids a supervisor will accept", () => {
 
   test("ids that could name somebody else's container are refused", () => {
     for (const id of [
-      "openbot-postgres", // starts plausibly, still only ever becomes <namespace>-computer-*
+      "ownbot-postgres", // starts plausibly, still only ever becomes <namespace>-computer-*
       "../postgres",
       "postgres:latest", // a tag
       "bot id", // whitespace

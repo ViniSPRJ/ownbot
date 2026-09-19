@@ -98,17 +98,17 @@ jobs:
       # Nothing rendered this chart until now, which is how four values files that produce a server
       # unable to start were shipped and stayed shipped. Rendering is the cheap half; the refusals in
       # validation.yaml are the half that catches a missing value before a cluster does.
-      - run: helm dependency build charts/openbot
+      - run: helm dependency build charts/ownbot
       # Structure only. `helm lint` reports a template `fail` as an INFO line and exits 0 even under
       # `--strict`, which was driven and confirmed, so it cannot gate the refusals below. Rendering
       # does: `helm template` exits non-zero on one.
-      - run: helm lint charts/openbot --values charts/openbot/ci/${{ matrix.target }}-values.yaml
+      - run: helm lint charts/ownbot --values charts/ownbot/ci/${{ matrix.target }}-values.yaml
       # A key encryption key is a real 32 bytes rather than a placeholder, because the chart checks
       # its shape. Generated here so no example key is ever a literal in this repository.
       - name: Render
         run: |
-          helm template ci charts/openbot \
-            --values charts/openbot/ci/${{ matrix.target }}-values.yaml \
+          helm template ci charts/ownbot \
+            --values charts/ownbot/ci/${{ matrix.target }}-values.yaml \
             --set-string secrets.keyEncryptionKey="$(openssl rand -base64 32)" \
             --api-versions agents.x-k8s.io/v1beta1/Sandbox \
             --api-versions extensions.agents.x-k8s.io/v1beta1/SandboxTemplate \
@@ -125,8 +125,8 @@ jobs:
           set -uo pipefail
           refuses() {
             local why="$1"; shift
-            if helm template ci charts/openbot \
-                 --values charts/openbot/ci/${{ matrix.target }}-values.yaml \
+            if helm template ci charts/ownbot \
+                 --values charts/ownbot/ci/${{ matrix.target }}-values.yaml \
                  --set-string secrets.keyEncryptionKey="$(openssl rand -base64 32)" \
                  --api-versions agents.x-k8s.io/v1beta1/Sandbox \
                  --api-versions extensions.agents.x-k8s.io/v1beta1/SandboxTemplate \
@@ -139,7 +139,7 @@ jobs:
           # The public example key, which the server will not start with. Only where this chart
           # holds the secret: with a store, the value is not readable at template time, so the
           # refusal is deliberately not armed and asserting it here would be asserting a bug.
-          if ! grep -qE '^ *enabled: true' <(sed -n '/^externalSecrets:/,/^[a-z]/p' charts/openbot/ci/${{ matrix.target }}-values.yaml); then
+          if ! grep -qE '^ *enabled: true' <(sed -n '/^externalSecrets:/,/^[a-z]/p' charts/ownbot/ci/${{ matrix.target }}-values.yaml); then
             refuses "the public example encryption key" \
               --set-string secrets.keyEncryptionKey="$(head -c 32 /dev/zero | base64)"
           else
@@ -161,7 +161,7 @@ jobs:
             --set-string computers.extraEnv[0].value=http://proxy.internal:3128
           # A warm pool nothing claims from. Only meaningful where the target asks for per-Bot
           # computers; on the others the mode is not sandbox and the refusal is not armed.
-          if grep -qE '^ *mode: sandbox' charts/openbot/ci/${{ matrix.target }}-values.yaml; then
+          if grep -qE '^ *mode: sandbox' charts/ownbot/ci/${{ matrix.target }}-values.yaml; then
             refuses "a warm pool no Bot can be handed a computer from" \
               --set computers.sandbox.warmPool.enabled=true
           else
@@ -175,7 +175,7 @@ jobs:
       # whole render, or an empty scalar Kubernetes reads as unset. Both shipped: one was found in
       # review, the other by a live upgrade after the first had been fixed one key over.
       - name: A new values key can be absent
-        run: bun scripts/check-new-values-keys.ts charts/openbot/ci/${{ matrix.target }}-values.yaml
+        run: bun scripts/check-new-values-keys.ts charts/ownbot/ci/${{ matrix.target }}-values.yaml
 
   test:
     name: tests
@@ -295,7 +295,7 @@ jobs:
         with:
           context: .
           load: true
-          tags: openbot:ci
+          tags: ownbot:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Building it says the layers resolve. Running it says the supervision tree comes up and stays
@@ -303,10 +303,10 @@ jobs:
       - name: The image boots and serves
         run: |
           set -euo pipefail
-          # `OPENBOT_SINGLE_USER=true` because this boots a deployment with no identity provider, and
+          # `OWNBOT_SINGLE_USER=true` because this boots a deployment with no identity provider, and
           # the image sets NODE_ENV=production, where that combination refuses to start rather than
           # serve an open deployment. Saying so is the point: the flag is how somebody declares they
-          # meant it. This was `OPENBOT_DEV_NO_AUTH=1` before, which the code never accepted at all,
+          # meant it. This was `OWNBOT_DEV_NO_AUTH=1` before, which the code never accepted at all,
           # since it compares against the exact string "true"; it did nothing and nothing noticed.
           #
           # Placeholders, not secrets. `loadConfig` refuses to start without Intelligence and a
@@ -315,30 +315,30 @@ jobs:
           # boots and serves without needing a licence, which is the part CI cannot have: a licence
           # is bound to the machine it was issued for. Whether Intelligence actually answers is what
           # the smoke journey checks, on a real deployment.
-          docker run -d --name openbot-ci -p 3001:3001 \
+          docker run -d --name ownbot-ci -p 3001:3001 \
             -e EMBEDDED_POSTGRES=on \
             -e KEY_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
             -e TRUSTED_ORIGINS=http://localhost:3001 \
-             -e OPENBOT_SINGLE_USER=true \
+             -e OWNBOT_SINGLE_USER=true \
              -e INTELLIGENCE_API_URL=https://api.intelligence.copilotkit.ai \
             -e INTELLIGENCE_GATEWAY_WS_URL=wss://realtime.intelligence.copilotkit.ai \
             -e INTELLIGENCE_API_KEY=ci-not-a-real-key \
             -e COPILOTKIT_LICENSE_TOKEN=ci-not-a-real-licence \
-            openbot:ci
+            ownbot:ci
           for attempt in $(seq 1 150); do
             if curl -fsS http://localhost:3001/api/capabilities >/dev/null 2>&1; then
               echo "answered after ${attempt}s"
               exit 0
             fi
-            if [ -z "$(docker ps -q -f name=openbot-ci)" ]; then
+            if [ -z "$(docker ps -q -f name=ownbot-ci)" ]; then
               echo "::error::The container exited before it answered."
-              docker logs openbot-ci
+              docker logs ownbot-ci
               exit 1
             fi
             sleep 1
           done
           echo "::error::No answer on /api/capabilities within 150s."
-          docker logs openbot-ci
+          docker logs ownbot-ci
           exit 1
       - name: Supervision tree is stable, not respawning
         run: |
@@ -346,18 +346,18 @@ jobs:
           # A supervised service that exits is restarted forever. That looks healthy from outside for
           # as long as something else is answering, so the log is where it shows.
           sleep 15
-          if docker logs openbot-ci 2>&1 | grep -Eic 'restarting|respawn' | grep -qv '^0$'; then
+          if docker logs ownbot-ci 2>&1 | grep -Eic 'restarting|respawn' | grep -qv '^0$'; then
             echo "::error::A supervised service is restarting."
-            docker logs openbot-ci 2>&1 | grep -Ei 'restarting|respawn' | head -20
+            docker logs ownbot-ci 2>&1 | grep -Ei 'restarting|respawn' | head -20
             exit 1
           fi
-          test -n "$(docker ps -q -f name=openbot-ci)" || {
+          test -n "$(docker ps -q -f name=ownbot-ci)" || {
             echo "::error::The container is no longer running after 15s."
-            docker logs openbot-ci
+            docker logs ownbot-ci
             exit 1
           }
       - if: always()
-        run: docker rm -f openbot-ci >/dev/null 2>&1 || true
+        run: docker rm -f ownbot-ci >/dev/null 2>&1 || true
 
   # One check for branch protection to require. A new job above is covered by this without anybody
   # remembering to add it to a list, and a job that was skipped for the wrong reason is not a pass.

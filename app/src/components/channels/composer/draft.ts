@@ -8,7 +8,7 @@ import {
 } from "prompt-area/helpers";
 
 /**
- * Pure boundary between prompt-area segments and OpenBot's message draft model.
+ * Pure boundary between prompt-area segments and OwnBot's message draft model.
  */
 
 export const AGENT_TRIGGER = "@";

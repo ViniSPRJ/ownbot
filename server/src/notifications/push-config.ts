@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { createECDH, createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -13,7 +14,7 @@ export function readPushConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): VapidConfig | null {
   try {
-    const path = env.OPENBOT_WEB_PUSH_CONFIG;
+    const path = ownbotEnv(env, "OWNBOT_WEB_PUSH_CONFIG");
     if (!path || !isAbsolute(path)) return null;
     const stat = statSync(path);
     if (!stat.isFile() || stat.size > 4096 || (stat.mode & 0o077) !== 0)

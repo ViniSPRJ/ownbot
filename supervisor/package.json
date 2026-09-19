@@ -1,5 +1,5 @@
 {
-  "name": "@openbot/supervisor",
+  "name": "@ownbot/supervisor",
   "license": "MIT",
   "private": true,
   "type": "module",

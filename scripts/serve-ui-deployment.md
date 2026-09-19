@@ -12,16 +12,16 @@ EnvironmentFile, Tailscale forwarding, and restart settings. Replace only the
 Vite ExecStart with the actual installed Bun path and this script, for example:
 
 ```ini
-ExecStart=/absolute/path/to/bun /home/viniciuspinho/openbot/scripts/serve-ui.ts
+ExecStart=/absolute/path/to/bun /home/viniciuspinho/ownbot/scripts/serve-ui.ts
 ```
 
 Defaults: `APP_HOST=127.0.0.1`, `APP_PORT=3010`, backend at
 `http://127.0.0.1:${SERVER_PORT:-3001}`, build at `app/dist` relative to this script.
-Override backend with `OPENBOT_UI_API_URL` (HTTP origin), or build directory with
-`OPENBOT_UI_DIST`. Keep loopback binding when the existing tailnet HTTPS proxy
+Override backend with `OWNBOT_UI_API_URL` (HTTP origin), or build directory with
+`OWNBOT_UI_DIST`. Keep loopback binding when the existing tailnet HTTPS proxy
 provides external access. The existing Vite host allowlist is preserved (localhost,
 loopback and `.tail3c3777.ts.net`); override it with comma-separated
-`OPENBOT_UI_ALLOWED_HOSTS` only when changing the deployment hostname.
+`OWNBOT_UI_ALLOWED_HOSTS` only when changing the deployment hostname.
 No new public listener or TLS configuration is needed.
 
 `/api` retains its original prefix and streams request/response bodies, SSE,

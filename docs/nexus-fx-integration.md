@@ -6,7 +6,7 @@ existing plugin grant, gateway policy and audit apply before this transport runs
 Normal ownbot login identifies the actor; a protected operator mapping specifies which
 actor may use the dedicated read-only key. Other users are refused even if granted the tool.
 
-Set `OPENBOT_NEXUS_FX_CONFIG` to a private absolute JSON path (0600):
+Set `OWNBOT_NEXUS_FX_CONFIG` to a private absolute JSON path (0600):
 
 ```json
 {

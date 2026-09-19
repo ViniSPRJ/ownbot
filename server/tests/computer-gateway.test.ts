@@ -1060,7 +1060,7 @@ describe("resolving a computer's address", () => {
 /**
  * The snapshot a ref resolves against is shared between servers, not held in one process.
  *
- * OpenBot runs several server processes behind a load balancer, and the process that answers a
+ * OwnBot runs several server processes behind a load balancer, and the process that answers a
  * snapshot is rarely the one that answers the click that uses its refs. If the mapping from ref to
  * element lives in a `Map`, it is missing on every replica but the one that snapshotted: the policy
  * decides with no element in front of it, and the deny rule the deployment is relying on does not

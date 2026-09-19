@@ -20,7 +20,7 @@ const PORT = Number.parseInt(process.env.PORT ?? "4200", 10);
 const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim();
 if (!MANAGED_AGENT_TOKEN) {
   console.error(
-    "MANAGED_AGENT_TOKEN is not set. This process holds a model credential and will not start without a token for OpenBot's server.",
+    "MANAGED_AGENT_TOKEN is not set. This process holds a model credential and will not start without a token for OwnBot's server.",
   );
   process.exit(1);
 }

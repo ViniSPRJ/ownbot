@@ -1,4 +1,4 @@
-# OpenBot docs
+# OwnBot docs
 
 Start with the root [README](../README.md), then use these references:
 
@@ -12,7 +12,9 @@ Start with the root [README](../README.md), then use these references:
   - [Notion](plugins/notion.md)
 - [Durable Pi executors](durable-executors.md): explicit submit/status registry for background Pi-compatible workers.
 - [Deployment](deployment.md): the container, what is in the image, minimum sizes, and the platform notes.
-- [Kubernetes](../charts/openbot/README.md): the Helm chart, what a cluster needs before it, and the values that differ per cloud.
+- [Kubernetes](../charts/ownbot/README.md): the Helm chart, what a cluster needs before it, and the values that differ per cloud.
 - [Releasing](releasing.md): how a release is proposed, reviewed and published.
 
 Do not include credential values, customer data, transcripts, or local-only notes in public docs.
+
+- [Rename compatibility](rename-compatibility.md): current naming, legacy configuration and preserved identities.

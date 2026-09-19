@@ -1,6 +1,6 @@
 # Browser notifications
 
-Ownbot can deliver a generic browser notification for a **new** inbox entry after a signed-in person opts in on that browser. The ordinary Ownbot session owns the subscription; no extra account is required. Browser permission is requested by the interface after the user presses its activation button. Permission and device registration cannot be completed by deploying the server alone.
+OwnBot can deliver a generic browser notification for a **new** inbox entry after a signed-in person opts in on that browser. The ordinary OwnBot session owns the subscription; no extra account is required. Browser permission is requested by the interface after the user presses its activation button. Permission and device registration cannot be completed by deploying the server alone.
 
 The encrypted payload contains only `title: "ownbot"`, `body: "Há uma nova atualização no seu projeto."` and a bounded notification identifier. It never contains the inbox summary, document text, channel, agent, task title or credentials. Clicking opens `/notifications`, where the normal login and owner checks apply. Apple, Google, Mozilla or Microsoft push infrastructure is still an external delivery dependency; this is optional and is separate from local inference or private document storage.
 
@@ -12,9 +12,9 @@ Install the locked dependencies and run the normal database migration runner, in
 {"subject":"https://github.com/ViniSPRJ/ownbot","publicKey":"<public VAPID key>","privateKey":"<private VAPID key>"}
 ```
 
-Set `OPENBOT_WEB_PUSH_CONFIG` to its absolute path. The file must be a regular file with no group/world permission bits (normally mode `0600`) and remain outside the checkout. The server verifies the key pair. Missing, unreadable or invalid configuration reports push disabled and prevents registration and sending. Existing subscriptions can still be revoked. Preserve both VAPID and the existing credential encryption key across restarts. VAPID rotation requires browsers to register again; queued subscriptions bound to another key fail closed.
+Set `OWNBOT_WEB_PUSH_CONFIG` to its absolute path. The file must be a regular file with no group/world permission bits (normally mode `0600`) and remain outside the checkout. The server verifies the key pair. Missing, unreadable or invalid configuration reports push disabled and prevents registration and sending. Existing subscriptions can still be revoked. Preserve both VAPID and the existing credential encryption key across restarts. VAPID rotation requires browsers to register again; queued subscriptions bound to another key fail closed.
 
-`TRUSTED_ORIGINS` and/or `OPENBOT_APP_URL` must include the browser's actual HTTPS origin. The API uses these configured origins for authenticated subscription writes behind the UI proxy. Browser support and installation requirements vary; the UI describes unsupported or missing-permission states without claiming delivery.
+`TRUSTED_ORIGINS` and/or `OWNBOT_APP_URL` must include the browser's actual HTTPS origin. The API uses these configured origins for authenticated subscription writes behind the UI proxy. Browser support and installation requirements vary; the UI describes unsupported or missing-permission states without claiming delivery.
 
 ## Application integration
 

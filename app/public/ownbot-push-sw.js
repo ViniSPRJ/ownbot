@@ -16,7 +16,7 @@
  */
 
 /** What appears in the notification. Fixed text, no task detail, nothing the payload can change. */
-const TITLE = "ownbot";
+const TITLE = "OwnBot";
 const BODY = "Há uma nova atualização no seu projeto.";
 /** Where a click goes. A constant, never a value from the payload. */
 const TARGET_PATH = "/notifications";

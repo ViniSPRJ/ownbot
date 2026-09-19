@@ -72,7 +72,7 @@ beforeAll(async () => {
     .insert(users)
     .values({
       id: personId,
-      email: `${personId}@openbot.test`,
+      email: `${personId}@ownbot.test`,
       name: personId,
       emailVerified: false,
     })

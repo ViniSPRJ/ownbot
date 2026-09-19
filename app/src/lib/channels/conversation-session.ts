@@ -4,7 +4,7 @@
  * The failure this exists for is silent. A conversation whose session was lost reads exactly like one
  * that never lost it: the thread is all there, the answer arrived on time, and the only party that
  * knows the model had never heard of any of it is the CLI. The person then follows up on a detail from
- * four turns ago and gets an answer composed from whatever ownbot re-sent, not from the work.
+ * four turns ago and gets an answer composed from whatever OwnBot re-sent, not from the work.
  *
  * Restart wording is shown only when something was actually lost or cannot carry across. The
  * CLI-confirmed model of the last session is always said: the picker is next-turn configuration,
@@ -56,23 +56,23 @@ export type SessionNoticeView =
 const NOTICES: Record<string, { text: string; tone: "attention" | "neutral" }> =
   {
     anchor_dead: {
-      text: "A sessão anterior não existe mais na CLI. Este turno abriu uma nova, com o histórico que o ownbot reenviou.",
+      text: "A sessão anterior não existe mais na CLI. Este turno abriu uma nova, com o histórico que o OwnBot reenviou.",
       tone: "attention",
     },
     record_unreadable: {
-      text: "O registro da sessão anterior estava ilegível. Este turno abriu uma nova, com o histórico que o ownbot reenviou.",
+      text: "O registro da sessão anterior estava ilegível. Este turno abriu uma nova, com o histórico que o OwnBot reenviou.",
       tone: "attention",
     },
     model_changed: {
-      text: "A sessão não continua depois de trocar o modelo. Este turno abriu uma nova, com o histórico que o ownbot reenviou.",
+      text: "A sessão não continua depois de trocar o modelo. Este turno abriu uma nova, com o histórico que o OwnBot reenviou.",
       tone: "neutral",
     },
     provider_changed: {
-      text: "A sessão não continua depois de trocar a conexão. Este turno abriu uma nova, com o histórico que o ownbot reenviou.",
+      text: "A sessão não continua depois de trocar a conexão. Este turno abriu uma nova, com o histórico que o OwnBot reenviou.",
       tone: "neutral",
     },
     load_unsupported: {
-      text: "Esta CLI não reabre sessões, então cada turno começa uma nova, com o histórico que o ownbot reenviou.",
+      text: "Esta CLI não reabre sessões, então cada turno começa uma nova, com o histórico que o OwnBot reenviou.",
       tone: "neutral",
     },
   };
@@ -147,7 +147,7 @@ export function sessionNoticeView(
   // name is a restart, and the quiet version of this is the bug the whole row exists to catch.
   return {
     kind: "notice",
-    text: `Este turno abriu uma sessão nova, com o histórico que o ownbot reenviou. ${modelLine}`,
+    text: `Este turno abriu uma sessão nova, com o histórico que o OwnBot reenviou. ${modelLine}`,
     tone: "attention",
   };
 }

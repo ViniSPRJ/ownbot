@@ -14,12 +14,19 @@ import urllib.request
 from dataclasses import dataclass
 
 
+def ownbot_env(name, default=None):
+    """The new name wins even when empty; existing deployments retain their settings."""
+    if name in os.environ:
+        return os.environ[name]
+    return os.environ.get(name.replace('OWNBOT_', 'OPENBOT_', 1), default)
+
+
 @dataclass
 class Config:
     container: str = 'openbot-postgres-1'
     database: str = 'openbot'
     user: str = 'openbot'
-    token_file: str = '~/openbot/.secrets/notify.token'
+    token_file: str = '~/ownbot/.secrets/notify.token'
     mcp: str = 'https://arcus-nexus-hostinger.tail3c3777.ts.net:18861/mcp'
     base_url: str = 'https://viniciuspinho.tail3c3777.ts.net:3010'
     poll_seconds: int = 30
@@ -36,8 +43,8 @@ class Config:
         defaults = cls()
         values = {}
         for key, default in vars(defaults).items():
-            value = os.environ.get('OPENBOT_NOTIFY_' + key.upper(),
-                                   os.environ.get('OPENBOT_PUBLIC_URL', default) if key == 'base_url' else default)
+            value = ownbot_env('OWNBOT_NOTIFY_' + key.upper(),
+                               ownbot_env('OWNBOT_PUBLIC_URL', default) if key == 'base_url' else default)
             values[key] = int(value) if isinstance(default, int) else value
         config = cls(**values)
         if any(getattr(config, key) <= 0 for key in ('poll_seconds', 'request_timeout', 'lease_seconds', 'max_attempts', 'batch_size')):
@@ -206,7 +213,7 @@ def validate_receipt(envelope):
 
 
 def external_delivery_enabled():
-    mode = os.environ.get('OPENBOT_NOTIFICATION_DELIVERY', 'telegram')
+    mode = ownbot_env('OWNBOT_NOTIFICATION_DELIVERY', 'telegram')
     if mode not in ('internal', 'telegram'):
         raise ValueError('invalid notification delivery mode')
     return mode == 'telegram'

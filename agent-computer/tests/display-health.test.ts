@@ -9,7 +9,7 @@ test("headless does not require X; invalid headed display fails closed",async()=
  expect(await displayAvailable({COMPUTER_HEADED:"on",DISPLAY:"remote:99"})).toBe(false);
 });
 test("a stale display artifact cannot satisfy health; a listening X socket can",async()=>{
- const dir=mkdtempSync(join(tmpdir(),"openbot-display-test-"));const path=join(dir,"X99");
+ const dir=mkdtempSync(join(tmpdir(),"ownbot-display-test-"));const path=join(dir,"X99");
  try {
   writeFileSync(path,"stale"); expect(await probeDisplaySocket(path)).toBe(false);rmSync(path);
   const server=createServer(socket=>socket.destroy());

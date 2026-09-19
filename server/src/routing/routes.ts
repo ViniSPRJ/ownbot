@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { acpProfileFor } from "../acp/config";
 import type { MiddlewareHandler } from "hono";
 import { Hono } from "hono";
@@ -157,7 +158,7 @@ export function createRoutingRoutes(
         viaMention: true,
       });
     }
-    const coordinatorId = process.env.OPENBOT_ACP_COORDINATOR;
+    const coordinatorId = ownbotEnv(process.env, "OWNBOT_ACP_COORDINATOR");
     if (coordinatorId && acpProfileFor(coordinatorId)) {
       const coordinator = roster.find(agent => agent.id === coordinatorId);
       if (!coordinator) return context.json({error:"Coordenador ACP indisponível para esta conta."},409);

@@ -19,7 +19,7 @@ import { testEnvironment } from "./support/environment";
 
 const ADMIN = {
   id: "admin-1",
-  email: "admin@openbot.test",
+  email: "admin@ownbot.test",
   name: "An Administrator",
   image: null,
 };
@@ -49,7 +49,7 @@ function appWith(
   );
 
   return (body: unknown) =>
-    app.request("http://openbot.test/api/plugins/servers", {
+    app.request("http://ownbot.test/api/plugins/servers", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -158,7 +158,7 @@ describe("granting one Bot to another", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -182,7 +182,7 @@ describe("granting one Bot to another", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants?kind=bot&ref=knowledge&agentId=assistant",
+      "http://ownbot.test/api/plugins/grants?kind=bot&ref=knowledge&agentId=assistant",
       { method: "DELETE" },
     );
 
@@ -198,7 +198,7 @@ describe("granting one Bot to another", () => {
     const { calls, app } = grantsApp("user");
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -222,7 +222,7 @@ describe("granting one Bot to another", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -252,7 +252,7 @@ describe("granting a hop to a Bot that runs somewhere else", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -274,7 +274,7 @@ describe("granting a hop to a Bot that runs somewhere else", () => {
     const { calls, app } = grantsApp("admin", () => undefined);
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -295,7 +295,7 @@ describe("granting a hop to a Bot that runs somewhere else", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -327,7 +327,7 @@ describe("what a bot grant refusal reveals", () => {
   ) => {
     const { calls, app } = grantsApp(role);
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -390,7 +390,7 @@ describe("granting a Bot itself", () => {
     const { calls, app } = grantsApp();
 
     const response = await app.request(
-      "http://openbot.test/api/plugins/grants",
+      "http://ownbot.test/api/plugins/grants",
       {
         method: "POST",
         headers: { "content-type": "application/json" },

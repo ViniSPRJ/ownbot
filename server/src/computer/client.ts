@@ -144,8 +144,10 @@ export function createComputerTransport(
     const headers: Record<string, string> = Object.fromEntries(
       new Headers(init?.headers),
     );
+    headers["x-ownbot-bot-id"] = botId;
     headers["x-openbot-bot-id"] = botId;
     if (options.token) {
+      headers["x-ownbot-computer-token"] = options.token;
       headers["x-openbot-computer-token"] = options.token;
     }
     let response: Response;

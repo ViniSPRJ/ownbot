@@ -1,6 +1,6 @@
 # Architecture
 
-OpenBot combines a React app, a Hono API server, PostgreSQL, CopilotKit Intelligence, AG-UI Bot endpoints, and governed browser computers.
+OwnBot combines a React app, a Hono API server, PostgreSQL, CopilotKit Intelligence, AG-UI Bot endpoints, and governed browser computers.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="../assets/architecture-dark.svg">
@@ -60,7 +60,7 @@ Policy rules can inspect:
 Rules use CEL expressions plus case-insensitive `contains()` and `matches()`.
 Deny rules are evaluated before allow rules. The policy engine fails closed: a
 missing or empty policy permits nothing, a broken deny rule denies, and a broken
-allow rule does not permit. OpenBot's shipped startup default is explicit:
+allow rule does not permit. OwnBot's shipped startup default is explicit:
 `deny: []` and `allow: ["true"]`, unless `AGENT_COMPUTER_POLICY` or a saved
 administrator policy replaces it. A malformed configured policy stops server
 startup.
@@ -281,11 +281,11 @@ Connector credentials are stored through the credential vault and referenced by 
 - Sign-in is Google, Microsoft or Okta from the environment, plus SAML and OpenID Connect providers registered at runtime and routed by email domain. One resolver answers both questions a run asks about a person, whose threads these are and which Bots they may run, so the two can never disagree.
 - `INITIAL_ADMIN_EMAILS` is a floor: an address it names is made an administrator at every sign-in and cannot be demoted from the People screen. Everybody else's role is decided there, and every change writes an audit row.
 - Registering, changing or removing an identity provider is administrator-only. Better Auth's SSO plugin guards those routes with a session alone, which would let any signed-in person register a provider for a domain.
-- A registered identity provider belongs to the deployment, not to whoever registered it. Better Auth scopes its own listing and removal to the registering user and cascades the row from that user, so two administrators see two different deployments and deleting the one who set sign-in up deletes the company's sign-in. Reads and removals go through OpenBot's own administrator-only routes against the whole table.
+- A registered identity provider belongs to the deployment, not to whoever registered it. Better Auth scopes its own listing and removal to the registering user and cascades the row from that user, so two administrators see two different deployments and deleting the one who set sign-in up deletes the company's sign-in. Reads and removals go through OwnBot's own administrator-only routes against the whole table.
 - A provider's client secret and SAML signing material are encrypted at rest with `KEY_ENCRYPTION_KEY`, through a wrapper on the Better Auth storage adapter, since the plugin stores them as plaintext JSON. OAuth access and refresh tokens use Better Auth's own encryption, keyed on `BETTER_AUTH_SECRET`.
 - Signing in, being refused, and being granted the administrator role by configuration each write an audit row. They are the only record that somebody who can edit `INITIAL_ADMIN_EMAILS` promoted themselves, and the only evidence a revoked person was ever here, since revoking them deletes their sessions.
 - Removing somebody deletes their sessions and denies their address, because deleting the user row alone is not removal: the next sign-in through the provider recreates it.
-- With no identity provider configured, the deployment refuses to start unless `OPENBOT_SINGLE_USER=true` says every request may be one fixed administrator. That flag is the only thing that permits it; `NODE_ENV` does not.
+- With no identity provider configured, the deployment refuses to start unless `OWNBOT_SINGLE_USER=true` says every request may be one fixed administrator. That flag is the only thing that permits it; `NODE_ENV` does not.
 - `KEY_ENCRYPTION_KEY` must be a base64-encoded 32-byte value. The example key is refused with `NODE_ENV=production`.
 - Credential plaintext is encrypted at rest, never returned by APIs, and redacted from audit events.
 - Browser navigation allows `http` and `https`; cloud metadata addresses are refused under every configuration.

@@ -5,6 +5,13 @@ const saved = { ...process.env };
 afterEach(() => { for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]; Object.assign(process.env, saved); });
 const env = { OPENBOT_NOTIFICATION_DELIVERY: "internal", OPENBOT_SELF_HOSTED: "true", OPENBOT_PRIVATE_MODEL_VERIFIED: "true", OPENBOT_PRIVATE_MODEL: "qwen", OPENBOT_PRIVATE_MODEL_BASE_URL: "http://100.83.149.120:8080/v1" };
 describe("private trust domain", () => {
+  test("OwnBot private flags preserve the trust boundary when legacy flags disagree", () => {
+    expect(isPrivateAgent("credit", { OWNBOT_PRIVATE_AGENT_IDS: "credit", OPENBOT_PRIVATE_AGENT_IDS: "news" })).toBe(true);
+    expect(isPrivateAgent("news", { OWNBOT_PRIVATE_AGENT_IDS: "credit", OPENBOT_PRIVATE_AGENT_IDS: "news" })).toBe(false);
+    expect(() => privateModelRoute({ ...env, OWNBOT_PRIVATE_MODEL_VERIFIED: "false" })).toThrow();
+    expect(() => privateModelRoute({ ...env, OWNBOT_SELF_HOSTED: "false" })).toThrow();
+    expect(() => privateModelRoute({ ...env, OWNBOT_NOTIFICATION_DELIVERY: "telegram" })).toThrow();
+  });
   test("exact ID membership, no substring or inferred classification", () => {
     expect(isPrivateAgent("coord", { OPENBOT_PRIVATE_AGENT_IDS: "coord, credito" })).toBe(true);
     expect(isPrivateAgent("co", { OPENBOT_PRIVATE_AGENT_IDS: "coord" })).toBe(false);

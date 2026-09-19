@@ -356,6 +356,11 @@ export function createHandoffDelivery(options: {
           controller.signal.throwIfAborted();
           await admit?.();
           controller.signal.throwIfAborted();
+          const runAssertion = options.signRun?.({
+            work,
+            runId,
+            threadId: where.threadId,
+          }) ?? assertion;
           await settled(
             runner.run({
               threadId: where.threadId,
@@ -402,12 +407,8 @@ export function createHandoffDelivery(options: {
                  * signed, so the Bot cannot edit its own depth on the way past.
                  */
                 forwardedProps: {
-                  openbotRun:
-                    options.signRun?.({
-                      work,
-                      runId,
-                      threadId: where.threadId,
-                    }) ?? assertion,
+                  ownbotRun: runAssertion,
+                  openbotRun: runAssertion,
                 },
               },
             }),

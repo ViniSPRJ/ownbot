@@ -30,7 +30,7 @@ function RouteComponent() {
       <div className="flex-1 min-h-0 min-w-0 w-full overflow-y-auto overflow-x-hidden px-4 pb-10 pt-6 sm:px-8 sm:pt-10">
         <div className="flex flex-col items-center">
           <h2 className="text-sm uppercase text-muted-foreground font-medium tracking-tight text-center">
-            ownbot
+            OwnBot
           </h2>
           <h1 className="text-2xl font-bold tracking-tight mt-1.5 text-center">
             O que vamos fazer hoje?

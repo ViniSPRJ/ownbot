@@ -1,3 +1,5 @@
+import { ownbotHeader } from "../../shared/ownbot-protocol";
+
 /**
  * Who may speak to a computer at all.
  *
@@ -32,8 +34,9 @@ export function matchesToken(expected: string, offered: string): boolean {
  */
 export function offeredToken(headers: Headers, url: URL): string {
   if (url.pathname === "/stream") return url.searchParams.get("token") ?? "";
-  const header = headers.get("x-openbot-computer-token")?.trim();
-  if (header) return header;
+  if (headers.has("x-ownbot-computer-token") || headers.has("x-openbot-computer-token")) {
+    return ownbotHeader(headers, "computer-token")?.trim() ?? "";
+  }
   const authorization = headers.get("authorization")?.trim() ?? "";
   return authorization.replace(/^Bearer /i, "");
 }

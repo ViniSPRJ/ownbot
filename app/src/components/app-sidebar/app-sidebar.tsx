@@ -349,7 +349,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             ) : null}
             {/*
              * A THIRD NOTHING, for the same reason there are already two. An empty cockpit in a
-             * deployment full of Ownbot conversations is not "you don't have channels yet", and being
+             * deployment full of OwnBot conversations is not "you don't have channels yet", and being
              * told that while holding a roster is how somebody concludes the switch lost their work.
              */}
             {!searching && inMode.length === 0 ? (

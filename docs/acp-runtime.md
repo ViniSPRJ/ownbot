@@ -6,7 +6,7 @@ ownbot. ACP replaces the model execution for explicitly selected agents. A mappe
 and saved memory but no longer calls its old endpoint or resolves that endpoint's credentials.
 It does not make hosted models local.
 
-Set `OPENBOT_ACP_CONFIG` to an absolute operator-owned JSON file. The file is never
+Set `OWNBOT_ACP_CONFIG` to an absolute operator-owned JSON file. The file is never
 served to the browser. Commands are absolute executable paths with argument arrays;
 chat input cannot configure executable paths or environments. Example:
 
@@ -25,7 +25,7 @@ chat input cannot configure executable paths or environments. Example:
 }
 ```
 
-`OPENBOT_ACP_COORDINATOR=coord` sends unnamed home-page messages to the authorized
+`OWNBOT_ACP_COORDINATOR=coord` sends unnamed home-page messages to the authorized
 coordinator without an API classifier call. Explicit agent choices remain honored.
 Unmapped agents retain their current implementation. Private agents keep the private
 local model boundary even if erroneously present in the ACP map. A configured ACP
@@ -132,7 +132,7 @@ original selection. A model change creates a fresh isolated CLI session with the
 available ownbot history; it does not delete the channel or agent memory.
 
 The Beelink model endpoint atomically updates only the selected agent mapping in
-`OPENBOT_ACP_CONFIG` (0600 file). Keep this operator file in deployment backups.
+`OWNBOT_ACP_CONFIG` (0600 file). Keep this operator file in deployment backups.
 A revision check rejects stale browser edits. The browser cannot change commands,
 environments, accounts, provider mappings, permissions or the private-agent lane.
 The catalogue is cached for up to 60 seconds; a CLI/login failure never substitutes

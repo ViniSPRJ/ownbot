@@ -16,6 +16,7 @@ WORKDIR /app
 COPY agent-computer/package.json agent-computer/bun.lock ./
 RUN bun install --frozen-lockfile
 
+COPY shared /shared
 COPY agent-computer/src ./src
 
 # Durable working directory. Bot-produced files that must survive replacement live here.

@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { beforeAll, describe, expect, test } from "bun:test";
 
 /**
@@ -14,13 +15,13 @@ import { beforeAll, describe, expect, test } from "bun:test";
  *   bash scripts/start.sh
  *   bun run test:smoke
  *
- * `OPENBOT_API_URL` points it at a deployment on other ports. Without `OPENBOT_SMOKE` the file is
+ * `OWNBOT_API_URL` points it at a deployment on other ports. Without `OWNBOT_SMOKE` the file is
  * skipped, so `bun run test` stays honest on a machine with nothing running.
  */
 
-const asked = process.env.OPENBOT_SMOKE === "1";
-const API = process.env.OPENBOT_API_URL ?? "http://localhost:3001";
-const BOT = process.env.OPENBOT_SMOKE_BOT ?? "risk-analyst";
+const asked = ownbotEnv(process.env, "OWNBOT_SMOKE") === "1";
+const API = ownbotEnv(process.env, "OWNBOT_API_URL") ?? "http://localhost:3001";
+const BOT = ownbotEnv(process.env, "OWNBOT_SMOKE_BOT") ?? "risk-analyst";
 
 /** Long enough for a computer to be created and Chromium to answer on a cold deployment. */
 const COMPUTER_TIMEOUT_MS = 180_000;
@@ -49,7 +50,7 @@ beforeAll(async () => {
     .catch(() => false);
   if (!reachable) {
     throw new Error(
-      `No deployment is answering at ${API}. Start one with \`bash scripts/start.sh\`, or set OPENBOT_API_URL.`,
+      `No deployment is answering at ${API}. Start one with \`bash scripts/start.sh\`, or set OWNBOT_API_URL.`,
     );
   }
 });

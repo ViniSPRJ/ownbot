@@ -271,15 +271,15 @@ export function PushNotificationControls() {
    */
   const stateLine =
     busy === "enable"
-      ? "Criando a inscrição neste navegador e registrando-a no ownbot…"
+      ? "Criando a inscrição neste navegador e registrando-a no OwnBot…"
       : busy === "disable"
-        ? "Removendo a inscrição deste navegador e do ownbot…"
+        ? "Removendo a inscrição deste navegador e do OwnBot…"
         : !support.supported
-          ? "Este navegador não pode receber avisos do ownbot agora."
+          ? "Este navegador não pode receber avisos do OwnBot agora."
           : permission === "denied"
             ? "O navegador bloqueou avisos para este site. Siga os passos abaixo para liberar."
             : settings.isPending
-              ? "Verificando o registro deste dispositivo no ownbot…"
+              ? "Verificando o registro deste dispositivo no OwnBot…"
               : prepareError
                 ? prepareError
                 : !registration && settings.data?.enabled
@@ -287,14 +287,14 @@ export function PushNotificationControls() {
                   : registered
                     ? "Este navegador está registrado para receber avisos da conta em que você está."
                     : device.phase === "held"
-                      ? "Este navegador guarda uma inscrição que o ownbot não reconhece como sua. Ela pode pertencer a outra conta usada neste navegador; o ownbot não a remove nem a re-registra sem um clique seu."
+                      ? "Este navegador guarda uma inscrição que o OwnBot não reconhece como sua. Ela pode pertencer a outra conta usada neste navegador; o OwnBot não a remove nem a re-registra sem um clique seu."
                       : "Nenhum aviso ativado neste navegador ainda.";
 
   const instructions: string[] = [];
   if (!support.supported) {
     if (support.reason === "ios-not-installed")
       instructions.push(
-        "No iPhone ou no iPad, o Safari só aceita avisos da web quando o ownbot está instalado: toque no ícone de compartilhar e escolha “Adicionar à Tela de Início”. Depois abra o ownbot por esse ícone e ative aqui.",
+        "No iPhone ou no iPad, o Safari só aceita avisos da web quando o OwnBot está instalado: toque no ícone de compartilhar e escolha “Adicionar à Tela de Início”. Depois abra o OwnBot por esse ícone e ative aqui.",
         "É preciso iOS 16.4 ou mais novo.",
       );
     if (support.reason === "insecure")
@@ -303,12 +303,12 @@ export function PushNotificationControls() {
       );
     if (support.reason === "no-push")
       instructions.push(
-        "Este navegador não oferece avisos. Abra o ownbot em um navegador compatível ou pelo aplicativo adicionado à Tela de Início.",
+        "Este navegador não oferece avisos. Abra o OwnBot em um navegador compatível ou pelo aplicativo adicionado à Tela de Início.",
       );
   }
   if (support.supported && permission === "denied")
     instructions.push(
-      "O navegador bloqueou avisos para este site. No Chrome e no Edge, toque no cadeado da barra de endereço › Configurações do site › Notificações › Perguntar. No iPhone, abra Ajustes › ownbot › Notificações e permita. Depois recarregue esta página.",
+      "O navegador bloqueou avisos para este site. No Chrome e no Edge, toque no cadeado da barra de endereço › Configurações do site › Notificações › Perguntar. No iPhone, abra Ajustes › OwnBot › Notificações e permita. Depois recarregue esta página.",
     );
 
   return (
@@ -336,16 +336,16 @@ export function PushNotificationControls() {
                 : registered
                   ? "Ativado neste dispositivo"
                   : device.phase === "held"
-                    ? "Inscrição do navegador sem registro no ownbot"
+                    ? "Inscrição do navegador sem registro no OwnBot"
                     : "Desativado neste dispositivo"}
         </span>
       </div>
       <p className="text-sm text-muted-foreground">
         Os avisos são entregues pelo serviço de push do navegador — Chrome,
-        Edge, Firefox, ou o ownbot instalado no iPhone. O recado enviado é
-        genérico: título ownbot e uma linha dizendo que há uma nova atualização
+        Edge, Firefox, ou o OwnBot instalado no iPhone. O recado enviado é
+        genérico: título OwnBot e uma linha dizendo que há uma nova atualização
         no seu projeto. Títulos, textos e detalhes ficam apenas dentro do
-        ownbot, depois de entrar na sua conta.
+        OwnBot, depois de entrar na sua conta.
       </p>
 
       {settings.isError && (

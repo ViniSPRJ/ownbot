@@ -27,8 +27,8 @@ Then, in order:
 
 - the version in the tree is checked against the branch that is publishing it, and the changelog is
   checked for a section with that number
-- one image is built and pushed to `ghcr.io/copilotkit/openbot`, tagged with the version, the commit
-  and `latest`
+- one image is built and pushed to the configured repository registry, tagged with the version,
+  the commit and `latest`
 - a build provenance attestation is signed with the workflow's OIDC identity and pushed alongside it
 - the commit is tagged and a GitHub Release is created, carrying the changelog section as its notes
   and `container-images.json` as an asset
@@ -40,13 +40,15 @@ Then, in order:
 ```sh
 gh release download v0.1.0 --pattern container-images.json
 docker run -p 3001:3001 --env-file .env \
-  "$(jq -r .images.openbot.reference container-images.json)"
+  "$(jq -r .images.ownbot.reference container-images.json)"
 ```
 
 A tag can be moved to point at a different image; a digest cannot. The same digest that CI smoke
 tested is the one that runs, and rolling back is the same command with an earlier version.
 
-Before deploying, you can check the image is the one this repository built:
+Before deploying, verify the image against the repository that actually published it. The original
+upstream example is below; it verifies CopilotKit OpenBot, not an OwnBot release. Do not rename an
+image URL until a corresponding published artifact exists.
 
 ```sh
 gh attestation verify oci://ghcr.io/copilotkit/openbot:v0.1.0 -R CopilotKit/OpenBot
@@ -78,14 +80,15 @@ not matter: a pull request opened by a workflow does not trigger them.
 
 ## The one thing CI cannot do
 
-The smoke journey in `tests/smoke` is the only check that proves the parts are wired to each other:
+The smoke journey in `tests/smoke` checks that the parts are wired to each other:
 the server reaches the supervisor, the supervisor builds a computer, the gateway decides before the
 browser acts, and the trail records it. It cannot run in CI, and this is not a gap to be closed
 later.
 
-OpenBot only runs in Intelligence mode. `loadConfig` refuses to start without a licence, and a
-licence is cryptographically signed for the machine it was issued for, so a hosted runner cannot hold
-one. The `image` check gets around this with placeholder values, because nothing is contacted at
+The Intelligence-mode journey requires a licence signed for its machine, so a hosted runner cannot
+reuse that licence. OwnBot also supports `OWNBOT_SELF_HOSTED=true`, with local SQLite history and
+SSE; see [configuration](configuration.md). The Intelligence-mode `image` check uses placeholder
+values, because nothing is contacted at
 start-up, but the journey asserts `licenseStatus` is `valid` and no placeholder can make that true.
 
 So it is a step a person takes, on a machine with a licence, before merging the release PR:

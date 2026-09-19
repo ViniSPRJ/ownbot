@@ -37,6 +37,33 @@ describe("pre-paint theme boot", () => {
     expect(html).toContain(THEME_STORAGE_KEY);
   });
 
+  test("the first paint retains a legacy light theme until a new preference is saved", () => {
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    expect(script).toBeDefined();
+    const stored = new Map<string, string>([["openbot-theme", "light"]]);
+    const classes = new Set<string>();
+    const root = {
+      classList: {
+        toggle: (name: string, enabled: boolean) => {
+          if (enabled) classes.add(name);
+          else classes.delete(name);
+        },
+      },
+      style: { colorScheme: "" },
+    };
+    const boot = new Function("window", "document", script!);
+    const browser = {
+      localStorage: { getItem: (key: string) => stored.get(key) ?? null },
+    };
+    boot(browser, { documentElement: root });
+    expect(classes.has("dark")).toBe(false);
+    expect(root.style.colorScheme).toBe("light");
+    stored.set(THEME_STORAGE_KEY, "dark");
+    boot(browser, { documentElement: root });
+    expect(classes.has("dark")).toBe(true);
+    expect(root.style.colorScheme).toBe("dark");
+  });
+
   test("the boot script runs before the first paint", () => {
     const boot = html.match(/<script(?![^>]*\bsrc=)[^>]*>/);
 

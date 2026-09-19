@@ -5,7 +5,7 @@ import type { IntelligenceSettings } from "./config";
  * A client through which this deployment can ask Intelligence a question of its own.
  *
  * The runtime already holds one of these, built where it is mounted, and everything a conversation
- * does goes through that. This is for the questions OpenBot asks on its own account rather than on
+ * does goes through that. This is for the questions OwnBot asks on its own account rather than on
  * a run's: whether a thread the browser remembers is still there, and whatever else later needs an
  * answer from the platform outside a turn.
  *

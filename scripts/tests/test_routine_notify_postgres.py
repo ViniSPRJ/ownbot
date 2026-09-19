@@ -1,6 +1,6 @@
 """Opt-in real Postgres regression suite, restricted to a disposable test database.
 
-Run on Beelink: OPENBOT_NOTIFY_POSTGRES_TEST=1 python3 -m unittest discover
+Run on Beelink: OWNBOT_NOTIFY_POSTGRES_TEST=1 python3 -m unittest discover
 -s scripts/tests -p test_routine_notify_postgres.py -v
 Uses an isolated schema cloned from the migrated test DB, then drops ONLY that
 new schema. No credentials are read and all remote-report IO is disabled.
@@ -18,7 +18,7 @@ spec = importlib.util.spec_from_file_location('routine_notify_pg', Path(__file__
 n = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = n
 spec.loader.exec_module(n)
-DATABASE = 'openbot_codex_20260906'
+DATABASE = 'ownbot_codex_20260906'
 
 
 class IsolatedStore(n.Store):
@@ -32,7 +32,7 @@ class IsolatedStore(n.Store):
         return super().query(f'SET search_path TO "{self.schema}";\n' + sql)
 
 
-@unittest.skipUnless(os.environ.get('OPENBOT_NOTIFY_POSTGRES_TEST') == '1', 'explicit isolated Postgres opt-in required')
+@unittest.skipUnless(os.environ.get('OWNBOT_NOTIFY_POSTGRES_TEST', os.environ.get('OPENBOT_NOTIFY_POSTGRES_TEST')) == '1', 'explicit isolated Postgres opt-in required')
 class PostgresNotifierTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

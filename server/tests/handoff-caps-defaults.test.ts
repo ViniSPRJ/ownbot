@@ -17,7 +17,7 @@ import { testEnvironment } from "./support/environment";
  * operator debugging a refusal against a number their deployment never had.
  */
 
-const chart = parse(await Bun.file("charts/openbot/values.yaml").text()) as {
+const chart = parse(await Bun.file("charts/ownbot/values.yaml").text()) as {
   config?: { handoff?: { maxDepth?: number; maxPerRun?: number } };
 };
 

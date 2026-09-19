@@ -475,7 +475,7 @@ function RouteComponent() {
                         </span>
                       </>
                     ) : (
-                      /* The arrow says this leaves OpenBot for the vendor's consent page. It does. */
+                      /* The arrow says this leaves OwnBot for the vendor's consent page. It does. */
                       <Button
                         disabled={connectSelf.isPending}
                         onClick={() => {
@@ -564,13 +564,13 @@ function RouteComponent() {
                 <p className="text-muted-foreground text-sm">
                   Add this to the client's authorised redirect URIs at the
                   vendor, exactly as written. A single wrong character fails
-                  there, with a message that does not mention OpenBot.
+                  there, with a message that does not mention OwnBot.
                 </p>
               )}
               {!plugins.data?.redirectUri ? (
                 <p className="mt-3 text-destructive text-sm" role="alert">
                   This deployment has no public URL, so nobody can complete a
-                  consent flow. Set OPENBOT_PUBLIC_URL.
+                  consent flow. Set OWNBOT_PUBLIC_URL.
                 </p>
               ) : server?.dynamicClient ? null : (
                 /* Selectable and monospaced: it is copied by hand into somebody else's console. */

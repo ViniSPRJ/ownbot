@@ -131,6 +131,7 @@ describe("turning a hop into a turn", () => {
     });
 
     expect(requests[0]?.input.forwardedProps).toEqual({
+      ownbotRun: "signed-assertion",
       openbotRun: "signed-assertion",
     });
     // The addressed Bot's own conversation, because a thread has exactly one agent.
@@ -791,5 +792,8 @@ test("delegation signature binds the acquired run and actual scratch thread", as
   const test = delivery(FINISHED, stubAgent(), true, {signRun: input => { bound.push(input); return "new-exact-signature"; }});
   await test.delivery.deliver({work:WORK,message:"task",assertion:"legacy-unbound-signature"});
   expect(bound).toEqual([{work:WORK,runId:"platform-run",threadId:"scratch-thread"}]);
-  expect(test.requests[0]?.input.forwardedProps).toEqual({openbotRun:"new-exact-signature"});
+  expect(test.requests[0]?.input.forwardedProps).toEqual({
+    ownbotRun: "new-exact-signature",
+    openbotRun: "new-exact-signature",
+  });
 });

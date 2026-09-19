@@ -2,7 +2,7 @@
   "pi-m4": {
     "provider": "pi",
     "command": "/home/viniciuspinho/.bun/bin/bun",
-    "args": ["/home/viniciuspinho/openbot/integrations/pi-acp/src/server.ts"],
+    "args": ["/home/viniciuspinho/ownbot/integrations/pi-acp/src/server.ts"],
     "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
     "env": {
       "OWNBOT_PI_ACP_CONFIG": "/home/viniciuspinho/ownbot-acp-runtime/pi-qwen38-m5-new-q6.json"
@@ -12,7 +12,7 @@
   "pi-m5": {
     "provider": "pi",
     "command": "/home/viniciuspinho/.bun/bin/bun",
-    "args": ["/home/viniciuspinho/openbot/integrations/pi-acp/src/server.ts"],
+    "args": ["/home/viniciuspinho/ownbot/integrations/pi-acp/src/server.ts"],
     "workspaceRoot": "/home/viniciuspinho/ownbot-acp-runtime/sessions",
     "env": {
       "OWNBOT_PI_ACP_CONFIG": "/home/viniciuspinho/ownbot-acp-runtime/pi-qwen38-m5-original-q8.json"

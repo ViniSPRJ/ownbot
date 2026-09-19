@@ -52,20 +52,20 @@ Each other Workspace product is its own pair — Gmail is `gmail.googleapis.com`
 Type **Web application**. Under **Authorised redirect URIs**, add this deployment's callback:
 
 ```
-<OPENBOT_PUBLIC_URL>/api/plugins/oauth/callback
+<OWNBOT_PUBLIC_URL>/api/plugins/oauth/callback
 ```
 
 Locally that is `http://localhost:3001/api/plugins/oauth/callback` — port 3001, the API, not 3010,
 the app. The callback lands on the API and redirects back to the app afterwards.
 
-It has to match character for character: scheme, host, port, path, no trailing slash. OpenBot shows
+It has to match character for character: scheme, host, port, path, no trailing slash. OwnBot shows
 the exact string to paste under the **Connection** section of the plugin page, built from
-`OPENBOT_PUBLIC_URL` rather than from the incoming request — a redirect URI assembled from a request
+`OWNBOT_PUBLIC_URL` rather than from the incoming request — a redirect URI assembled from a request
 header is one an attacker has a say in. Copy it from there rather than typing it.
 
 Keep the client ID and client secret for the next step.
 
-### 4. Enable the connector in OpenBot
+### 4. Enable the connector in OwnBot
 
 At `/admin/plugins/google-drive`:
 
@@ -75,7 +75,7 @@ At `/admin/plugins/google-drive`:
 3. Press **Refresh tools**, which records the four read tools this connector implements.
 
 That completes setup. No personal account is needed to get this far — the tool list for this
-connector is OpenBot's own code rather than an answer from a remote server, so there is nothing to
+connector is OwnBot's own code rather than an answer from a remote server, so there is nothing to
 authenticate in order to read it.
 
 To check it actually works, use **Your account** on the same page: it connects *your* Google account
@@ -92,11 +92,11 @@ audit row.
 ## What each person does
 
 At `/settings/connected-accounts`, Google Drive appears once an administrator has enabled it. Open it
-and press **Connect**. That leaves OpenBot for Google's own consent screen — the arrow on the button
+and press **Connect**. That leaves OwnBot for Google's own consent screen — the arrow on the button
 says so — and returns to the same page, which then reads **Connected** with the scope Google actually
 granted.
 
-Nothing is cached. OpenBot stores the refresh token and mints a short-lived access token for each
+Nothing is cached. OwnBot stores the refresh token and mints a short-lived access token for each
 call, so revoking access at Google takes effect on the next call rather than whenever a cache
 expires.
 
@@ -109,7 +109,7 @@ that would report access withdrawn when it had not been.
 
 ## Troubleshooting
 
-Every message below is what OpenBot actually shows. They are worth reading literally: the connector
+Every message below is what OwnBot actually shows. They are worth reading literally: the connector
 distinguishes "the credential was refused" from "the credential was accepted and the request was
 refused", and those have completely different fixes.
 
@@ -129,7 +129,7 @@ still leaves each tool ungranted.
 
 ### `redirect_uri_mismatch` on the consent screen
 
-Google is comparing the `redirect_uri` OpenBot sent against the list on the OAuth client, as exact
+Google is comparing the `redirect_uri` OwnBot sent against the list on the OAuth client, as exact
 strings. Compare the value shown under **Connection** on the plugin page with what is registered,
 character for character. Common mismatches: `127.0.0.1` against `localhost`, the app's port instead
 of the API's, `https` against `http`, a trailing slash.
@@ -168,13 +168,13 @@ token is fine, and every check that a person can run says so.
 Worth knowing how thoroughly fine, because it saves repeating the work. Minting an access token from
 the stored refresh token and asking `https://oauth2.googleapis.com/tokeninfo` about it returns 200
 with the right `aud`, the right `azp` and the granted scope — Google validating its own token. The
-refusal is downstream of everything OpenBot controls.
+refusal is downstream of everything OwnBot controls.
 
 In order of likelihood:
 
 1. **The project is not enrolled** in the Developer Preview Program ([step 0](#0-enrol-the-project-in-the-developer-preview-program)).
 2. **A scope is missing.** Google's guide lists Drive as needing `drive.readonly` *and*
-   `drive.file`, added together. OpenBot requests only `drive.readonly`, deliberately: `drive.file`
+   `drive.file`, added together. OwnBot requests only `drive.readonly`, deliberately: `drive.file`
    is write-capable, and the connector's read-only guarantee is currently the scope itself rather
    than only the tool classification. Widening it is a decision about what this deployment may do to
    somebody's Drive, so it is not done pre-emptively.
@@ -190,7 +190,7 @@ by design, since a fallback would answer with somebody else's access.
 
 ### The connection worked and stopped about an hour later
 
-That is an access token with no refresh token behind it, which OpenBot refuses to store precisely so
+That is an access token with no refresh token behind it, which OwnBot refuses to store precisely so
 this cannot happen; if you see it, say so, because it means something got past that check. Google
 returns no refresh token when it believes the person already consented, which is why the
 authorization URL sends both `access_type=offline` and `prompt=consent`.
@@ -203,7 +203,7 @@ rather than handed an empty string it would fill in from memory.
 ## See also
 
 - [Architecture](../architecture.md) — where plugins, grants, policy and audit sit.
-- [Configuration](../configuration.md) — `OPENBOT_PUBLIC_URL`, `OPENBOT_APP_URL`,
+- [Configuration](../configuration.md) — `OWNBOT_PUBLIC_URL`, `OWNBOT_APP_URL`,
   `KEY_ENCRYPTION_KEY`.
 - [Google's own guide](https://developers.google.com/workspace/guides/configure-mcp-servers) to
   configuring Workspace MCP servers.

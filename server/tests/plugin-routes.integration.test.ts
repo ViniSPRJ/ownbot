@@ -51,7 +51,7 @@ const store = createPluginStore({
 
 const ADMIN = {
   id: "admin-1",
-  email: "admin@openbot.test",
+  email: "admin@ownbot.test",
   name: "An Administrator",
   image: null,
 };
@@ -73,7 +73,7 @@ function request(
     store as never,
   );
 
-  return app.request(`http://openbot.test${path}`, {
+  return app.request(`http://ownbot.test${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),

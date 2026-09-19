@@ -364,7 +364,7 @@ export function createPluginRoutes(
       return context.json(
         {
           error:
-            "This deployment has no public URL configured, so it cannot complete a consent flow. Set OPENBOT_PUBLIC_URL.",
+            "This deployment has no public URL configured, so it cannot complete a consent flow. Set OWNBOT_PUBLIC_URL.",
         },
         503,
       );
@@ -381,7 +381,7 @@ export function createPluginRoutes(
     /*
      * A dynamic entry introduces the deployment itself on first use; a manual one still waits
      * for an administrator. Registration lives here, on the one handler that already refuses
-     * without OPENBOT_PUBLIC_URL — the redirect URI it registers is guaranteed to exist.
+     * without OWNBOT_PUBLIC_URL — the redirect URI it registers is guaranteed to exist.
      */
     /*
      * A vendor in the catalogue that nobody has added to this deployment reaches here, gets past

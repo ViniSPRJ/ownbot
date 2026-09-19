@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "openbot",
+      "name": "ownbot",
       "devDependencies": {
         "@biomejs/biome": "2.5.10",
         "@copilotkit/aimock": "1.39.0",

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Xvfb chooses a free display; stale locks from a stopped container cannot block boot.
 set -eu
-DISPLAY_FILE=$(mktemp /tmp/openbot-display.XXXXXX)
+DISPLAY_FILE=$(mktemp /tmp/ownbot-display.XXXXXX)
 xpid= vpid= wpid= app=
 cleanup() {
   trap - EXIT INT TERM

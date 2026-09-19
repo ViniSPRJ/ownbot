@@ -1,15 +1,16 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 /** Explicit trust domains; never guesses whether arbitrary prose contains a secret. */
 export function isPrivateAgent(botId: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  return (env.OPENBOT_PRIVATE_AGENT_IDS ?? "").split(",").map(v => v.trim()).filter(Boolean).includes(botId);
+  return (ownbotEnv(env, "OWNBOT_PRIVATE_AGENT_IDS") ?? "").split(",").map(v => v.trim()).filter(Boolean).includes(botId);
 }
 export const PRIVATE_BOUNDARY = "Este bot mantém o contexto privado. Pesquisa pública e ferramentas externas devem ser usadas em uma conversa pública separada, sem copiar dados privados.";
 
 /** A dedicated, operator-verified local server, never the default multi-provider proxy. */
 export function privateModelRoute(env: NodeJS.ProcessEnv = process.env): { baseURL: string; model: string } {
-  if (env.OPENBOT_SELF_HOSTED !== "true" || env.OPENBOT_PRIVATE_MODEL_VERIFIED !== "true" || env.OPENBOT_NOTIFICATION_DELIVERY !== "internal")
+  if (ownbotEnv(env, "OWNBOT_SELF_HOSTED") !== "true" || ownbotEnv(env, "OWNBOT_PRIVATE_MODEL_VERIFIED") !== "true" || ownbotEnv(env, "OWNBOT_NOTIFICATION_DELIVERY") !== "internal")
     throw new Error("O processamento privado aguarda a validação do modelo e do histórico locais.");
-  const model = env.OPENBOT_PRIVATE_MODEL?.trim();
-  const raw = env.OPENBOT_PRIVATE_MODEL_BASE_URL?.trim();
+  const model = ownbotEnv(env, "OWNBOT_PRIVATE_MODEL")?.trim();
+  const raw = ownbotEnv(env, "OWNBOT_PRIVATE_MODEL_BASE_URL")?.trim();
   if (!model || !raw) throw new Error("O modelo local privado não foi configurado.");
   let url: URL;
   try { url = new URL(raw); } catch { throw new Error("Endereço do modelo privado inválido."); }

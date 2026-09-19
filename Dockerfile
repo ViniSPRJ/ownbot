@@ -1,4 +1,4 @@
-# OpenBot, whole, in one container.
+# OwnBot, whole, in one container.
 #
 # WHAT THIS IS FOR. Everything a laptop runs, minus the database, in one image on one port. Deploy it
 # anywhere that runs a container and you get what `scripts/start.sh` gives you locally: the app, the

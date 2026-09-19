@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { execFile } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
@@ -62,7 +63,7 @@ function privatePath(path: string): void {
     throw new Error("Invalid private file");
 }
 function ownerFor(actorId: string): NexusFxOwner {
-  const path = process.env.OPENBOT_NEXUS_FX_CONFIG;
+  const path = ownbotEnv(process.env, "OWNBOT_NEXUS_FX_CONFIG");
   if (!path || !actorId) throw new Error("No actor mapping");
   privatePath(path);
   const config = configSchema.parse(JSON.parse(readFileSync(path, "utf8")));

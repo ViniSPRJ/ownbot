@@ -9,7 +9,7 @@ history; changing providers intentionally creates a new provider session.
 The shared client supplies a per-turn authenticated HTTP MCP bridge. Cursor's
 structured `rawInput.providerIdentifier` and `rawInput.toolName` identify calls.
 Permission requests are correlated by session and tool-call ID, permit only an
-existing Ownbot grant once, and never rely on a displayed title. Native tools
+existing OwnBot grant once, and never rely on a displayed title. Native tools
 are not automatically approved. Interactive Cursor question/plan extensions
 receive an explicit cancelled outcome when there is no interactive handler.
 

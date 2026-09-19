@@ -227,11 +227,13 @@ describe("operator config", () => {
 });
 
 describe("opt-in and scoped env", () => {
-  test("refuses unless OPENBOT_VERIFY_LOCAL_PI=1", () => {
+  test("refuses unless OWNBOT_VERIFY_LOCAL_PI=1, accepting the legacy alias", () => {
     expect(() => assertOptIn({})).toThrow(OPT_IN_ENV);
     expect(() => assertOptIn({ [OPT_IN_ENV]: "true" })).toThrow(OPT_IN_ENV);
     expect(() => assertOptIn({ [OPT_IN_ENV]: "0" })).toThrow(OPT_IN_ENV);
     expect(() => assertOptIn({ [OPT_IN_ENV]: "1" })).not.toThrow();
+    expect(() => assertOptIn({ OPENBOT_VERIFY_LOCAL_PI: "1" })).not.toThrow();
+    expect(() => assertOptIn({ OWNBOT_VERIFY_LOCAL_PI: "0", OPENBOT_VERIFY_LOCAL_PI: "1" })).toThrow(OPT_IN_ENV);
   });
 
   test("child env is only PATH and OWNBOT_PI_ACP_CONFIG", () => {

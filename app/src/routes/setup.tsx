@@ -33,7 +33,7 @@ function Setup() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Não foi possível concluir."); setPending(false); }
   }
   return <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center p-6">
-    <h1 className="text-2xl font-medium">Proteja seu OpenBot</h1>
+    <h1 className="text-2xl font-medium">Proteja seu OwnBot</h1>
     <p className="my-4 text-sm text-muted-foreground">Escolha a senha do administrador. Seu histórico, bots e documentos continuam na mesma conta. Nos próximos acessos, entre com dev@openbot.local e esta senha.</p>
     <form onSubmit={submit} className="space-y-4">
       <label className="block text-sm">Código de primeiro acesso <Input type="password" autoComplete="off" autoCapitalize="none" spellCheck={false} required value={token} onChange={e => setToken(e.target.value)} /></label>

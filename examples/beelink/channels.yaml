@@ -11,7 +11,7 @@ channels:
     allowed_groups: [all]
   - id: desk
     name: Desk
-    description: Browser e workspace do OpenBot.
+    description: Browser e workspace do OwnBot.
     permitted_agents: [desk, coord]
     allowed_groups: [all]
   - id: code

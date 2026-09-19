@@ -1,6 +1,6 @@
 # Durable Pi executors
 
-Ownbot tracks background Pi work by wrapping a **submit** tool and polling a
+OwnBot tracks background Pi work by wrapping a **submit** tool and polling a
 **status** tool. Those names are not inferred from a vendor prefix or from a
 tool that happens to be called `pi_run`. They come from an explicit,
 machine-independent registry. Executor **ids** are logical; they do not name a
@@ -11,7 +11,7 @@ other worker, and it does not translate a foreign protocol into Pi's. A future
 Hermes adapter must implement the same durable submit/status contract
 (`pi-durable-v1`) before this registry may list it.
 
-Startup loads the registry once from `OPENBOT_DURABLE_EXECUTORS_CONFIG` (wired
+Startup loads the registry once from `OWNBOT_DURABLE_EXECUTORS_CONFIG` (wired
 by `server/src/index.ts`) and passes the **same instance** to the plugin store
 (admission) and the Pi watcher. A changed config file takes a process restart.
 
@@ -31,7 +31,7 @@ worker can keep existing MCP refs by listing them under any logical id.
 ## Config file
 
 `loadDurableExecutors(configPath?: string)` reads synchronously at startup.
-The server passes `process.env.OPENBOT_DURABLE_EXECUTORS_CONFIG`.
+The server passes `process.env.OWNBOT_DURABLE_EXECUTORS_CONFIG`.
 
 - Omitted or empty path → the default mapping above.
 - Any other path must be absolute. Relative paths are refused.

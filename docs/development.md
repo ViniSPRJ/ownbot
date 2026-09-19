@@ -116,7 +116,7 @@ bun run test:smoke
 
 It drives one journey over HTTP against the running stack, so it covers the joins the rest of the
 suite cannot reach: server to supervisor to computer, the gateway deciding before the browser acts,
-and the audit row landing. Point it elsewhere with `OPENBOT_API_URL`. Without a deployment it is
+and the audit row landing. Point it elsewhere with `OWNBOT_API_URL`. Without a deployment it is
 skipped by `bun run test` and says what to start when asked for by name.
 
 `bun run test:live-screen` is separate for a related reason and needs no deployment, only this
@@ -132,7 +132,7 @@ while the browser is still starting, a second connection taking the screen from 
 refusing input from the socket that owns it, and a browser closing by request or by the idle sweep.
 Those need `agent-computer/src/index.ts`, which imports Playwright at module scope, and `playwright`
 is declared only in `agent-computer/package.json`, which `bun install` at the root does not reach. So
-without `OPENBOT_LIVE_SCREEN=1` the files skip before importing anything, which is what keeps
+without `OWNBOT_LIVE_SCREEN=1` the files skip before importing anything, which is what keeps
 `bun run test` and CI working where that dependency was never installed.
 
 ## Contribution checklist

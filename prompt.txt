@@ -1,10 +1,10 @@
-You are helping somebody set up OpenBot on their own machine, from a fresh clone.
+You are helping somebody set up OwnBot on their own machine, from a fresh clone.
 
 Read this whole file before running anything. Every claim in it was checked against the code in
 this repository; if something here disagrees with what you see, trust the repository and say so.
 
-WHAT OPENBOT IS
-OpenBot is a template to clone and make your own, not a product with a hosted version. It runs on
+WHAT OWNBOT IS
+OwnBot is a template to clone and make your own, not a product with a hosted version. It runs on
 the person's machine: their PostgreSQL, their model credential, their Bots.
 
 WHAT THEY NEED BEFORE STARTING
@@ -59,8 +59,8 @@ The server refuses to start rather than running half-configured. The message nam
   One of the four Intelligence values is blank. Almost always INTELLIGENCE_API_KEY or
   COPILOTKIT_LICENSE_TOKEN, from skipping a CLI step.
 
-- "No identity provider is configured. Set GOOGLE_OAUTH_* ... or set OPENBOT_SINGLE_USER=true"
-  `.env.example` already sets OPENBOT_SINGLE_USER=true, so this means it was removed or edited.
+- "No identity provider is configured. Set GOOGLE_OAUTH_* ... or set OWNBOT_SINGLE_USER=true"
+  `.env.example` already sets OWNBOT_SINGLE_USER=true, so this means it was removed or edited.
   On a laptop, put it back. It admits every request as one administrator, which is why it must be
   off anywhere other people can reach.
 

@@ -46,7 +46,7 @@ import { grantedToolGuidance } from "./plugins/tools";
  * with no framework adapter here: LangGraph, Pydantic-AI, CrewAI, Mastra, ADK, or a hand-written
  * server.
  *
- * Intelligence is the product default. OPENBOT_SELF_HOSTED=true is SSE plus SqliteAgentRunner on
+ * Intelligence is the product default. OWNBOT_SELF_HOSTED=true is SSE plus SqliteAgentRunner on
  * this machine: durable threads without CopilotKit's cloud. config.ts refuses to boot without one
  * of the two contracts.
  */
@@ -857,6 +857,7 @@ function remoteAgentWithStandingRole(
     next: AbstractAgent,
   ) => {
     const holdingsMessage = holdingsMessageFor(tools);
+    const runAssertion = signRun?.(agent.id, input.runId, input.threadId);
     return next.run({
       ...input,
       messages: [
@@ -889,6 +890,7 @@ function remoteAgentWithStandingRole(
       // Who the Bot is calling back as, so the audit row names it rather than "an agent".
       forwardedProps: {
         ...(input.forwardedProps ?? {}),
+        ownbotBotId: agent.id,
         openbotBotId: agent.id,
         /*
          * Which of those tools this deployment runs, as opposed to the surface.
@@ -899,6 +901,7 @@ function remoteAgentWithStandingRole(
          * could not, and then apologised to the person for not showing the chart that was on screen
          * in front of them. Only this side knows which is which, so only this side can say.
          */
+        ownbotDeploymentTools: tools.map((tool) => tool.name),
         openbotDeploymentTools: tools.map((tool) => tool.name),
         /*
          * This deployment's own statement of what this run is.
@@ -909,8 +912,8 @@ function remoteAgentWithStandingRole(
          * body any more, which is what used to make the audit trail forgeable by anything holding
          * one shared secret.
          */
-        ...(signRun
-          ? { openbotRun: signRun(agent.id, input.runId, input.threadId) }
+        ...(runAssertion
+          ? { ownbotRun: runAssertion, openbotRun: runAssertion }
           : /*
              * Absent means this deployment cannot sign, so the agent is given nothing to hand back
              * and its tool calls will be refused. That is the right direction to fail: a Bot that
@@ -1318,7 +1321,7 @@ export function mountCopilotRuntime(
 ) {
   if (config.runtime.mode === "sse" && !localThreads) {
     throw new Error(
-      "OPENBOT_SELF_HOSTED is on, but no local thread store was handed to the runtime",
+      "OWNBOT_SELF_HOSTED is on, but no local thread store was handed to the runtime",
     );
   }
 
@@ -1390,7 +1393,7 @@ export function mountCopilotRuntime(
     conversationModels,
   ) as never;
   const telemetry = config.accessibility
-    ? { telemetryProperties: { accessibility_title: "OpenBot" as const } }
+    ? { telemetryProperties: { accessibility_title: "OwnBot" as const } }
     : {};
 
   if (config.runtime.mode === "sse") {
@@ -1443,7 +1446,7 @@ export function mountCopilotRuntime(
     // See IntelligenceKnowingANewThread.
     intelligence: intelligenceClient,
     licenseToken: intelligence.licenseToken,
-    // Carried on the events the runtime already sends, so OpenBot's traffic is separable from any
+    // Carried on the events the runtime already sends, so OwnBot's traffic is separable from any
     // other deployment's. Adds no events of its own.
     ...telemetry,
     /*

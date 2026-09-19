@@ -69,6 +69,7 @@ export function createRuntimeAgentLoader(
       ) {
         agent.headers = {
           ...agent.headers,
+          "x-ownbot-agent-token": managedAgent.token,
           "x-openbot-agent-token": managedAgent.token,
         };
       }

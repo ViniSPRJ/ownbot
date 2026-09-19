@@ -1,3 +1,4 @@
+import { ownbotHeader } from "../../shared/ownbot-protocol";
 import { displayAvailable } from "./display-health";
 import { serve } from "bun";
 import type { Page } from "playwright";
@@ -183,11 +184,11 @@ function sessionFor(botId: string): BotSession {
  * refusing it would make the container undemonstrable on its own.
  */
 function botIdOf(request: Request, fallback?: string | null): string {
-  return (
-    request.headers.get("x-openbot-bot-id")?.trim() ||
-    fallback?.trim() ||
-    DEFAULT_BOT_ID
-  );
+  if (request.headers.has("x-ownbot-bot-id") || request.headers.has("x-openbot-bot-id")) {
+    // Invalid or conflicting headers must fail isPlainBotId, never select another bot.
+    return ownbotHeader(request.headers, "bot-id")?.trim() ?? "";
+  }
+  return fallback?.trim() || DEFAULT_BOT_ID;
 }
 
 /**
@@ -633,7 +634,7 @@ serve<StreamData>({
     if (url.pathname === "/stream") {
       /*
        * The socket carries the Bot in the query because it cannot do it in a header. Every other call here names
-       * its Bot in `x-openbot-bot-id`, but a websocket client sends no custom headers on the upgrade,
+       * its Bot in `x-ownbot-bot-id`, but a websocket client sends no custom headers on the upgrade,
        * so the stream, and only the stream, also accepts the Bot as a query parameter. The header
        * still wins where there is one.
        */

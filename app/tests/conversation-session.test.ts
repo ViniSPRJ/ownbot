@@ -60,7 +60,7 @@ describe("telling somebody their session did not carry over", () => {
       expect(view.kind).toBe("notice");
       if (view.kind !== "notice") return;
       expect(view.tone).toBe("attention");
-      expect(view.text).toContain("ownbot reenviou");
+      expect(view.text).toContain("OwnBot reenviou");
       expect(view.text).toContain(
         "Modelo confirmado pela CLI na última sessão: gpt-5.1.",
       );

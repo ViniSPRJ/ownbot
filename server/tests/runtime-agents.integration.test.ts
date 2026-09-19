@@ -109,7 +109,10 @@ describe("runtime agent loading", () => {
       type: "remote_ag_ui",
       endpoint: managedEndpoint.toString(),
       acpOwnerId: owner.id,
-      headers: { "x-openbot-agent-token": managedAgentToken },
+      headers: {
+        "x-ownbot-agent-token": managedAgentToken,
+        "x-openbot-agent-token": managedAgentToken,
+      },
       standingMessage: standingRoleMessage({
         id: profile.id,
         name: "Expense Manager",

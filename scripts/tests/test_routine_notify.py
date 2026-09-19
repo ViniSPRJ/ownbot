@@ -54,6 +54,16 @@ class MemoryStore:
 
 
 class NotifyTests(unittest.TestCase):
+    def test_ownbot_environment_has_precedence_and_retains_legacy(self):
+        with patch.dict(n.os.environ, {'OPENBOT_NOTIFICATION_DELIVERY': 'telegram', 'OWNBOT_NOTIFICATION_DELIVERY': 'internal', 'OPENBOT_NOTIFY_BATCH_SIZE': '12', 'OWNBOT_NOTIFY_BATCH_SIZE': '17'}, clear=True):
+            self.assertFalse(n.external_delivery_enabled())
+            self.assertEqual(n.Config.from_env().batch_size, 17)
+        with patch.dict(n.os.environ, {'OPENBOT_NOTIFY_BATCH_SIZE': '12'}, clear=True):
+            self.assertEqual(n.Config.from_env().batch_size, 12)
+        with patch.dict(n.os.environ, {'OPENBOT_NOTIFICATION_DELIVERY': 'telegram', 'OWNBOT_NOTIFICATION_DELIVERY': ''}, clear=True):
+            with self.assertRaises(ValueError):
+                n.external_delivery_enabled()
+
     def test_250_deliveries_do_not_replay_on_subsequent_polls(self):
         store, sent = MemoryStore(250), []
         config = n.Config(batch_size=50)

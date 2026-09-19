@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { tryClient } from "@/lib/client";
 import { newId } from "../new-id";
+import { readStoredPreference } from "../stored-preference";
 
 /**
  * The thread the direct Bot chat talks in.
@@ -21,7 +22,7 @@ import { newId } from "../new-id";
  * pretending the history is there when the answer says it is.
  */
 
-const KEY = "openbot.bot-thread";
+const KEY = "ownbot.bot-thread";
 
 /** The one place the storage key is built, so the getter and the setter can never drift apart. */
 export function botThreadKey(agentId: string): string {
@@ -29,12 +30,10 @@ export function botThreadKey(agentId: string): string {
 }
 
 function remembered(agentId: string): string | null {
-  try {
-    return window.localStorage.getItem(botThreadKey(agentId));
-  } catch {
-    // Storage can be unavailable or full. A thread for this visit is better than no chat at all.
-    return null;
-  }
+  return readStoredPreference(
+    botThreadKey(agentId),
+    `openbot.bot-thread.${agentId}`,
+  );
 }
 
 function remember(agentId: string, threadId: string): void {

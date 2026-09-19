@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start the local OpenBot stack and verify each service answers as OpenBot.
+# Start the local OwnBot stack and verify each service answers as OwnBot.
 # Safe to rerun: matching services are left running, and unrelated port holders are reported.
 
 set -euo pipefail
@@ -31,7 +31,8 @@ COMPUTER_PORT="$(setting COMPUTER_PORT 4100)"
 BOT_PORT="$(setting BOT_PORT 4200)"
 LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
 SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
-ONE_COMPUTER_EACH="${OPENBOT_ONE_COMPUTER_EACH:-true}"
+ONE_COMPUTER_EACH="${OWNBOT_ONE_COMPUTER_EACH-${OPENBOT_ONE_COMPUTER_EACH:-true}}"
+case "$ONE_COMPUTER_EACH" in true|false) ;; *) echo "OWNBOT_ONE_COMPUTER_EACH must be true or false" >&2; exit 1 ;; esac
 export APP_PORT SERVER_PORT
 SUPERVISOR_TOKEN="$(setting SUPERVISOR_TOKEN openbot-dev-supervisor-token)"
 COMPUTER_TOKEN="$(setting COMPUTER_TOKEN openbot-dev-computer-token)"
@@ -120,7 +121,7 @@ holder() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN -Fcn 2>/dev/null | awk '/^c/{c=substr($0,2)} /^n/{print c" ("substr($0,2)")"; exit}' || true
 }
 
-# Does whatever holds this port answer as OpenBot, rather than merely answer?
+# Does whatever holds this port answer as OwnBot, rather than merely answer?
 #
 # `curl -f` proves something is listening and returned 2xx. That is not the same claim, and the gap
 # between them is not academic: any single-page app serves its own index.html for every path it does
@@ -133,7 +134,7 @@ holder() {
 # a JSON parse error standing in for "that port belongs to something else".
 #
 # So each surface is asked for something only it can produce.
-identifies_as_openbot() {
+identifies_as_ownbot() {
   local port="$1" name="$2"
   case "$name" in
     # A field of this server's own payload. A stray 200 does not carry it.
@@ -144,7 +145,7 @@ identifies_as_openbot() {
     # The app is static HTML with nothing to interrogate, so its title is the identity available.
     app)
       curl -fsS --max-time 3 "http://localhost:$port/" 2>/dev/null \
-        | grep -qi '<title>[^<]*OpenBot'
+        | grep -qiE '<title>[^<]*(OwnBot|OpenBot)'
       ;;
     # Compose services on dedicated loopback ports, answering a route named for this stack.
     *)
@@ -157,23 +158,23 @@ require_free_or_ours() {
   local port="$1" name="$2" who
   who="$(holder "$port")"
   [ -z "$who" ] && return 0
-  if identifies_as_openbot "$port" "$name"; then
+  if identifies_as_ownbot "$port" "$name"; then
     info "  $name: already up on $port ($who)"
     return 0
   fi
-  red "  $name: port $port is held by something that is not OpenBot: $who"
+  red "  $name: port $port is held by something that is not OwnBot: $who"
   red "  Re-run with ${name^^}_PORT=<free port>, or stop that process yourself."
   exit 1
 }
 
-# As wait_for, but satisfied only by OpenBot answering, not by anything answering.
-wait_for_openbot() {
+# As wait_for, but satisfied only by OwnBot answering, not by anything answering.
+wait_for_ownbot() {
   local port="$1" name="$2" tries="${3:-40}"
   for _ in $(seq 1 "$tries"); do
-    identifies_as_openbot "$port" "$name" && { green "  $name ready"; return 0; }
+    identifies_as_ownbot "$port" "$name" && { green "  $name ready"; return 0; }
     sleep 1
   done
-  red "  $name never answered as OpenBot on port $port"
+  red "  $name never answered as OwnBot on port $port"
   red "  Either it failed to start, or that port belongs to another process."
   red "  Log: $LOGS/${name}.log"
   exit 1
@@ -191,7 +192,7 @@ wait_for() {
 }
 
 echo
-echo "OpenBot"
+echo "OwnBot"
 echo "======="
 
 info "1/4  Docker services"
@@ -268,7 +269,7 @@ if [ "$SECRETS_ROTATED" = "true" ]; then
   sleep 1
 fi
 #
-# A server that answers as OpenBot can still be one no worker can hand a routine to. The worker
+# A server that answers as OwnBot can still be one no worker can hand a routine to. The worker
 # below is started unconditionally with this run's WORKER_SHARED_SECRET, and every dispatch it makes
 # is one POST to this server's /internal/routines/run — a door that a server started from an older
 # checkout does not have (404), and that a server started before this secret existed in its
@@ -282,7 +283,7 @@ fi
 # predates the route. Both are cured by a restart into this run's environment, so fall through to
 # the launch below. Anything else — including a probe that could not connect at all — keeps the
 # philosophy of leaving an answering server alone.
-if identifies_as_openbot "$SERVER_PORT" server; then
+if identifies_as_ownbot "$SERVER_PORT" server; then
   HANDOFF_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 \
     -X POST "http://localhost:$SERVER_PORT/internal/routines/run" \
     -H "Authorization: Bearer $WORKER_SHARED_SECRET" \
@@ -300,7 +301,7 @@ if identifies_as_openbot "$SERVER_PORT" server; then
       ;;
   esac
 fi
-if ! identifies_as_openbot "$SERVER_PORT" server; then
+if ! identifies_as_ownbot "$SERVER_PORT" server; then
   if [ "$ONE_COMPUTER_EACH" = "true" ]; then
     (cd server && PORT="$SERVER_PORT" \
       COMPUTER_SUPERVISOR_URL="http://localhost:$SUPERVISOR_PORT" \
@@ -314,7 +315,7 @@ if ! identifies_as_openbot "$SERVER_PORT" server; then
       bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
   fi
 fi
-wait_for_openbot "$SERVER_PORT" server
+wait_for_ownbot "$SERVER_PORT" server
 
 # The worker: a local stand-in for the routines CronJob, looping the same sweep
 # (`offerDueRoutines`/`dispatchClaimedRoutines`) a cluster would run on a schedule instead. Started
@@ -367,10 +368,10 @@ PY
 
 info "4/4  App"
 require_free_or_ours "$APP_PORT" app
-if ! identifies_as_openbot "$APP_PORT" app; then
+if ! identifies_as_ownbot "$APP_PORT" app; then
   (cd app && bun run dev --port "$APP_PORT" --strictPort >"$LOGS/app.log" 2>&1 &)
 fi
-wait_for_openbot "$APP_PORT" app
+wait_for_ownbot "$APP_PORT" app
 
 cat <<EOF
 

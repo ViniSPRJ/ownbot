@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../../../shared/ownbot-env";
 import { sql } from "drizzle-orm";
 import { HANDOFF_KIND } from "../agents/handoff";
 import {
@@ -247,8 +248,7 @@ export function piDelegationFromRow(
 export function createOperationsStore(
   database: Database,
   historyCheck?: () => Promise<void>,
-  notificationDelivery: "internal" | "telegram" = process.env
-    .OPENBOT_NOTIFICATION_DELIVERY === "internal"
+  notificationDelivery: "internal" | "telegram" = ownbotEnv(process.env, "OWNBOT_NOTIFICATION_DELIVERY") === "internal"
     ? "internal"
     : "telegram",
   computerCheck?: () => Promise<boolean>,

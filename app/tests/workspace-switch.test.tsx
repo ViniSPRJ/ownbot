@@ -41,7 +41,7 @@ test("the open half is announced, not only shaded", () => {
       onChange={() => {}}
     />,
   );
-  expect(button("Ownbot").getAttribute("aria-pressed")).toBe("true");
+  expect(button("OwnBot").getAttribute("aria-pressed")).toBe("true");
   expect(button("Cowork").getAttribute("aria-pressed")).toBe("false");
 });
 
@@ -53,9 +53,9 @@ test("the count shown is the other half's, because that is the one you cannot se
       onChange={() => {}}
     />,
   );
-  // 2 conversations are over in Cowork. The 4 in Ownbot are already on screen underneath this.
+  // 2 conversations are over in Cowork. The 4 in OwnBot are already on screen underneath this.
   expect(button("Cowork").textContent).toContain("2");
-  expect(button("Ownbot").textContent).not.toContain("4");
+  expect(button("OwnBot").textContent).not.toContain("4");
 });
 
 test("clicking the other half reports the mode it names", () => {
@@ -106,7 +106,7 @@ test("the shared mode is remembered where the next visit will read it", () => {
     // unflushed and the assertion below reads the render before it.
     fireEvent.click(probe);
     expect(container.querySelector("button")?.textContent).toBe("cowork");
-    expect(written["openbot.workspace-mode"]).toBe("cowork");
+    expect(written["ownbot.workspace-mode"]).toBe("cowork");
   } finally {
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,

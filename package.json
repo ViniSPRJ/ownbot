@@ -1,5 +1,5 @@
 {
-  "name": "openbot",
+  "name": "ownbot",
   "version": "0.0.5",
   "license": "MIT",
   "private": true,
@@ -20,8 +20,8 @@
     "typecheck": "bun run --filter '*' typecheck",
     "test:ci": "bun scripts/test-ci.ts",
     "pretest": "bun run generate:app-config",
-    "test:smoke": "OPENBOT_SMOKE=1 bun test tests/smoke",
-    "test:live-screen": "OPENBOT_LIVE_SCREEN=1 bun test agent-computer/tests/live-screen.test.ts agent-computer/tests/browser-close-announcement.test.ts",
+    "test:smoke": "OWNBOT_SMOKE=1 bun test tests/smoke",
+    "test:live-screen": "OWNBOT_LIVE_SCREEN=1 bun test agent-computer/tests/live-screen.test.ts agent-computer/tests/browser-close-announcement.test.ts",
     "diagram": "bun scripts/architecture-diagram.ts",
     "mock:knowledge": "bun scripts/mock-knowledge-mcp.ts"
   },

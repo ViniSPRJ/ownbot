@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: openbot-release-pr
+  group: ownbot-release-pr
   cancel-in-progress: false
 
 jobs:

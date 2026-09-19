@@ -1,5 +1,5 @@
 [Unit]
-Description=Ownbot read-only FX SSH endpoint (Tailnet only)
+Description=OwnBot read-only FX SSH endpoint (Tailnet only)
 After=network-online.target tailscaled.service
 Wants=network-online.target
 

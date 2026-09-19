@@ -1,3 +1,5 @@
+import { ownbotRunAssertion } from "../../shared/ownbot-protocol";
+import { ownbotEnv } from "../../shared/ownbot-env";
 import { computerReady, routineComputerPreflight } from "./routines/computer-dependency";
 import { acpProfileFor } from "./acp/config";
 import { acpComputerTools } from "./acp/computer-tools";
@@ -36,7 +38,7 @@ import { createAuth } from "./auth";
 import { DEV_ACTOR, initializeDevActorUser } from "./auth/dev-actor";
 import { createRoleRepository } from "./auth/guards";
 import { createIdentityProviderStore } from "./auth/identity-provider-store";
-import type { OpenBotRole } from "./auth/roles";
+import type { OwnBotRole } from "./auth/roles";
 import {
   createChannelEventHub,
   startChannelActivityListener,
@@ -112,7 +114,7 @@ import {
 async function resolveRequestActor(request: Request): Promise<{
   id: string;
   name: string;
-  role: OpenBotRole;
+  role: OwnBotRole;
 }> {
   if (config.singleUser) {
     return { id: DEV_ACTOR.id, name: DEV_ACTOR.email, role: DEV_ACTOR.role };
@@ -162,7 +164,7 @@ const identifyActor: IdentifyActor = async (request) => {
 
 const config = loadConfig();
 const durableExecutors = loadDurableExecutors(
-  process.env.OPENBOT_DURABLE_EXECUTORS_CONFIG,
+  ownbotEnv(process.env, "OWNBOT_DURABLE_EXECUTORS_CONFIG"),
 );
 const rawPort = process.env.PORT ?? process.env.SERVER_PORT ?? "3001";
 if (
@@ -656,8 +658,7 @@ const agentFetch = createAgentFetch({
 // Shared by interactive turns, inbound handoffs and unattended routines.
 const handoffForActor = (actorId: string): HandoffForRun => async (botId, input) => {
     const supplied = readRunAssertion(
-      (input.forwardedProps as { openbotRun?: unknown } | undefined)
-        ?.openbotRun,
+      ownbotRunAssertion(input.forwardedProps as Record<string, unknown> | undefined),
       config.keyEncryptionKey,
     );
     const from = supplied?.botId === botId && supplied.actorId === actorId &&
@@ -773,7 +774,7 @@ const piWatcher = createPiWatcher({
 });
 const observeToolsForActor = (actorId: string): ToolObserverForRun => async (botId, input, tools) => {
   const supplied = readRunAssertion(
-    (input.forwardedProps as { openbotRun?: unknown } | undefined)?.openbotRun,
+    ownbotRunAssertion(input.forwardedProps as Record<string, unknown> | undefined),
     config.keyEncryptionKey,
   );
   const bound = supplied?.botId === botId && supplied.actorId === actorId &&
@@ -861,7 +862,7 @@ const buildAgentFor = async ({
  * already-running check that keeps two turns off one thread. See `routines/run-turn.ts`.
  *
  * Self-hosted SSE uses the same SQLite runner as the interactive runtime. Intelligence stays the
- * default when OPENBOT_SELF_HOSTED is off.
+ * default when OWNBOT_SELF_HOSTED is off.
  */
 const localThreads =
   config.runtime.mode === "sse"
@@ -1438,4 +1439,4 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.info(`OpenBot server listening on http://localhost:${port}`);
+console.info(`OwnBot server listening on http://localhost:${port}`);

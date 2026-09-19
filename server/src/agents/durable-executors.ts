@@ -140,7 +140,7 @@ export const DEFAULT_DURABLE_EXECUTORS = createDurableExecutorRegistry({
 /**
  * Synchronous startup read. An omitted path keeps the shipped default
  * logical mapping. A provided path replaces the entire registry; it must be
- * absolute. Callers typically pass `OPENBOT_DURABLE_EXECUTORS_CONFIG` at
+ * absolute. Callers typically pass `OWNBOT_DURABLE_EXECUTORS_CONFIG` at
  * process start; a changed file takes a restart. Unreadable, malformed, or
  * schema-invalid files throw a sanitized error that does not include the
  * path or file contents.

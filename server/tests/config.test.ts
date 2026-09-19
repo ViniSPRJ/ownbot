@@ -12,7 +12,7 @@ const baseEnvironment = {
   GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
   BETTER_AUTH_SECRET: "a-long-enough-local-development-auth-secret",
   BETTER_AUTH_URL: "http://localhost:3001",
-  INITIAL_ADMIN_EMAILS: "admin@openbot.test",
+  INITIAL_ADMIN_EMAILS: "admin@ownbot.test",
   INTELLIGENCE_API_URL: "http://localhost:7100",
   INTELLIGENCE_GATEWAY_WS_URL: "ws://localhost:7103",
   INTELLIGENCE_API_KEY: "tenant-api-key",
@@ -20,6 +20,23 @@ const baseEnvironment = {
   MANAGED_AGENT_AG_UI_URL: " http://localhost:4200/ag-ui ",
   MANAGED_AGENT_TOKEN: "managed-agent-token",
 };
+
+test("OwnBot environment names take priority over legacy aliases", () => {
+  const config = loadConfig({
+    ...baseEnvironment,
+    OWNBOT_SELF_HOSTED: "true",
+    OPENBOT_SELF_HOSTED: "false",
+    OWNBOT_THREADS_DB: "/tmp/ownbot-threads.db",
+    OPENBOT_THREADS_DB: "/tmp/legacy-threads.db",
+    OWNBOT_PUBLIC_URL: "https://ownbot.example",
+    OPENBOT_PUBLIC_URL: "https://legacy.example",
+    OWNBOT_GENERATIVE_UI: "false",
+    OPENBOT_GENERATIVE_UI: "true",
+  });
+  expect(config.runtime).toMatchObject({ mode: "sse", threadsDbPath: "/tmp/ownbot-threads.db" });
+  expect(config.publicUrl).toBe("https://ownbot.example");
+  expect(config.generativeUi).toBe(false);
+});
 
 /**
  * The same deployment with nothing signing anybody in.
@@ -204,7 +221,7 @@ describe("deployment configuration", () => {
       GOOGLE_OAUTH_CLIENT_SECRET: "google-client-secret",
       BETTER_AUTH_SECRET: "a-long-enough-local-development-auth-secret",
       BETTER_AUTH_URL: "http://localhost:3001",
-      INITIAL_ADMIN_EMAILS: "admin@openbot.test, owner@openbot.test",
+      INITIAL_ADMIN_EMAILS: "admin@ownbot.test, owner@ownbot.test",
     });
 
     expect(config.auth).toEqual({
@@ -215,7 +232,7 @@ describe("deployment configuration", () => {
         clientSecret: "google-client-secret",
       },
       trustedOrigins: ["http://localhost:3010"],
-      initialAdminEmails: ["admin@openbot.test", "owner@openbot.test"],
+      initialAdminEmails: ["admin@ownbot.test", "owner@ownbot.test"],
     });
   });
 
@@ -230,7 +247,7 @@ describe("deployment configuration", () => {
   const SESSION = {
     BETTER_AUTH_SECRET: "a-long-enough-local-development-auth-secret",
     BETTER_AUTH_URL: "http://localhost:3001",
-    INITIAL_ADMIN_EMAILS: "admin@openbot.test",
+    INITIAL_ADMIN_EMAILS: "admin@ownbot.test",
   };
 
   /** What a deployment with no provider has to say before it is allowed to come up. */

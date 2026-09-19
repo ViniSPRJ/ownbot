@@ -1,3 +1,4 @@
+import { ownbotEnv } from "../shared/ownbot-env";
 /** Production UI: immutable build assets, SPA navigation, and streaming API/WS proxy. */
 import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
@@ -61,7 +62,7 @@ export async function createUiServer(options: UiOptions) {
     api.pathname !== "/"
   ) {
     throw new Error(
-      "OPENBOT_UI_API_URL must be an HTTP origin without credentials or a path",
+      "OWNBOT_UI_API_URL must be an HTTP origin without credentials or a path",
     );
   }
   const allowedHosts = options.allowedHosts ?? [
@@ -278,7 +279,7 @@ if (import.meta.main) {
   const host = process.env.APP_HOST ?? "127.0.0.1";
   const port = Number(process.env.APP_PORT ?? "3010");
   const api =
-    process.env.OPENBOT_UI_API_URL ??
+    ownbotEnv(process.env, "OWNBOT_UI_API_URL") ??
     `http://127.0.0.1:${process.env.SERVER_PORT ?? "3001"}`;
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     throw new Error("Invalid APP_PORT");
@@ -298,18 +299,18 @@ if (import.meta.main) {
   } else {
     const ui = await createUiServer({
       dist:
-        process.env.OPENBOT_UI_DIST ??
+        ownbotEnv(process.env, "OWNBOT_UI_DIST") ??
         path.resolve(import.meta.dir, "../app/dist"),
       api,
       host,
       port,
-      allowedHosts: process.env.OPENBOT_UI_ALLOWED_HOSTS?.split(",")
+      allowedHosts: ownbotEnv(process.env, "OWNBOT_UI_ALLOWED_HOSTS")?.split(",")
         .map((value) => value.trim().toLowerCase())
         .filter(Boolean),
     });
     await ui.listen();
     console.log(
-      JSON.stringify({ service: "openbot-ui", mode: "static", host, port }),
+      JSON.stringify({ service: "ownbot-ui", mode: "static", host, port }),
     );
     const stop = () => {
       void ui.close().then(() => process.exit(0));
